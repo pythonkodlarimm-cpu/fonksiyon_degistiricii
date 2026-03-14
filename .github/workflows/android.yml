@@ -41,17 +41,34 @@ jobs:
           python -m pip install --upgrade pip setuptools wheel
           pip install buildozer cython==0.29.33
 
-      - name: Eski build önbelleğini temizle
+      - name: Eski build temizle
         run: |
           rm -rf .buildozer
           rm -rf bin
+          rm -f build.log
 
       - name: Buildozer ile APK derle
+        shell: bash
         run: |
-          buildozer -v android debug
+          set -o pipefail
+          echo "::group::Buildozer debug build"
+          buildozer -v android debug 2>&1 | tee build.log
+          echo "::endgroup::"
 
-      - name: APK artifact yükle
-        uses: actions/upload-artifact@v6
+      - name: Build log yukle
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
         with:
-          name: fonksiyon-degistirici-apk-v0-1-0
-          path: bin/*.apk
+          name: build-log
+          path: build.log
+          if-no-files-found: warn
+
+      - name: APK veya bin klasorunu yukle
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-ciktilari
+          path: |
+            bin/*.apk
+            bin/
+          if-no-files-found: warn
