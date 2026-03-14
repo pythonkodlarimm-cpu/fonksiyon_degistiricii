@@ -41,6 +41,11 @@ jobs:
           python -m pip install --upgrade pip setuptools wheel
           pip install buildozer cython==0.29.33
 
+      - name: Eski build önbelleğini temizle
+        run: |
+          rm -rf .buildozer
+          rm -rf bin
+
       - name: Buildozer ile APK derle
         run: |
           buildozer android debug
