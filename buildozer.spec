@@ -10,7 +10,7 @@ source.exclude_exts = pyc,pyo,log,md
 source.exclude_dirs = .git,.github,__pycache__,bin,.buildozer,venv,.venv,tests
 source.exclude_patterns = *.bak,*.tmp,*.swp,.DS_Store
 
-version = 0.1.0
+version = 0.1.1
 
 requirements = python3,kivy,pygments
 
