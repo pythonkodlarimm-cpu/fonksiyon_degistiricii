@@ -10,8 +10,9 @@ ROL:
 - Uygulama başlığında sürüm bilgisini gösterir.
 - Proje kökünü sys.path içine ekler.
 - APK içinde ve normal çalıştırmada importları sade ve güvenli tutar.
+- Hata olursa traceback'i ekranda göstermeye çalışır.
 
-SURUM: 4
+SURUM: 5
 TARIH: 2026-03-14
 IMZA: FY.
 """
@@ -45,13 +46,9 @@ if str(PROJE_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJE_ROOT))
 
 
-from app.core.uygulama_meta import UYGULAMA_ADI, tam_surum
-from app.ui.root import RootWidget
-
-
 def _build_error_root(hata_metni: str) -> BoxLayout:
     """
-    Root açılamazsa kullanıcıya sade bir hata ekranı gösterir.
+    Uygulama açılışında hata olursa sade bir hata ekranı gösterir.
     """
     root = BoxLayout(
         orientation="vertical",
@@ -60,7 +57,7 @@ def _build_error_root(hata_metni: str) -> BoxLayout:
     )
 
     baslik = Label(
-        text=UYGULAMA_ADI,
+        text="Fonksiyon Degistirici",
         size_hint_y=None,
         height=dp(42),
         font_size="20sp",
@@ -72,20 +69,8 @@ def _build_error_root(hata_metni: str) -> BoxLayout:
     baslik.bind(size=lambda inst, size: setattr(inst, "text_size", size))
     root.add_widget(baslik)
 
-    alt = Label(
-        text=f"Sürüm {tam_surum()}",
-        size_hint_y=None,
-        height=dp(24),
-        font_size="12sp",
-        color=(0.75, 0.82, 0.92, 1),
-        halign="center",
-        valign="middle",
-    )
-    alt.bind(size=lambda inst, size: setattr(inst, "text_size", size))
-    root.add_widget(alt)
-
     mesaj = Label(
-        text="Uygulama açılırken hata oluştu.\n\nDetay:\n" + hata_metni,
+        text="Uygulama açılırken hata oluştu.\n\n" + hata_metni,
         color=(1, 0.82, 0.82, 1),
         halign="left",
         valign="top",
@@ -103,20 +88,22 @@ class FonksiyonDegistiriciApp(App):
 
     def build(self):
         """
-        Root widget oluşturur.
+        Importları burada yapıyoruz ki açılış hataları ekranda gösterilebilsin.
         """
-        self.title = f"{UYGULAMA_ADI} v{tam_surum()}"
-
         try:
+            from app.core.uygulama_meta import UYGULAMA_ADI, tam_surum
+            from app.ui.root import RootWidget
+
+            self.title = f"{UYGULAMA_ADI} v{tam_surum()}"
             return RootWidget()
-        except Exception as exc:
-            print("Uygulama başlatılırken hata oluştu:")
-            traceback.print_exc()
-            return _build_error_root(str(exc))
+
+        except Exception:
+            hata = traceback.format_exc()
+            print(hata)
+            return _build_error_root(hata)
 
     def on_start(self):
         try:
-            print(f"{UYGULAMA_ADI} başlatıldı. Sürüm: {tam_surum()}")
             print(f"PROJE_ROOT = {PROJE_ROOT}")
         except Exception:
             pass
@@ -129,8 +116,7 @@ def main() -> None:
     try:
         FonksiyonDegistiriciApp().run()
     except Exception:
-        print("Uygulama çalıştırılamadı:")
-        traceback.print_exc()
+        print(traceback.format_exc())
 
 
 if __name__ == "__main__":
