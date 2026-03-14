@@ -15,6 +15,12 @@ jobs:
       - name: Depoyu al
         uses: actions/checkout@v6
 
+      - name: Build cache
+        uses: actions/cache@v5
+        with:
+          path: .buildozer
+          key: buildozer-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
+
       - name: Python kur
         uses: actions/setup-python@v6
         with:
@@ -26,7 +32,7 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Build araçlarını kur
+      - name: Sistem paketleri
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -36,7 +42,7 @@ jobs:
             libltdl-dev libsqlite3-dev sqlite3 bzip2 libbz2-dev \
             libreadline-dev liblzma-dev
 
-      - name: Python paketlerini kur
+      - name: Python paketleri
         run: |
           python -m pip install --upgrade pip setuptools wheel
           pip install buildozer cython==0.29.33
@@ -47,28 +53,36 @@ jobs:
           rm -rf bin
           rm -f build.log
 
-      - name: Buildozer ile APK derle
+      - name: APK derle
         shell: bash
         run: |
           set -o pipefail
-          echo "::group::Buildozer debug build"
           buildozer -v android debug 2>&1 | tee build.log
-          echo "::endgroup::"
+
+      - name: Hata ozeti yaz
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          {
+            echo "## Android build özeti"
+            echo ""
+            echo '```text'
+            tail -n 120 build.log || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Build log yukle
         if: ${{ always() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: build-log
           path: build.log
           if-no-files-found: warn
 
-      - name: APK veya bin klasorunu yukle
-        if: ${{ always() }}
-        uses: actions/upload-artifact@v4
+      - name: APK yukle
+        if: ${{ success() }}
+        uses: actions/upload-artifact@v6
         with:
-          name: build-ciktilari
-          path: |
-            bin/*.apk
-            bin/
+          name: fonksiyon-degistirici-apk
+          path: bin/*.apk
           if-no-files-found: warn
