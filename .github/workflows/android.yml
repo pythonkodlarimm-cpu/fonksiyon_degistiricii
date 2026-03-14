@@ -15,12 +15,6 @@ jobs:
       - name: Depoyu al
         uses: actions/checkout@v6
 
-      - name: Build cache
-        uses: actions/cache@v5
-        with:
-          path: .buildozer
-          key: buildozer-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
-
       - name: Python kur
         uses: actions/setup-python@v6
         with:
@@ -47,8 +41,9 @@ jobs:
           python -m pip install --upgrade pip setuptools wheel
           pip install buildozer cython==0.29.33
 
-      - name: Eski build temizle
+      - name: Eski build önbelleğini temizle
         run: |
+          rm -rf .buildozer
           rm -rf bin
 
       - name: Buildozer ile APK derle
@@ -56,7 +51,7 @@ jobs:
           buildozer -v android debug
 
       - name: APK artifact yükle
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: fonksiyon-degistirici-apk-v0-1-0
           path: bin/*.apk
