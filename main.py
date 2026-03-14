@@ -12,7 +12,7 @@ ROL:
 - APK içinde ve normal çalıştırmada importları sade ve güvenli tutar.
 - Hata olursa traceback'i ekranda göstermeye çalışır.
 
-SURUM: 5
+SURUM: 6
 TARIH: 2026-03-14
 IMZA: FY.
 """
@@ -29,15 +29,31 @@ from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.label import Label
 
 
+def _safe_resolve(path: Path) -> Path:
+    try:
+        return path.resolve()
+    except Exception:
+        try:
+            return path.absolute()
+        except Exception:
+            return path
+
+
 def _proje_koku_bul() -> Path:
     """
     Bu proje yapısında en güvenli yaklaşım:
     main.py dosyasının bulunduğu klasörü proje kökü kabul etmektir.
+
+    Android / APK içinde resolve davranışı farklı olabileceği için
+    güvenli çözüm kullanılır.
     """
     try:
-        return Path(__file__).resolve().parent
+        return _safe_resolve(Path(__file__).parent)
     except Exception:
-        return Path.cwd().resolve()
+        try:
+            return _safe_resolve(Path.cwd())
+        except Exception:
+            return Path(".")
 
 
 PROJE_ROOT = _proje_koku_bul()
@@ -65,12 +81,15 @@ def _build_error_root(hata_metni: str) -> BoxLayout:
         color=(1, 1, 1, 1),
         halign="center",
         valign="middle",
+        shorten=True,
+        shorten_from="right",
+        max_lines=1,
     )
     baslik.bind(size=lambda inst, size: setattr(inst, "text_size", size))
     root.add_widget(baslik)
 
     mesaj = Label(
-        text="Uygulama açılırken hata oluştu.\n\n" + hata_metni,
+        text="Uygulama açılırken hata oluştu.\n\n" + str(hata_metni or ""),
         color=(1, 0.82, 0.82, 1),
         halign="left",
         valign="top",
@@ -91,6 +110,13 @@ class FonksiyonDegistiriciApp(App):
         Importları burada yapıyoruz ki açılış hataları ekranda gösterilebilsin.
         """
         try:
+            try:
+                from kivy.core.window import Window
+
+                Window.softinput_mode = "below_target"
+            except Exception:
+                pass
+
             from app.core.uygulama_meta import UYGULAMA_ADI, tam_surum
             from app.ui.root import RootWidget
 
@@ -99,7 +125,10 @@ class FonksiyonDegistiriciApp(App):
 
         except Exception:
             hata = traceback.format_exc()
-            print(hata)
+            try:
+                print(hata)
+            except Exception:
+                pass
             return _build_error_root(hata)
 
     def on_start(self):
@@ -116,7 +145,10 @@ def main() -> None:
     try:
         FonksiyonDegistiriciApp().run()
     except Exception:
-        print(traceback.format_exc())
+        try:
+            print(traceback.format_exc())
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":
