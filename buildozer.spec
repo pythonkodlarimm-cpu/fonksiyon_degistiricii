@@ -17,6 +17,10 @@ requirements = python3,kivy,pygments
 orientation = portrait
 fullscreen = 0
 
+# uygulama iconu
+icon.filename = app/assets/icons/app_icon.png
+
+# splash ekranı
 presplash.filename = app/assets/icons/presplash.png
 
 android.permissions = READ_EXTERNAL_STORAGE,(name=android.permission.WRITE_EXTERNAL_STORAGE;maxSdkVersion=28)
@@ -32,6 +36,7 @@ android.enable_androidx = True
 android.allow_backup = True
 
 log_level = 2
+
 
 [buildozer]
 log_level = 2
