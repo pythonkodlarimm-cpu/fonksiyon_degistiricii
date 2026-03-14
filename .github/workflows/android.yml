@@ -15,14 +15,6 @@ jobs:
       - name: Depoyu al
         uses: actions/checkout@v6
 
-      - name: Build cache
-        uses: actions/cache@v5
-        with:
-          path: .buildozer
-          key: buildozer-${{ runner.os }}-${{ hashFiles('buildozer.spec', '.github/workflows/android.yml') }}
-          restore-keys: |
-            buildozer-${{ runner.os }}-
-
       - name: Python kur
         uses: actions/setup-python@v6
         with:
@@ -34,6 +26,13 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      - name: Android SDK ortamını ayarla
+        run: |
+          echo "ANDROID_SDK_ROOT=/usr/local/lib/android/sdk" >> $GITHUB_ENV
+          echo "ANDROID_HOME=/usr/local/lib/android/sdk" >> $GITHUB_ENV
+          echo "/usr/local/lib/android/sdk/cmdline-tools/latest/bin" >> $GITHUB_PATH
+          echo "/usr/local/lib/android/sdk/platform-tools" >> $GITHUB_PATH
+
       - name: Sistem paketleri
         run: |
           sudo apt-get update
@@ -44,6 +43,13 @@ jobs:
             libltdl-dev libsqlite3-dev sqlite3 bzip2 libbz2-dev \
             libreadline-dev liblzma-dev
 
+      - name: Android platformlarını kur
+        run: |
+          yes | sdkmanager --licenses || true
+          sdkmanager "platform-tools"
+          sdkmanager "platforms;android-31"
+          sdkmanager "build-tools;31.0.0"
+
       - name: Python paketleri
         run: |
           python -m pip install --upgrade pip setuptools wheel
@@ -51,33 +57,73 @@ jobs:
 
       - name: Eski build temizle
         run: |
+          rm -rf .buildozer
           rm -rf bin
           rm -f build.log
+          rm -f summary.md
 
       - name: APK derle
         shell: bash
         run: |
           set -o pipefail
-          buildozer -v android debug 2>&1 | tee build.log
+          buildozer android debug 2>&1 | tee build.log
 
       - name: Hata ozeti yaz
         if: ${{ always() }}
         shell: bash
         run: |
-          {
-            echo "## Android build özeti"
-            echo ""
-            echo '```text'
-            tail -n 120 build.log || true
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
+          python - << 'PY'
+          from pathlib import Path
+          import re
+
+          p = Path("build.log")
+          text = p.read_text(encoding="utf-8", errors="ignore") if p.exists() else ""
+
+          ansi = re.compile(r"\x1b\[[0-9;]*m")
+          clean = ansi.sub("", text)
+
+          lines = clean.splitlines()
+
+          keys = ("error", "failed", "exception", "traceback")
+          found = []
+
+          for i, line in enumerate(lines):
+              low = line.lower()
+              if any(k in low for k in keys):
+                  start = max(0, i - 8)
+                  end = min(len(lines), i + 20)
+                  chunk = "\n".join(lines[start:end])
+                  found.append(chunk)
+
+          summary = []
+          summary.append("## Android build özeti\n")
+
+          if found:
+              summary.append("### Bulunan kritik hata parçaları\n")
+              for idx, chunk in enumerate(found[:5], 1):
+                  summary.append(f"#### Hata {idx}\n")
+                  summary.append("```text")
+                  summary.append(chunk)
+                  summary.append("```")
+          else:
+              summary.append("### Son 200 satır\n")
+              summary.append("```text")
+              summary.append("\n".join(lines[-200:]))
+              summary.append("```")
+
+          Path("summary.md").write_text("\n".join(summary), encoding="utf-8")
+          PY
+
+          cat summary.md >> "$GITHUB_STEP_SUMMARY"
 
       - name: Build log yukle
         if: ${{ always() }}
         uses: actions/upload-artifact@v6
         with:
           name: build-log
-          path: build.log
+          path: |
+            build.log
+            summary.md
           if-no-files-found: warn
 
       - name: APK yukle
