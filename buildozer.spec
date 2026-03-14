@@ -25,9 +25,13 @@ android.permissions = READ_EXTERNAL_STORAGE,(name=android.permission.WRITE_EXTER
 android.api = 31
 android.minapi = 21
 
+android.sdk_path = /usr/local/lib/android/sdk
+android.ant_path = /usr/share/ant
+
 android.accept_sdk_license = True
 android.enable_androidx = True
 android.allow_backup = True
+android.skip_update = True
 
 log_level = 2
 
