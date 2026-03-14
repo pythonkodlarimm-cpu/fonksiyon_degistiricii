@@ -22,6 +22,9 @@ presplash.filename = app/assets/icons/presplash.png
 
 android.permissions = READ_EXTERNAL_STORAGE,(name=android.permission.WRITE_EXTERNAL_STORAGE;maxSdkVersion=28)
 
+android.api = 31
+android.minapi = 21
+
 android.accept_sdk_license = True
 android.enable_androidx = True
 android.allow_backup = True
