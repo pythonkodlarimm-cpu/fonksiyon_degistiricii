@@ -20,23 +20,13 @@ fullscreen = 0
 icon.filename = app/assets/icons/app_icon.png
 presplash.filename = app/assets/icons/presplash.png
 
-android.permissions = READ_EXTERNAL_STORAGE,(name=android.permission.WRITE_EXTERNAL_STORAGE;maxSdkVersion=28),MANAGE_EXTERNAL_STORAGE
-
-android.api = 36
-android.minapi = 24
-android.ndk = 29
-
-p4a.branch = develop
+android.permissions = READ_EXTERNAL_STORAGE,(name=android.permission.WRITE_EXTERNAL_STORAGE;maxSdkVersion=28)
 
 android.accept_sdk_license = True
 android.enable_androidx = True
 android.allow_backup = True
 
-# Uygulama dosya seçip düzenlediği için logcat debug aşamasında faydalı olur
 log_level = 2
-
-# İlk aşamada debug APK üret
-build_dir = .buildozer
 
 [buildozer]
 log_level = 2
