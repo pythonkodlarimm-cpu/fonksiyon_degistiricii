@@ -17,7 +17,6 @@ requirements = python3,kivy,pygments
 orientation = portrait
 fullscreen = 0
 
-icon.filename = app/assets/icons/app_icon.png
 presplash.filename = app/assets/icons/presplash.png
 
 android.permissions = READ_EXTERNAL_STORAGE,(name=android.permission.WRITE_EXTERNAL_STORAGE;maxSdkVersion=28)
@@ -31,7 +30,6 @@ android.ant_path = /usr/share/ant
 android.accept_sdk_license = True
 android.enable_androidx = True
 android.allow_backup = True
-android.skip_update = True
 
 log_level = 2
 
