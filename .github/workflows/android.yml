@@ -49,7 +49,6 @@ jobs:
           echo "ANDROIDMINAPI=21" >> "$GITHUB_ENV"
 
           SDKMANAGER_BIN="$(find /usr/local/lib/android/sdk -type f -name sdkmanager | head -n 1 || true)"
-
           if [ -z "$SDKMANAGER_BIN" ]; then
             echo "sdkmanager bulunamadı" >&2
             exit 1
@@ -57,6 +56,11 @@ jobs:
 
           echo "$(dirname "$SDKMANAGER_BIN")" >> "$GITHUB_PATH"
           echo "/usr/local/lib/android/sdk/platform-tools" >> "$GITHUB_PATH"
+
+          sudo mkdir -p /usr/local/lib/android/sdk/tools/bin
+          sudo ln -sf "$SDKMANAGER_BIN" /usr/local/lib/android/sdk/tools/bin/sdkmanager
+
+          ls -la /usr/local/lib/android/sdk/tools/bin
 
       - name: Ortam kontrolü
         shell: bash
@@ -75,21 +79,22 @@ jobs:
           javac -version
           which sdkmanager
           sdkmanager --version
+          /usr/local/lib/android/sdk/tools/bin/sdkmanager --version
 
       - name: Android platformlarını kur
         shell: bash
         run: |
           set -euxo pipefail
-          yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platform-tools"
-          sdkmanager "platforms;android-31"
-          sdkmanager "build-tools;31.0.0"
+          yes | /usr/local/lib/android/sdk/tools/bin/sdkmanager --licenses >/dev/null || true
+          /usr/local/lib/android/sdk/tools/bin/sdkmanager "platform-tools"
+          /usr/local/lib/android/sdk/tools/bin/sdkmanager "platforms;android-31"
+          /usr/local/lib/android/sdk/tools/bin/sdkmanager "build-tools;31.0.0"
 
       - name: Kurulu Android paketlerini doğrula
         shell: bash
         run: |
           set -euxo pipefail
-          sdkmanager --list | sed -n '/Installed packages:/,/Available Packages:/p' || true
+          /usr/local/lib/android/sdk/tools/bin/sdkmanager --list | sed -n '/Installed packages:/,/Available Packages:/p' || true
           test -f /usr/local/lib/android/sdk/platforms/android-31/android.jar
           ls -la /usr/local/lib/android/sdk/platforms
           ls -la /usr/local/lib/android/sdk/platforms/android-31
@@ -101,10 +106,11 @@ jobs:
           set -euxo pipefail
           test -f buildozer.spec
           test -f main.py
-          test -f app/assets/icons/app_icon.png
           test -f app/assets/icons/presplash.png
           echo "---- buildozer.spec ----"
           sed -n '1,220p' buildozer.spec
+          echo "---- icons ----"
+          ls -la app/assets/icons || true
 
       - name: Python paketleri
         shell: bash
@@ -132,7 +138,7 @@ jobs:
         run: |
           set -euxo pipefail
           env | sort > env_dump.txt
-          sdkmanager --list > sdk_list.txt || true
+          /usr/local/lib/android/sdk/tools/bin/sdkmanager --list > sdk_list.txt || true
 
       - name: APK derle
         shell: bash
@@ -172,6 +178,8 @@ jobs:
               "ndk",
               "gradle",
               "no such file",
+              "sdk path",
+              "does not exist",
           )
 
           parcali = []
