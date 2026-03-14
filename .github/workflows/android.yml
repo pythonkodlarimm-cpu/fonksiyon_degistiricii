@@ -19,7 +19,9 @@ jobs:
         uses: actions/cache@v5
         with:
           path: .buildozer
-          key: buildozer-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
+          key: buildozer-${{ runner.os }}-${{ hashFiles('buildozer.spec', '.github/workflows/android.yml') }}
+          restore-keys: |
+            buildozer-${{ runner.os }}-
 
       - name: Python kur
         uses: actions/setup-python@v6
@@ -49,7 +51,6 @@ jobs:
 
       - name: Eski build temizle
         run: |
-          rm -rf .buildozer
           rm -rf bin
           rm -f build.log
 
