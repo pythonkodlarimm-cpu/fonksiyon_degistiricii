@@ -8,10 +8,15 @@ ROL:
 
 KURAL:
 - Ağır alt modüller import-time'da yüklenmez
-- Sadece hafif model doğrudan dışa açılır
+- Hafif model doğrudan dışa açılır
 - Gerekirse yardımcı getter fonksiyonları ile modül geç yüklenir
 
-SURUM: 2
+NOT:
+- Yeni Android akışında android_tree_picker kullanılır
+- desktop_picker tüm platformlarda iç picker olarak kullanılabilir
+- Eski android_picker artık ana akışta kullanılmaz
+
+SURUM: 3
 TARIH: 2026-03-15
 IMZA: FY.
 """
@@ -23,7 +28,7 @@ from app.ui.dosya_secici_paketi.models import PickerSelection
 __all__ = [
     "PickerSelection",
     "get_desktop_picker_class",
-    "get_android_picker_class",
+    "get_android_tree_picker_class",
 ]
 
 
@@ -33,7 +38,7 @@ def get_desktop_picker_class():
     return DesktopPicker
 
 
-def get_android_picker_class():
-    from app.ui.dosya_secici_paketi.android_picker import AndroidPicker
+def get_android_tree_picker_class():
+    from app.ui.dosya_secici_paketi.android_tree_picker import AndroidTreePicker
 
-    return AndroidPicker
+    return AndroidTreePicker
