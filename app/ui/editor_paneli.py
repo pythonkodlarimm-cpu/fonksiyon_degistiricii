@@ -7,6 +7,7 @@ ROL:
 - Yeni fonksiyon kodunu düzenletir
 - Popup üzerinden geniş edit desteği verir
 - Güncelleme öncesi temel doğrulama ve hata gösterimi yapar
+- Son yedekten geri yükleme aksiyonunu tetikler
 
 NOT:
 - Satır numarası kullanılmaz
@@ -14,8 +15,8 @@ NOT:
 - Dış boş satırlar otomatik temizlenir
 - Başarılı doğrulamada yeşil bilgi kutusu + pulse icon gösterilir
 
-SURUM: 18
-TARIH: 2026-03-14
+SURUM: 19
+TARIH: 2026-03-16
 IMZA: FY.
 """
 
@@ -287,10 +288,11 @@ class SadeKodAlani(KodPaneli):
 # MAIN PANEL
 # =========================================================
 class EditorPaneli(BoxLayout):
-    def __init__(self, on_update=None, **kwargs):
+    def __init__(self, on_update=None, on_restore=None, **kwargs):
         super().__init__(orientation="vertical", spacing=dp(8), **kwargs)
 
         self.on_update = on_update
+        self.on_restore = on_restore
         self.current_item = None
         self._new_code_buffer = ""
         self._current_popup = None
@@ -395,9 +397,6 @@ class EditorPaneli(BoxLayout):
         self.action_toolbar.size_hint_y = None
         self.action_toolbar.height = dp(82)
 
-        # İstenen sıra:
-        # Temizle, Güncelle, Kontrol Et, Kopyala
-
         self.action_toolbar.add_tool(
             icon_name="clear.png",
             text="Temizle",
@@ -434,6 +433,16 @@ class EditorPaneli(BoxLayout):
             on_release=self._copy_current_to_new,
             icon_size_dp=40,
             text_size="11sp",
+            color=TEXT_MUTED,
+            icon_bg=None,
+        )
+
+        self.action_toolbar.add_tool(
+            icon_name="geri_yukle.png",
+            text="Geri Yükle",
+            on_release=self._handle_restore,
+            icon_size_dp=40,
+            text_size="10sp",
             color=TEXT_MUTED,
             icon_bg=None,
         )
@@ -654,6 +663,18 @@ class EditorPaneli(BoxLayout):
         except Exception as exc:
             self._set_status_error(str(exc), self._extract_line_number(exc))
 
+    def _handle_restore(self, *_args):
+        if not self.on_restore:
+            self._set_status_error("Geri yükleme callback bağlı değil.", 0)
+            return
+
+        try:
+            self._set_status_neutral("Geri yükleme uygulanıyor...", 0)
+            self.on_restore()
+            self._set_status_success("Geri yükleme tamamlandı.", 0)
+        except Exception as exc:
+            self._set_status_error(str(exc), self._extract_line_number(exc))
+
     # ---------------------------------------------------------
     # POPUPS
     # ---------------------------------------------------------
@@ -797,8 +818,15 @@ class RootWidget(EditorPaneli):
     RootWidget bekleyen yerler için doğrudan kullanılabilir uyum sınıfı.
     """
 
-    def __init__(self, on_update=None, **kwargs):
-        super().__init__(on_update=on_update or self._dummy_update, **kwargs)
+    def __init__(self, on_update=None, on_restore=None, **kwargs):
+        super().__init__(
+            on_update=on_update or self._dummy_update,
+            on_restore=on_restore or self._dummy_restore,
+            **kwargs,
+        )
 
     def _dummy_update(self, item, yeni_kod):
         self._set_status_error("on_update callback bağlı değil.", 0)
+
+    def _dummy_restore(self):
+        self._set_status_error("on_restore callback bağlı değil.", 0)
