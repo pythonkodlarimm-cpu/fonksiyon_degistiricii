@@ -163,44 +163,6 @@ jobs:
           test -s release.keystore
           ls -lh release.keystore
 
-      - name: buildozer.spec içine release signing ayarlarını ekle
-        shell: bash
-        run: |
-          set -euxo pipefail
-          python - <<PY
-          from pathlib import Path
-
-          path = Path("buildozer.spec")
-          text = path.read_text(encoding="utf-8")
-
-          signing_block = """
-          android.keystore = release.keystore
-          android.keystore_passwd = ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          android.keyalias = ${{ secrets.ANDROID_KEY_ALIAS }}
-          android.keyalias_passwd = ${{ secrets.ANDROID_KEY_ALIAS_PASSWORD }}
-          """.strip()
-
-          marker = "\n[buildozer]\n"
-          if marker not in text:
-              raise SystemExit("buildozer.spec içinde [buildozer] bölümü bulunamadı.")
-
-          for key in (
-              "android.keystore =",
-              "android.keystore_passwd =",
-              "android.keyalias =",
-              "android.keyalias_passwd =",
-          ):
-              if key in text:
-                  raise SystemExit(f"buildozer.spec içinde zaten mevcut satır bulundu: {key}")
-
-          text = text.replace(marker, "\n" + signing_block + "\n\n[buildozer]\n", 1)
-          path.write_text(text, encoding="utf-8")
-          print("Signing ayarlari [app] bolumune eklendi.")
-          PY
-
-          echo "---- Signing satirlari eklendi ----"
-          sed -n '1,260p' buildozer.spec
-
       - name: Eski build temizle
         shell: bash
         run: |
@@ -221,6 +183,11 @@ jobs:
 
       - name: APK derle
         shell: bash
+        env:
+          P4A_RELEASE_KEYSTORE: release.keystore
+          P4A_RELEASE_KEYSTORE_PASSWD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          P4A_RELEASE_KEYALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          P4A_RELEASE_KEYALIAS_PASSWD: ${{ secrets.ANDROID_KEY_ALIAS_PASSWORD }}
         run: |
           set -o pipefail
           buildozer android release 2>&1 | tee build.log
@@ -274,6 +241,7 @@ jobs:
               "alias",
               "release",
               "unsigned",
+              "p4a_release",
           )
 
           parcali = []
@@ -323,6 +291,8 @@ jobs:
                       "RUNNER_OS",
                       "BUILD_NUMBER",
                       "APP_VERSION",
+                      "P4A_RELEASE_KEYSTORE",
+                      "P4A_RELEASE_KEYALIAS",
                   ]):
                       secili.append(line)
               out.append("")
