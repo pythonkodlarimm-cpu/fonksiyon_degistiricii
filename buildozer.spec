@@ -35,7 +35,6 @@ android.release_artifact = apk
 
 log_level = 2
 
-
 [buildozer]
 log_level = 2
 warn_on_root = 1
