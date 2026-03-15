@@ -5,14 +5,17 @@ DOSYA: app/ui/dosya_secici_paketi/desktop_picker.py
 ROL:
 - Uygulama içi özel dosya seçici motoru
 - Android ve masaüstünde aynı popup tabanlı gezinme akışını sağlar
-- Klasörleri ve .py dosyalarını listeler
+- Klasörleri ve dosyaları listeler
+- Python dosyalarını öncelikli gösterir
+- Gerekirse diğer dosyaları da gösterir
 - Seçilen dosyayı üst katmana bildirir
 
 NOT:
 - Bu dosya adı teknik nedenlerle desktop_picker olarak korunmuştur
 - Ancak artık sadece masaüstü için değil, tüm platformlar için kullanılır
+- Güvenli Klasör gibi ortamlarda uzantıya aşırı bağımlı olunmaz
 
-SURUM: 5
+SURUM: 6
 TARIH: 2026-03-15
 IMZA: FY.
 """
@@ -136,6 +139,18 @@ class DesktopPicker:
             return Path(mevcut_klasor.anchor) if mevcut_klasor.anchor else mevcut_klasor
         except Exception:
             return mevcut_klasor
+
+    def _dosya_turu_etiketi(self, dosya: Path) -> str:
+        try:
+            suffix = str(dosya.suffix or "").lower()
+        except Exception:
+            suffix = ""
+
+        if suffix == ".py":
+            return "[PY]"
+        if suffix:
+            return f"[DOSYA {suffix}]"
+        return "[DOSYA]"
 
     def _build_popup_toolbar(self):
         toolbar = IconToolbar(
@@ -264,7 +279,7 @@ class DesktopPicker:
         ana.add_widget(yol_input)
 
         bilgi_lbl = Label(
-            text=".py dosyaları listelenir",
+            text="Klasörler ve dosyalar listelenir. .py dosyaları önceliklidir.",
             size_hint_y=None,
             height=dp(18),
             color=TEXT_MUTED,
@@ -321,7 +336,9 @@ class DesktopPicker:
 
             try:
                 klasorler = []
-                dosyalar = []
+                py_dosyalari = []
+                diger_dosyalar = []
+                hata_sayisi = 0
 
                 for oge in sorted(
                     mevcut_klasor.iterdir(),
@@ -330,10 +347,15 @@ class DesktopPicker:
                     try:
                         if oge.is_dir():
                             klasorler.append(oge)
-                        elif oge.is_file() and oge.suffix.lower() == ".py":
-                            dosyalar.append(oge)
-                    except Exception:
-                        pass
+                        elif oge.is_file():
+                            suffix = str(oge.suffix or "").lower()
+                            if suffix == ".py":
+                                py_dosyalari.append(oge)
+                            else:
+                                diger_dosyalar.append(oge)
+                    except Exception as exc:
+                        hata_sayisi += 1
+                        self._debug(f"Oge okunamadı: {oge} | {exc}")
 
                 for klasor in klasorler:
                     self._popup_satiri_ekle(
@@ -343,7 +365,7 @@ class DesktopPicker:
                         CARD_BG,
                     )
 
-                for dosya in dosyalar:
+                for dosya in py_dosyalari:
                     self._popup_satiri_ekle(
                         liste,
                         "[PY]  " + dosya.name,
@@ -351,13 +373,26 @@ class DesktopPicker:
                         CARD_BG_SOFT,
                     )
 
-                if not klasorler and not dosyalar:
+                if not py_dosyalari and diger_dosyalar:
+                    for dosya in diger_dosyalar:
+                        etiket = self._dosya_turu_etiketi(dosya)
+                        self._popup_satiri_ekle(
+                            liste,
+                            f"{etiket}  {dosya.name}",
+                            lambda _btn, p=dosya: dosya_sec(p),
+                            CARD_BG_DARK,
+                        )
+
+                if not klasorler and not py_dosyalari and not diger_dosyalar:
                     self._popup_satiri_ekle(
                         liste,
-                        "Bu klasörde Python dosyası yok.",
+                        "Bu klasörde gösterilebilir dosya yok.",
                         lambda *_: None,
                         CARD_BG_DARK,
                     )
+
+                if hata_sayisi > 0:
+                    self._debug(f"Listeleme sırasında {hata_sayisi} öğe atlandı")
 
             except Exception as exc:
                 self._popup_satiri_ekle(
