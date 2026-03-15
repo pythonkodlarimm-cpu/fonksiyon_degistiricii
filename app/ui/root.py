@@ -4,7 +4,7 @@ DOSYA: app/ui/root.py
 
 ROL:
 - Uygulamanın ana root widget'ı
-- Dosya seçme, fonksiyon tarama, seçim ve güncelleme akışını yönetir
+- Dosya seçme, fonksiyon tarama, seçim, güncelleme ve geri yükleme akışını yönetir
 - UI katmanını çekirdek servislerle bağlar
 
 MİMARİ:
@@ -12,14 +12,15 @@ MİMARİ:
 - Root sadece yerleşim + state + akış yönetir
 - Görsel çizim alt bileşenlerin kendi içinde kalır
 
-SURUM: 7
-TARIH: 2026-03-15
+SURUM: 11
+TARIH: 2026-03-16
 IMZA: FY.
 """
 
 from __future__ import annotations
 
 import traceback
+from pathlib import Path
 
 from kivy.metrics import dp
 from kivy.uix.boxlayout import BoxLayout
@@ -30,26 +31,30 @@ from kivy.utils import platform
 from app.core.degistirici import find_item_by_identity
 from app.core.degistirici import update_function_in_code
 from app.core.tarayici import scan_functions_from_file
-from app.services.dosya_servisi import exists
+from app.services.belge_geri_yukleme_servisi import (
+    BelgeGeriYuklemeServisiHatasi,
+    son_yedekten_geri_yukle,
+)
+from app.services.belge_oturumu_servisi import (
+    BelgeOturumuServisiHatasi,
+    calisma_dosyasi_yolu,
+    calisma_kopyasi_var_mi,
+    guncellenmis_icerigi_kaydet,
+    oturum_baslat,
+    oturum_display_name,
+    oturum_identifier,
+    son_yedek_yolu,
+)
 from app.services.dosya_servisi import read_text
-from app.services.dosya_servisi import safe_write_with_backup
 from app.ui.dosya_secici import DosyaSecici
+from app.ui.dosya_secici_paketi.models import DocumentSelection
 from app.ui.durum_cubugu import DurumCubugu
 from app.ui.editor_paneli import EditorPaneli
 from app.ui.fonksiyon_listesi import FonksiyonListesi
+from app.ui.tum_dosya_erisim_paneli import TumDosyaErisimPaneli
 
 
 class RootWidget(BoxLayout):
-    """
-    Uygulamanın ana kök arayüzü.
-
-    Sorumluluklar:
-    - dosya state yönetimi
-    - fonksiyon listesini yenileme
-    - seçim ve güncelleme akışını yürütme
-    - alt bileşenler arası bağlantıyı kurma
-    """
-
     def __init__(self, **kwargs):
         super().__init__(
             orientation="vertical",
@@ -59,11 +64,13 @@ class RootWidget(BoxLayout):
         )
 
         self.current_file_path = ""
+        self.current_session = None
         self.items = []
         self.selected_item = None
 
         self.scroll = None
         self.main_column = None
+        self.file_access_panel = None
         self.dosya_secici = None
         self.function_list = None
         self.editor = None
@@ -81,24 +88,29 @@ class RootWidget(BoxLayout):
             self.add_widget(self._build_fallback_error_ui(hata))
 
     # =========================================================
+    # DEBUG
+    # =========================================================
+    def _debug(self, message: str) -> None:
+        try:
+            print("[ROOT]", str(message))
+        except Exception:
+            pass
+
+    # =========================================================
     # VERSION
     # =========================================================
     def _resolve_app_version(self) -> str:
-        """
-        Uygulama sürümünü mümkünse Android APK içinden otomatik okur.
-        Masaüstünde/fallback durumda geliştirici sürümü döner.
-        """
         if platform == "android":
             try:
                 from jnius import autoclass, cast  # type: ignore
 
                 PythonActivity = autoclass("org.kivy.android.PythonActivity")
                 current_activity = cast("android.app.Activity", PythonActivity.mActivity)
-                package_manager = current_activity.getPackageManager()
-                package_name = current_activity.getPackageName()
-                package_info = package_manager.getPackageInfo(package_name, 0)
+                package_info = current_activity.getPackageManager().getPackageInfo(
+                    current_activity.getPackageName(),
+                    0,
+                )
                 version_name = str(getattr(package_info, "versionName", "") or "").strip()
-
                 if version_name:
                     return version_name
             except Exception:
@@ -148,6 +160,12 @@ class RootWidget(BoxLayout):
         )
         self.main_column.bind(minimum_height=self.main_column.setter("height"))
 
+        self.file_access_panel = TumDosyaErisimPaneli(
+            on_status_changed=self._on_file_access_status_changed,
+        )
+        self.file_access_panel.size_hint_y = None
+        self.main_column.add_widget(self.file_access_panel)
+
         self.dosya_secici = DosyaSecici(
             on_scan=self.scan_file,
             on_refresh=self.refresh_file,
@@ -163,6 +181,7 @@ class RootWidget(BoxLayout):
 
         self.editor = EditorPaneli(
             on_update=self.update_selected_function,
+            on_restore=self.geri_yukle_secili_belge,
         )
         self.editor.size_hint_y = None
         self.editor.height = dp(760)
@@ -184,20 +203,7 @@ class RootWidget(BoxLayout):
         self.version_label = self._build_version_label()
         alt_bar.add_widget(self.version_label)
 
-        toplam_yukseklik = 0
-        try:
-            toplam_yukseklik += int(self.status.height)
-        except Exception:
-            toplam_yukseklik += int(dp(40))
-
-        try:
-            toplam_yukseklik += int(self.version_label.height)
-        except Exception:
-            toplam_yukseklik += int(dp(20))
-
-        toplam_yukseklik += int(dp(2))
-        alt_bar.height = toplam_yukseklik
-
+        alt_bar.height = int(self.status.height) + int(self.version_label.height) + int(dp(2))
         self.add_widget(alt_bar)
 
     def _build_fallback_error_ui(self, hata_metni: str) -> BoxLayout:
@@ -227,7 +233,6 @@ class RootWidget(BoxLayout):
         )
         mesaj.bind(size=lambda inst, size: setattr(inst, "text_size", (size[0], None)))
         root.add_widget(mesaj)
-
         return root
 
     # =========================================================
@@ -241,43 +246,35 @@ class RootWidget(BoxLayout):
             pass
 
     def set_status(self, text: str, icon_name: str = "") -> None:
-        self._safe_set_status(text, icon_name=icon_name)
+        self._safe_set_status(text, icon_name)
 
-    def _current_or_selector_path(self, file_path: str = "") -> str:
-        temiz = str(file_path or "").strip()
-        if temiz:
-            return temiz
-
+    def _on_file_access_status_changed(self, durum: bool) -> None:
         try:
-            if self.dosya_secici is not None:
-                alternatif = str(self.dosya_secici.get_path() or "").strip()
-                if alternatif:
-                    return alternatif
+            if durum:
+                self.set_status("Tüm dosya erişimi açık.", "onaylandi.png")
+            else:
+                self.set_status("Tüm dosya erişimi kapalı.", "warning.png")
         except Exception:
             pass
 
-        return ""
-
     def _clear_state(self) -> None:
         self.current_file_path = ""
+        self.current_session = None
         self.items = []
         self.selected_item = None
 
         try:
-            if self.dosya_secici is not None:
-                self.dosya_secici.set_path("")
+            self.dosya_secici.clear_selection()
         except Exception:
             pass
 
         try:
-            if self.function_list is not None:
-                self.function_list.clear_all()
+            self.function_list.clear_all()
         except Exception:
             pass
 
         try:
-            if self.editor is not None:
-                self.editor.clear_all()
+            self.editor.clear_all()
         except Exception:
             pass
 
@@ -286,14 +283,12 @@ class RootWidget(BoxLayout):
         self.selected_item = None
 
         try:
-            if self.function_list is not None:
-                self.function_list.clear_all()
+            self.function_list.clear_all()
         except Exception:
             pass
 
         try:
-            if self.editor is not None:
-                self.editor.clear_all()
+            self.editor.clear_all()
         except Exception:
             pass
 
@@ -301,29 +296,31 @@ class RootWidget(BoxLayout):
         self.selected_item = None
 
         try:
-            if self.function_list is not None:
-                self.function_list.clear_selection()
-                self.function_list.clear_new_preview()
+            self.function_list.clear_selection()
+            self.function_list.clear_new_preview()
         except Exception:
             pass
 
         try:
-            if self.editor is not None:
-                self.editor.clear_selection()
-                self.editor.set_new_code_text("")
+            self.editor.clear_selection()
+            self.editor.set_new_code_text("")
         except Exception:
             pass
 
-    def _safe_backup_text(self, backup_path) -> str:
-        metin = str(backup_path or "").strip()
-        return metin if metin else "yedek_bilinmiyor"
+    def _safe_backup_text(self) -> str:
+        try:
+            metin = str(son_yedek_yolu(self.current_session) or "").strip()
+            if metin:
+                return metin
+        except Exception:
+            pass
+        return "yedek_bilinmiyor"
 
     def _reload_items_from_current_file(self) -> None:
         if not self.current_file_path:
             self.items = []
             try:
-                if self.function_list is not None:
-                    self.function_list.clear_all()
+                self.function_list.clear_all()
             except Exception:
                 pass
             return
@@ -331,31 +328,68 @@ class RootWidget(BoxLayout):
         self.items = scan_functions_from_file(self.current_file_path)
 
         try:
-            if self.function_list is not None:
-                self.function_list.set_items(self.items)
-            else:
-                pass
+            self.function_list.set_items(self.items)
         except Exception:
             pass
 
-    def _scan_or_refresh(self, file_path: str) -> None:
-        temiz_yol = self._current_or_selector_path(file_path)
+    def _selection_from_ui(self):
+        try:
+            secim = self.dosya_secici.get_selection()
+            if secim is not None:
+                return secim
+        except Exception:
+            pass
 
-        if not temiz_yol:
+        try:
+            ham = str(self.dosya_secici.get_path() or "").strip()
+            if ham and Path(ham).exists() and Path(ham).is_file():
+                return DocumentSelection(
+                    source="filesystem",
+                    uri="",
+                    local_path=ham,
+                    display_name=Path(ham).name,
+                    mime_type="",
+                )
+        except Exception:
+            pass
+
+        return None
+
+    # =========================================================
+    # DOSYA AKIŞI
+    # =========================================================
+    def _scan_or_refresh(self, _ignored_file_path: str) -> None:
+        selection = self._selection_from_ui()
+        if selection is None:
             self._clear_state()
             self.set_status("Dosya seçilmedi.", "warning.png")
             return
 
-        if not exists(temiz_yol):
+        try:
+            session = oturum_baslat(selection)
+        except BelgeOturumuServisiHatasi as exc:
             self._clear_state()
-            self.set_status("Dosya bulunamadı.", "warning.png")
+            self.set_status(f"Oturum başlatılamadı: {exc}", "warning.png")
             return
 
-        self.current_file_path = temiz_yol
+        working_path = str(calisma_dosyasi_yolu(session) or "").strip()
+        source_identifier = str(oturum_identifier(session) or "").strip()
+        display_name = str(oturum_display_name(session) or "").strip()
+
+        if not working_path:
+            self._clear_state()
+            self.set_status("Çalışma dosyası oluşturulamadı.", "warning.png")
+            return
+
+        self.current_session = session
+        self.current_file_path = working_path
+
+        if not calisma_kopyasi_var_mi(session):
+            self.set_status("Çalışma dosyası bulunamadı.", "warning.png")
+            return
 
         try:
-            if self.dosya_secici is not None:
-                self.dosya_secici.set_path(temiz_yol)
+            self.dosya_secici.set_path(source_identifier or working_path)
         except Exception:
             pass
 
@@ -363,11 +397,59 @@ class RootWidget(BoxLayout):
         self._reload_items_from_current_file()
         self._reset_selection_only()
 
-        self.set_status(
-            f"Tarama tamamlandı. {len(self.items)} fonksiyon bulundu.",
-            "search.png",
-        )
+        if display_name:
+            self.set_status(
+                f"Tarama tamamlandı. {len(self.items)} fonksiyon bulundu. Belge: {display_name}",
+                "search.png",
+            )
+        else:
+            self.set_status(
+                f"Tarama tamamlandı. {len(self.items)} fonksiyon bulundu.",
+                "search.png",
+            )
 
+    def refresh_file(self, file_path: str) -> None:
+        try:
+            self._scan_or_refresh(file_path)
+        except Exception:
+            self._clear_state()
+            self.set_status("Yenileme hatası oluştu.", "warning.png")
+            print(traceback.format_exc())
+
+    def scan_file(self, file_path: str) -> None:
+        try:
+            self._scan_or_refresh(file_path)
+        except Exception:
+            self._clear_state()
+            self.set_status("Tarama hatası oluştu.", "warning.png")
+            print(traceback.format_exc())
+
+    # =========================================================
+    # SEÇİM
+    # =========================================================
+    def select_item(self, item) -> None:
+        self.selected_item = item
+
+        try:
+            self.editor.set_item(item)
+            self.editor.set_new_code_text("")
+        except Exception:
+            pass
+
+        try:
+            self.function_list.set_selected_preview(str(getattr(item, "source", "") or ""))
+            self.function_list.clear_new_preview()
+        except Exception:
+            pass
+
+        try:
+            self.set_status(f"Seçildi: {item.path}", "visibility_on.png")
+        except Exception:
+            self.set_status("Fonksiyon seçildi.", "visibility_on.png")
+
+    # =========================================================
+    # HELPERS
+    # =========================================================
     def _find_refreshed_item(self, old_item):
         if old_item is None:
             return None
@@ -403,77 +485,19 @@ class RootWidget(BoxLayout):
         return None
 
     # =========================================================
-    # DOSYA AKIŞI
-    # =========================================================
-    def refresh_file(self, file_path: str) -> None:
-        try:
-            self._scan_or_refresh(file_path)
-        except ValueError as exc:
-            self._clear_state()
-            self.set_status(str(exc), "warning.png")
-        except SyntaxError as exc:
-            self._clear_state()
-            self.set_status(f"SyntaxError: {exc}", "warning.png")
-        except Exception:
-            self._clear_state()
-            self.set_status("Yenileme hatası oluştu.", "warning.png")
-            print(traceback.format_exc())
-
-    def scan_file(self, file_path: str) -> None:
-        try:
-            self._scan_or_refresh(file_path)
-        except ValueError as exc:
-            self._clear_state()
-            self.set_status(str(exc), "warning.png")
-        except SyntaxError as exc:
-            self._clear_state()
-            self.set_status(f"SyntaxError: {exc}", "warning.png")
-        except Exception:
-            self._clear_state()
-            self.set_status("Tarama hatası oluştu.", "warning.png")
-            print(traceback.format_exc())
-
-    # =========================================================
-    # SEÇİM
-    # =========================================================
-    def select_item(self, item) -> None:
-        self.selected_item = item
-
-        try:
-            if self.editor is not None:
-                self.editor.set_item(item)
-                self.editor.set_new_code_text("")
-        except Exception:
-            pass
-
-        try:
-            if self.function_list is not None:
-                self.function_list.set_selected_preview(
-                    str(getattr(item, "source", "") or "")
-                )
-                self.function_list.clear_new_preview()
-        except Exception:
-            pass
-
-        try:
-            self.set_status(f"Seçildi: {item.path}", "visibility_on.png")
-        except Exception:
-            self.set_status("Fonksiyon seçildi.", "visibility_on.png")
-
-    # =========================================================
     # GÜNCELLEME
     # =========================================================
     def update_selected_function(self, item, new_code: str) -> None:
         try:
-            if not self.current_file_path:
-                self.current_file_path = self._current_or_selector_path("")
-
-            if not self.current_file_path:
+            if self.current_session is None:
                 self.set_status("Önce dosya seç.", "warning.png")
                 return
 
-            if not exists(self.current_file_path):
-                self.set_status("Seçili dosya artık bulunamadı.", "warning.png")
+            if not self.current_file_path:
+                self.current_file_path = str(calisma_dosyasi_yolu(self.current_session) or "").strip()
+
+            if not self.current_file_path or not calisma_kopyasi_var_mi(self.current_session):
+                self.set_status("Çalışma dosyası artık bulunamadı.", "warning.png")
                 return
 
             if item is None:
@@ -485,24 +509,18 @@ class RootWidget(BoxLayout):
                 return
 
             try:
-                if self.function_list is not None:
-                    self.function_list.set_new_preview(str(new_code or ""))
+                self.function_list.set_new_preview(str(new_code or ""))
             except Exception:
                 pass
 
             try:
-                if self.editor is not None:
-                    self.editor.set_new_code_text(str(new_code or ""))
+                self.editor.set_new_code_text(str(new_code or ""))
             except Exception:
                 pass
 
             old_source = read_text(self.current_file_path)
-            if not isinstance(old_source, str):
-                self.set_status("Kaynak dosya okunamadı.", "warning.png")
-                return
-
             updated_source = update_function_in_code(old_source, item, new_code)
-            backup_path = safe_write_with_backup(self.current_file_path, updated_source)
+            backup_path = guncellenmis_icerigi_kaydet(self.current_session, updated_source)
 
             self._reload_items_from_current_file()
 
@@ -510,24 +528,20 @@ class RootWidget(BoxLayout):
             self.selected_item = refreshed
 
             try:
-                if self.function_list is not None:
-                    self.function_list.set_items(self.items)
-                    self.function_list.selected_item = refreshed
-                    self.function_list.set_selected_preview(
-                        str(getattr(refreshed, "source", "") or "")
-                    )
-                    self.function_list.set_new_preview(str(new_code or ""))
+                self.function_list.set_items(self.items)
+                self.function_list.selected_item = refreshed
+                self.function_list.set_selected_preview(str(getattr(refreshed, "source", "") or ""))
+                self.function_list.set_new_preview(str(new_code or ""))
             except Exception:
                 pass
 
             try:
-                if self.editor is not None:
-                    self.editor.set_item(refreshed)
-                    self.editor.set_new_code_text(str(new_code or ""))
+                self.editor.set_item(refreshed)
+                self.editor.set_new_code_text(str(new_code or ""))
             except Exception:
                 pass
 
-            backup_text = self._safe_backup_text(backup_path)
+            backup_text = str(backup_path or "").strip() or self._safe_backup_text()
 
             if refreshed is not None:
                 self.set_status(
@@ -540,10 +554,48 @@ class RootWidget(BoxLayout):
                     "onaylandi.png",
                 )
 
+        except BelgeOturumuServisiHatasi as exc:
+            self.set_status(str(exc), "warning.png")
         except ValueError as exc:
             self.set_status(str(exc), "warning.png")
         except SyntaxError as exc:
             self.set_status(f"Sözdizimi hatası: {exc}", "warning.png")
         except Exception:
             self.set_status("Güncelleme hatası oluştu.", "warning.png")
+            print(traceback.format_exc())
+
+    # =========================================================
+    # GERİ YÜKLEME
+    # =========================================================
+    def geri_yukle_secili_belge(self) -> None:
+        try:
+            if self.current_session is None:
+                self.set_status("Önce dosya seç.", "warning.png")
+                return
+
+            backup_path = str(getattr(self.current_session, "last_backup_path", "") or "").strip()
+            if not backup_path:
+                self.set_status("Geri yüklenecek yedek bulunamadı.", "warning.png")
+                return
+
+            geri_yuklenen = son_yedekten_geri_yukle(self.current_session)
+
+            try:
+                self.current_file_path = str(calisma_dosyasi_yolu(self.current_session) or "").strip()
+            except Exception:
+                pass
+
+            self._clear_view_only()
+            self._reload_items_from_current_file()
+            self._reset_selection_only()
+
+            self.set_status(
+                f"Geri yüklendi. Yedek: {geri_yuklenen}",
+                "onaylandi.png",
+            )
+
+        except BelgeGeriYuklemeServisiHatasi as exc:
+            self.set_status(str(exc), "warning.png")
+        except Exception:
+            self.set_status("Geri yükleme hatası oluştu.", "warning.png")
             print(traceback.format_exc())
