@@ -11,6 +11,10 @@ jobs:
   build:
     runs-on: ubuntu-22.04
 
+    env:
+      BUILD_NUMBER: ${{ github.run_number }}
+      APP_VERSION: 0.1.${{ github.run_number }}
+
     steps:
       - name: Depoyu al
         uses: actions/checkout@v6
@@ -71,6 +75,8 @@ jobs:
           echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
           echo "ANDROIDAPI=$ANDROIDAPI"
           echo "ANDROIDMINAPI=$ANDROIDMINAPI"
+          echo "BUILD_NUMBER=$BUILD_NUMBER"
+          echo "APP_VERSION=$APP_VERSION"
           which python
           python --version
           which java
@@ -122,6 +128,56 @@ jobs:
           python -m pip show buildozer || true
           python -m pip show cython || true
 
+      - name: buildozer.spec sürümünü otomatik artır
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python - << 'PY'
+          from pathlib import Path
+          import re
+
+          spec_path = Path("buildozer.spec")
+          text = spec_path.read_text(encoding="utf-8")
+
+          yeni_surume = "${APP_VERSION}"
+          pattern = r"(?m)^version\s*=\s*.*$"
+
+          if re.search(pattern, text):
+              text = re.sub(pattern, f"version = {yeni_surume}", text, count=1)
+          else:
+              raise SystemExit("buildozer.spec içinde 'version =' satırı bulunamadı.")
+
+          spec_path.write_text(text, encoding="utf-8")
+          print(f"Yeni sürüm yazıldı: {yeni_surume}")
+          PY
+
+          echo "---- Güncellenmiş buildozer.spec sürüm satırı ----"
+          grep -n "^version" buildozer.spec
+
+      - name: Keystore dosyasını secret'tan oluştur
+        shell: bash
+        run: |
+          set -euxo pipefail
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > release.keystore
+          test -f release.keystore
+          ls -lh release.keystore
+
+      - name: buildozer.spec içine release signing ayarlarını ekle
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cat >> buildozer.spec << EOF
+
+          android.release_artifact = apk
+          android.keystore = release.keystore
+          android.keystore_passwd = ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          android.keyalias = ${{ secrets.ANDROID_KEY_ALIAS }}
+          android.keyalias_passwd = ${{ secrets.ANDROID_KEY_ALIAS_PASSWORD }}
+          EOF
+
+          echo "---- Signing satirlari eklendi ----"
+          tail -n 12 buildozer.spec
+
       - name: Eski build temizle
         shell: bash
         run: |
@@ -144,7 +200,16 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          buildozer android debug 2>&1 | tee build.log
+          buildozer android release 2>&1 | tee build.log
+
+      - name: İmzayı doğrula
+        if: ${{ success() }}
+        shell: bash
+        run: |
+          set -euxo pipefail
+          APK_PATH="$(find bin -name '*.apk' | head -n 1)"
+          test -n "$APK_PATH"
+          /usr/local/lib/android/sdk/build-tools/31.0.0/apksigner verify --verbose "$APK_PATH"
 
       - name: Hata özeti hazırla
         if: ${{ failure() }}
@@ -180,6 +245,10 @@ jobs:
               "no such file",
               "sdk path",
               "does not exist",
+              "keystore",
+              "apksigner",
+              "alias",
+              "release",
           )
 
           parcali = []
@@ -214,7 +283,7 @@ jobs:
               out.append("")
               out.append("## buildozer.spec özeti")
               out.append("```ini")
-              out.append("\n".join(spec.splitlines()[:140]))
+              out.append("\n".join(spec.splitlines()[:180]))
               out.append("```")
 
           env_dump = oku("env_dump.txt")
@@ -227,12 +296,14 @@ jobs:
                       "pythonLocation",
                       "GITHUB_WORKSPACE",
                       "RUNNER_OS",
+                      "BUILD_NUMBER",
+                      "APP_VERSION",
                   ]):
                       secili.append(line)
               out.append("")
               out.append("## Ortam özeti")
               out.append("```text")
-              out.append("\n".join(secili[:120]))
+              out.append("\n".join(secili[:140]))
               out.append("```")
 
           Path("summary.md").write_text("\n".join(out), encoding="utf-8")
@@ -248,7 +319,7 @@ jobs:
         if: ${{ always() }}
         uses: actions/upload-artifact@v6
         with:
-          name: build-diagnostics
+          name: build-diagnostics-${{ env.APP_VERSION }}
           path: |
             build.log
             summary.md
@@ -261,6 +332,6 @@ jobs:
         if: ${{ success() }}
         uses: actions/upload-artifact@v6
         with:
-          name: fonksiyon-degistirici-apk
+          name: fonksiyon-degistirici-apk-${{ env.APP_VERSION }}
           path: bin/*.apk
           if-no-files-found: warn
