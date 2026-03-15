@@ -159,9 +159,10 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
-          printf '%s' "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > release.keystore
-          test -s release.keystore
-          ls -lh release.keystore
+          printf '%s' "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > "${{ github.workspace }}/release.keystore"
+          test -s "${{ github.workspace }}/release.keystore"
+          chmod 600 "${{ github.workspace }}/release.keystore"
+          ls -lh "${{ github.workspace }}/release.keystore"
 
       - name: Eski build temizle
         shell: bash
@@ -184,12 +185,14 @@ jobs:
       - name: APK derle
         shell: bash
         env:
-          P4A_RELEASE_KEYSTORE: release.keystore
+          P4A_RELEASE_KEYSTORE: ${{ github.workspace }}/release.keystore
           P4A_RELEASE_KEYSTORE_PASSWD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           P4A_RELEASE_KEYALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           P4A_RELEASE_KEYALIAS_PASSWD: ${{ secrets.ANDROID_KEY_ALIAS_PASSWORD }}
         run: |
-          set -o pipefail
+          set -euxo pipefail
+          test -f "${{ github.workspace }}/release.keystore"
+          ls -lh "${{ github.workspace }}/release.keystore"
           buildozer android release 2>&1 | tee build.log
 
       - name: İmzayı doğrula
@@ -242,6 +245,7 @@ jobs:
               "release",
               "unsigned",
               "p4a_release",
+              "validatesigningrelease",
           )
 
           parcali = []
@@ -291,8 +295,6 @@ jobs:
                       "RUNNER_OS",
                       "BUILD_NUMBER",
                       "APP_VERSION",
-                      "P4A_RELEASE_KEYSTORE",
-                      "P4A_RELEASE_KEYALIAS",
                   ]):
                       secili.append(line)
               out.append("")
