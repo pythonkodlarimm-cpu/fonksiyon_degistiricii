@@ -5,22 +5,21 @@ DOSYA: app/ui/dosya_secici.py
 ROL:
 - Dosya seçici UI organizatörü
 - Seç / Yenile aksiyonlarını yönetir
-- Platform fark etmeksizin uygulama içi özel picker kullanır
+- Android'de tree picker, diğer ortamlarda iç picker kullanır
 - Seçilen dosyayı üst katmana bildirir
 
 MİMARİ:
 - UI burada
-- Picker sınıfı lazy import ile yüklenir
-- Ağır modüller uygulama açılışında yüklenmez
-- Gerçek picker nesnesi sadece kullanıcı "Seç" butonuna basınca oluşturulur
+- Picker sınıfları lazy import ile yüklenir
+- Ağır Android modülleri uygulama açılışında yüklenmez
+- Gerçek picker nesneleri sadece kullanıcı "Seç" butonuna basınca oluşturulur
 
 DAVRANIŞ:
-- Android ve masaüstünde aynı özel picker çalışır
-- Kullanıcı klasör içinde gezinir
-- .py dosyasını seçince otomatik tarama başlar
-- Ayrı "Tara" aksiyonu yoktur
+- Android'de kullanıcı önce klasör seçer, sonra klasör içindeki .py dosyalar listelenir
+- Masaüstünde mevcut iç picker ile devam edilir
+- Seçim sonrası otomatik tarama başlar
 
-SURUM: 17
+SURUM: 18
 TARIH: 2026-03-15
 IMZA: FY.
 """
@@ -46,7 +45,8 @@ class DosyaSecici(BoxLayout):
 
     Özellikler:
     - seçili dosya yolunu gösterir
-    - uygulama içi özel picker ile dosya seçer
+    - Android'de SAF tree picker kullanır
+    - diğer ortamlarda uygulama içi picker kullanır
     - seçim sonrası taramayı otomatik başlatır
     - yenile akışını dış callback'e devreder
     """
@@ -64,7 +64,8 @@ class DosyaSecici(BoxLayout):
         self.on_refresh = on_refresh
 
         self._last_selected_path = ""
-        self._internal_picker = None
+        self._desktop_picker = None
+        self._android_tree_picker = None
 
         self._build_ui()
 
@@ -80,6 +81,11 @@ class DosyaSecici(BoxLayout):
     # =========================================================
     # LAZY IMPORT
     # =========================================================
+    def _is_android_platform(self) -> bool:
+        from kivy.utils import platform
+
+        return platform == "android"
+
     def _show_info_popup(self, title: str, message: str) -> None:
         from app.ui.dosya_secici_paketi.info_popup import show_info_popup
 
@@ -89,17 +95,29 @@ class DosyaSecici(BoxLayout):
             message=message,
         )
 
-    def _get_internal_picker(self):
-        if self._internal_picker is None:
+    def _get_desktop_picker(self):
+        if self._desktop_picker is None:
             from app.ui.dosya_secici_paketi.desktop_picker import DesktopPicker
 
-            self._internal_picker = DesktopPicker(
+            self._desktop_picker = DesktopPicker(
                 owner=self,
                 on_selected=self._after_picker_selected,
             )
-            self._debug("Internal picker lazy oluşturuldu")
+            self._debug("DesktopPicker lazy oluşturuldu")
 
-        return self._internal_picker
+        return self._desktop_picker
+
+    def _get_android_tree_picker(self):
+        if self._android_tree_picker is None:
+            from app.ui.dosya_secici_paketi.android_tree_picker import AndroidTreePicker
+
+            self._android_tree_picker = AndroidTreePicker(
+                owner=self,
+                on_selected=self._after_picker_selected,
+            )
+            self._debug("AndroidTreePicker lazy oluşturuldu")
+
+        return self._android_tree_picker
 
     # =========================================================
     # UI
@@ -209,9 +227,14 @@ class DosyaSecici(BoxLayout):
             self.on_scan(yol)
 
     def _open_selector(self, *_args):
-        self._debug("Özel dosya seçici açılıyor")
-        picker = self._get_internal_picker()
-        picker.open_popup()
+        self._debug("Dosya seçici açılıyor")
+
+        if self._is_android_platform():
+            picker = self._get_android_tree_picker()
+            picker.open_tree_picker()
+        else:
+            picker = self._get_desktop_picker()
+            picker.open_popup()
 
     # =========================================================
     # PICKER CALLBACK
