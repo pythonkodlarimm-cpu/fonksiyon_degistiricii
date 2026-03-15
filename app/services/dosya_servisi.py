@@ -20,12 +20,13 @@ NOT:
   - geçici dosya temizliği
 
 ANDROID / APK NOTLARI:
-- Sistem picker ile seçilen geçici dosyalarla çalışabilir
+- Sistem picker veya tree picker ile seçilen geçici dosyalarla çalışabilir
 - Sabit proje kökü veya sabit depolama alanı varsaymaz
 - Geçici dosya, normal dosya, güvenli klasör görünümü gibi durumlarda
   path ne geldiyse onunla çalışır
+- Temp/cache dosyaları için de kontrollü erişim sağlar
 
-SURUM: 6
+SURUM: 7
 TARIH: 2026-03-15
 IMZA: FY.
 """
@@ -70,10 +71,13 @@ def _hash_text(text: str) -> str:
 
 def _ensure_parent_dir_exists(path_obj: Path) -> None:
     parent = path_obj.parent
-    if not parent.exists():
-        raise DosyaServisiHatasi(f"Hedef klasör bulunamadı: {parent}")
-    if not parent.is_dir():
-        raise DosyaServisiHatasi(f"Hedef klasör geçerli değil: {parent}")
+    try:
+        if not parent.exists():
+            raise DosyaServisiHatasi(f"Hedef klasör bulunamadı: {parent}")
+        if not parent.is_dir():
+            raise DosyaServisiHatasi(f"Hedef klasör geçerli değil: {parent}")
+    except OSError as exc:
+        raise DosyaServisiHatasi(f"Hedef klasör erişim hatası: {parent}") from exc
 
 
 def _copy_permissions_if_possible(src: Path, dst: Path) -> None:
@@ -92,17 +96,35 @@ def _cleanup_temp_file(temp_path: Path) -> None:
         pass
 
 
+def _path_exists(path_obj: Path) -> bool:
+    try:
+        return path_obj.exists()
+    except Exception:
+        return False
+
+
+def _path_is_file(path_obj: Path) -> bool:
+    try:
+        return path_obj.is_file()
+    except Exception:
+        return False
+
+
+def _path_is_dir(path_obj: Path) -> bool:
+    try:
+        return path_obj.is_dir()
+    except Exception:
+        return False
+
+
 def read_text(file_path: str | Path, encoding: str = "utf-8") -> str:
     path_obj = _normalize_path(file_path)
 
-    try:
-        if not path_obj.exists():
-            raise DosyaServisiHatasi(f"Dosya bulunamadı: {path_obj}")
+    if not _path_exists(path_obj):
+        raise DosyaServisiHatasi(f"Dosya bulunamadı: {path_obj}")
 
-        if not path_obj.is_file():
-            raise DosyaServisiHatasi(f"Geçerli bir dosya değil: {path_obj}")
-    except OSError as exc:
-        raise DosyaServisiHatasi(f"Dosya erişim hatası: {path_obj}") from exc
+    if not _path_is_file(path_obj):
+        raise DosyaServisiHatasi(f"Geçerli bir dosya değil: {path_obj}")
 
     try:
         return path_obj.read_text(encoding=encoding)
@@ -127,11 +149,8 @@ def write_text(file_path: str | Path, content: str, encoding: str = "utf-8") -> 
     """
     path_obj = _normalize_path(file_path)
 
-    try:
-        if path_obj.exists() and not path_obj.is_file():
-            raise DosyaServisiHatasi(f"Geçerli bir dosya değil: {path_obj}")
-    except OSError as exc:
-        raise DosyaServisiHatasi(f"Dosya erişim hatası: {path_obj}") from exc
+    if _path_exists(path_obj) and not _path_is_file(path_obj):
+        raise DosyaServisiHatasi(f"Geçerli bir dosya değil: {path_obj}")
 
     _ensure_parent_dir_exists(path_obj)
 
@@ -149,7 +168,6 @@ def write_text(file_path: str | Path, content: str, encoding: str = "utf-8") -> 
 
         os.replace(str(temp_path), str(path_obj))
 
-        # Mümkünse klasör metadata'sını da senkronla
         try:
             dir_fd = os.open(str(path_obj.parent), os.O_RDONLY)
             try:
@@ -159,7 +177,6 @@ def write_text(file_path: str | Path, content: str, encoding: str = "utf-8") -> 
         except Exception:
             pass
 
-        # Son doğrulama
         try:
             written_text = path_obj.read_text(encoding=encoding)
         except Exception as exc:
@@ -188,14 +205,11 @@ def backup_file(file_path: str | Path) -> str:
     """
     path_obj = _normalize_path(file_path)
 
-    try:
-        if not path_obj.exists():
-            raise DosyaServisiHatasi(f"Yedek alınacak dosya bulunamadı: {path_obj}")
+    if not _path_exists(path_obj):
+        raise DosyaServisiHatasi(f"Yedek alınacak dosya bulunamadı: {path_obj}")
 
-        if not path_obj.is_file():
-            raise DosyaServisiHatasi(f"Geçerli bir dosya değil: {path_obj}")
-    except OSError as exc:
-        raise DosyaServisiHatasi(f"Dosya erişim hatası: {path_obj}") from exc
+    if not _path_is_file(path_obj):
+        raise DosyaServisiHatasi(f"Geçerli bir dosya değil: {path_obj}")
 
     backup_path = _build_backup_path(path_obj)
 
@@ -222,8 +236,17 @@ def safe_write_with_backup(
 
 
 def exists(file_path: str | Path) -> bool:
+    """
+    Gerçek ve erişilebilir bir dosya mı kontrol eder.
+    Android temp/cache path akışlarında da güvenli şekilde çalışır.
+    """
     try:
-        return _normalize_path(file_path).is_file()
+        path_obj = _normalize_path(file_path)
+
+        if not _path_exists(path_obj):
+            return False
+
+        return _path_is_file(path_obj)
     except Exception:
         return False
 
@@ -236,10 +259,21 @@ def is_writable_file(file_path: str | Path) -> bool:
     try:
         path_obj = _normalize_path(file_path)
 
-        if path_obj.exists():
-            return path_obj.is_file() and os.access(str(path_obj), os.W_OK)
+        if _path_exists(path_obj):
+            return _path_is_file(path_obj) and os.access(str(path_obj), os.W_OK)
 
         parent = path_obj.parent
-        return parent.exists() and parent.is_dir() and os.access(str(parent), os.W_OK)
+        return _path_exists(parent) and _path_is_dir(parent) and os.access(str(parent), os.W_OK)
+    except Exception:
+        return False
+
+
+def is_readable_file(file_path: str | Path) -> bool:
+    """
+    Dosya mevcut ve okunabilir mi kontrol eder.
+    """
+    try:
+        path_obj = _normalize_path(file_path)
+        return _path_exists(path_obj) and _path_is_file(path_obj) and os.access(str(path_obj), os.R_OK)
     except Exception:
         return False
