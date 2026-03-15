@@ -167,17 +167,39 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
-          cat >> buildozer.spec <<EOF
+          python - <<PY
+          from pathlib import Path
 
-          android.release_artifact = apk
+          path = Path("buildozer.spec")
+          text = path.read_text(encoding="utf-8")
+
+          signing_block = """
           android.keystore = release.keystore
           android.keystore_passwd = ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           android.keyalias = ${{ secrets.ANDROID_KEY_ALIAS }}
           android.keyalias_passwd = ${{ secrets.ANDROID_KEY_ALIAS_PASSWORD }}
-          EOF
+          """.strip()
+
+          marker = "\n[buildozer]\n"
+          if marker not in text:
+              raise SystemExit("buildozer.spec içinde [buildozer] bölümü bulunamadı.")
+
+          for key in (
+              "android.keystore =",
+              "android.keystore_passwd =",
+              "android.keyalias =",
+              "android.keyalias_passwd =",
+          ):
+              if key in text:
+                  raise SystemExit(f"buildozer.spec içinde zaten mevcut satır bulundu: {key}")
+
+          text = text.replace(marker, "\n" + signing_block + "\n\n[buildozer]\n", 1)
+          path.write_text(text, encoding="utf-8")
+          print("Signing ayarlari [app] bolumune eklendi.")
+          PY
 
           echo "---- Signing satirlari eklendi ----"
-          tail -n 12 buildozer.spec
+          sed -n '1,260p' buildozer.spec
 
       - name: Eski build temizle
         shell: bash
@@ -208,8 +230,9 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
-          APK_PATH="$(find bin -name '*.apk' | head -n 1)"
+          APK_PATH="$(find bin -name '*.apk' ! -name '*unsigned*' | head -n 1)"
           test -n "$APK_PATH"
+          echo "Kontrol edilen APK: $APK_PATH"
           /usr/local/lib/android/sdk/build-tools/31.0.0/apksigner verify --verbose "$APK_PATH"
 
       - name: Hata özeti hazırla
@@ -250,6 +273,7 @@ jobs:
               "apksigner",
               "alias",
               "release",
+              "unsigned",
           )
 
           parcali = []
@@ -284,7 +308,7 @@ jobs:
               out.append("")
               out.append("## buildozer.spec özeti")
               out.append("```ini")
-              out.append("\n".join(spec.splitlines()[:180]))
+              out.append("\n".join(spec.splitlines()[:220]))
               out.append("```")
 
           env_dump = oku("env_dump.txt")
