@@ -7,14 +7,20 @@ ROL:
 - Dosya seçme, fonksiyon tarama, seçim, güncelleme ve geri yükleme akışını yönetir
 - UI katmanını çekirdek servislerle bağlar
 - Geçici bildirim overlay katmanını yönetir
+- Premium / reklam karar akışını merkezi olarak yönetir
 
 MİMARİ:
 - Root çizim yapmaz
 - Root sadece yerleşim + state + akış yönetir
 - Görsel çizim alt bileşenlerin kendi içinde kalır
 - Ana içerik ve overlay katmanı ayrıdır
+- Premium ve reklam mantığı servis katmanına delegasyonla çalışır
 
-SURUM: 15
+NOT:
+- Şu anda reklam tarafında TEST banner kullanılmaktadır.
+- Yayın öncesi reklam servisi içindeki test reklam birimi gerçek reklam birimi ile değiştirilmelidir.
+
+SURUM: 17
 TARIH: 2026-03-16
 IMZA: FY.
 """
@@ -50,6 +56,8 @@ from app.services.belge_oturumu_servisi import (
 )
 from app.services.dosya_servisi import read_text
 from app.services.gecici_bildirim_servisi import gecici_bildirim_servisi
+from app.services.premium_servisi import premium_servisi
+from app.services.reklam_servisi import reklam_servisi
 from app.ui.dosya_secici import DosyaSecici
 from app.ui.dosya_secici_paketi.models import DocumentSelection
 from app.ui.durum_cubugu import DurumCubugu
@@ -92,6 +100,7 @@ class RootWidget(FloatLayout):
 
         try:
             self._build_ui()
+            self._premium_kontrol()
             self.set_status_info("Hazır.", "onaylandi.png")
         except Exception:
             hata = traceback.format_exc()
@@ -105,6 +114,34 @@ class RootWidget(FloatLayout):
     def _debug(self, message: str) -> None:
         try:
             print("[ROOT]", str(message))
+        except Exception:
+            pass
+
+    # =========================================================
+    # PREMIUM / REKLAM
+    # =========================================================
+    def _premium_kontrol(self) -> None:
+        """
+        Premium kullanıcıda reklam yüklenmez.
+        Free kullanıcıda test banner yüklenir.
+
+        Not:
+        Reklam servisi şu anda test reklam birimi kullanmaktadır.
+        Yayın öncesi gerçek reklam birimi ile değiştirilmelidir.
+        """
+        try:
+            if premium_servisi.premium_aktif_mi():
+                self._debug("Premium aktif -> reklam yuklenmeyecek")
+            else:
+                if platform == "android":
+                    reklam_servisi.reklam_yukle()
+                self._debug("Free kullanici -> test reklam yukleme cagrildi")
+        except Exception:
+            pass
+
+    def premium_durumu_yenile(self) -> None:
+        try:
+            self._premium_kontrol()
         except Exception:
             pass
 
@@ -540,7 +577,7 @@ class RootWidget(FloatLayout):
             self.set_status_info("Fonksiyon seçildi.", "visibility_on.png")
 
     # =========================================================
-    # HELPERS
+    # ITEM HELPERS
     # =========================================================
     def _find_refreshed_item(self, old_item):
         if old_item is None:
