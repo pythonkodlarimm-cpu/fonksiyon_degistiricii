@@ -18,11 +18,12 @@ MİMARİ:
 DAVRANIŞ:
 - Uygulama açılışında iki ikon da görünür
 - Dosya Seç ile picker açılır
-- Dosya seçildikten sonra otomatik tarama da tetiklenir
+- Dosya seçildikten sonra otomatik tarama tetiklenir
 - Fonksiyonları Göster butonu seçili dosyayı tekrar tarar
-- Dosya yoksa kullanıcıya bilgi verir
+- Ham URI ekranda ana metin olarak gösterilmez
+- Dosya adı ve kısa durum bilgisi öne çıkarılır
 
-SURUM: 26
+SURUM: 29
 TARIH: 2026-03-16
 IMZA: FY.
 """
@@ -33,21 +34,25 @@ from kivy.clock import Clock
 from kivy.metrics import dp
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.label import Label
-from kivy.uix.textinput import TextInput
 from kivy.utils import platform
 
 from app.ui.icon_toolbar import IconToolbar
 from app.ui.iconlu_baslik import IconluBaslik
-from app.ui.tema import INPUT_BG, TEXT_MUTED, TEXT_PRIMARY
+from app.ui.kart import Kart
+from app.ui.tema import TEXT_MUTED, TEXT_PRIMARY
 
 
-class DosyaSecici(BoxLayout):
+class DosyaSecici(Kart):
     def __init__(self, on_scan, on_refresh=None, **kwargs):
         super().__init__(
             orientation="vertical",
             size_hint_y=None,
-            height=dp(156),
+            height=dp(172),
             spacing=dp(8),
+            padding=(dp(12), dp(10), dp(12), dp(12)),
+            bg=(0.08, 0.11, 0.16, 1),
+            border=(0.18, 0.21, 0.27, 1),
+            radius=16,
             **kwargs,
         )
 
@@ -62,15 +67,17 @@ class DosyaSecici(BoxLayout):
         self._last_display_name = ""
 
         self.header = None
-        self.path_input = None
-        self.path_hint = None
+        self.file_name_label = None
+        self.file_detail_label = None
+        self.status_hint_label = None
         self.toolbar = None
         self.select_tool = None
         self.show_functions_tool = None
 
-        self._tool_visible_width = dp(120)
+        self._tool_visible_width = dp(116)
 
         self._build_ui()
+        self._refresh_summary()
 
     # =========================================================
     # DEBUG
@@ -126,55 +133,83 @@ class DosyaSecici(BoxLayout):
         self.header = IconluBaslik(
             text="Belge / Kod Dosyası",
             icon_name="schema.png",
-            height_dp=30,
-            font_size="15sp",
+            height_dp=28,
+            font_size="14sp",
             color=TEXT_PRIMARY,
         )
+        self.header.size_hint_y = None
+        self.header.height = dp(28)
         self.add_widget(self.header)
 
-        self.path_input = TextInput(
-            hint_text="Dosya seç...",
-            multiline=False,
-            readonly=True,
+        summary_wrap = BoxLayout(
+            orientation="vertical",
             size_hint_y=None,
-            height=dp(46),
-            background_normal="",
-            background_active="",
-            background_color=INPUT_BG,
-            foreground_color=TEXT_PRIMARY,
-            cursor_color=TEXT_PRIMARY,
-            padding=(dp(12), dp(12)),
-            font_size="14sp",
+            height=dp(54),
+            spacing=dp(2),
         )
-        self.add_widget(self.path_input)
 
-        self.path_hint = Label(
-            text="Seçilen belge burada görünecek",
-            size_hint_y=None,
-            height=dp(16),
-            color=TEXT_MUTED,
-            font_size="12sp",
+        self.file_name_label = Label(
+            text="Dosya seçilmedi",
+            color=TEXT_PRIMARY,
+            font_size="16sp",
+            bold=True,
             halign="left",
             valign="middle",
+            size_hint_y=None,
+            height=dp(24),
             shorten=True,
             shorten_from="right",
         )
-        self.path_hint.bind(
+        self.file_name_label.bind(
             size=lambda inst, size: setattr(inst, "text_size", (size[0], None))
         )
-        self.add_widget(self.path_hint)
+        summary_wrap.add_widget(self.file_name_label)
+
+        self.file_detail_label = Label(
+            text="Seçilen belge kimliği burada kısa biçimde görünür.",
+            color=TEXT_MUTED,
+            font_size="11sp",
+            halign="left",
+            valign="middle",
+            size_hint_y=None,
+            height=dp(16),
+            shorten=True,
+            shorten_from="right",
+        )
+        self.file_detail_label.bind(
+            size=lambda inst, size: setattr(inst, "text_size", (size[0], None))
+        )
+        summary_wrap.add_widget(self.file_detail_label)
+
+        self.status_hint_label = Label(
+            text="Belge seçmeniz bekleniyor.",
+            color=(0.76, 0.82, 0.92, 1),
+            font_size="11sp",
+            halign="left",
+            valign="middle",
+            size_hint_y=None,
+            height=dp(16),
+            shorten=True,
+            shorten_from="right",
+        )
+        self.status_hint_label.bind(
+            size=lambda inst, size: setattr(inst, "text_size", (size[0], None))
+        )
+        summary_wrap.add_widget(self.status_hint_label)
+
+        self.add_widget(summary_wrap)
 
         self.toolbar = IconToolbar(
-            spacing_dp=24,
-            padding_dp=8,
+            spacing_dp=26,
+            padding_dp=6,
         )
 
         self.select_tool = self.toolbar.add_tool(
             icon_name="dosya_sec.png",
             text="Dosya Seç",
             on_release=self._handle_select_pressed,
-            icon_size_dp=54,
-            text_size="13sp",
+            icon_size_dp=46,
+            text_size="12sp",
             color=TEXT_MUTED,
             icon_bg=None,
         )
@@ -183,28 +218,24 @@ class DosyaSecici(BoxLayout):
             icon_name="fonksiyon_listesinde_goster.png",
             text="Fonksiyonları Göster",
             on_release=self._handle_show_functions,
-            icon_size_dp=46,
+            icon_size_dp=40,
             text_size="10sp",
             color=TEXT_MUTED,
             icon_bg=None,
         )
 
-        self.add_widget(self.toolbar)
-
         try:
             self.select_tool.size_hint_x = None
             self.select_tool.width = self._tool_visible_width
-        except Exception:
-            pass
-
-        try:
             self.show_functions_tool.size_hint_x = None
             self.show_functions_tool.width = self._tool_visible_width
         except Exception:
             pass
 
+        self.add_widget(self.toolbar)
+
     # =========================================================
-    # SELECTION HELPERS
+    # STATE HELPERS
     # =========================================================
     def _selection_identifier(self, selection) -> str:
         if selection is None:
@@ -249,26 +280,46 @@ class DosyaSecici(BoxLayout):
         except Exception:
             pass
 
-        return self._selection_identifier(selection)
+        return ""
+
+    def _short_identifier(self, value: str, limit: int = 56) -> str:
+        metin = str(value or "").strip()
+        if len(metin) <= limit:
+            return metin
+        if limit < 10:
+            return metin[:limit]
+
+        sol = max(8, limit // 2 - 2)
+        sag = max(8, limit - sol - 3)
+        return f"{metin[:sol]}...{metin[-sag:]}"
 
     def _has_selection(self) -> bool:
         if self._selection is not None:
-            try:
-                if str(self._selection_identifier(self._selection) or "").strip():
-                    return True
-            except Exception:
-                pass
+            if self._selection_identifier(self._selection):
+                return True
 
         if str(self._last_identifier or "").strip():
             return True
 
-        try:
-            if str(self.path_input.text or "").strip():
-                return True
-        except Exception:
-            pass
-
         return False
+
+    def _refresh_summary(self) -> None:
+        if not self._has_selection():
+            self.file_name_label.text = "Dosya seçilmedi"
+            self.file_detail_label.text = "Seçilen belge kimliği burada kısa biçimde görünür."
+            self.status_hint_label.text = "Belge seçmeniz bekleniyor."
+            self.status_hint_label.color = (0.76, 0.82, 0.92, 1)
+            return
+
+        display_name = str(self._last_display_name or "").strip()
+        identifier = str(self._last_identifier or "").strip()
+
+        self.file_name_label.text = display_name if display_name else "Seçilen belge hazır"
+        self.file_detail_label.text = (
+            self._short_identifier(identifier) if identifier else "Belge kimliği yok"
+        )
+        self.status_hint_label.text = "Belge hazır • Fonksiyonları gösterebilir veya yeniden tarayabilirsiniz."
+        self.status_hint_label.color = (0.72, 0.94, 0.78, 1)
 
     # =========================================================
     # PUBLIC API
@@ -278,10 +329,6 @@ class DosyaSecici(BoxLayout):
             identifier = self._selection_identifier(self._selection)
             if identifier:
                 return identifier
-
-        text_path = self.path_input.text.strip()
-        if text_path:
-            return text_path
 
         return str(self._last_identifier or "").strip()
 
@@ -293,13 +340,8 @@ class DosyaSecici(BoxLayout):
 
     def set_path(self, value: str) -> None:
         temiz = str(value or "").strip()
-        self.path_input.text = temiz
-        self.path_hint.text = temiz if temiz else "Seçilen belge burada görünecek"
         self._last_identifier = temiz
-
-        if temiz and not self._last_display_name:
-            self._last_display_name = temiz
-
+        self._refresh_summary()
         self._debug(f"Identifier set edildi: {temiz}")
 
     def set_selection(self, selection) -> None:
@@ -308,11 +350,10 @@ class DosyaSecici(BoxLayout):
         identifier = self._selection_identifier(selection)
         display_text = self._selection_display_text(selection)
 
-        self.path_input.text = identifier
-        self.path_hint.text = display_text if display_text else "Seçilen belge burada görünecek"
-
         self._last_identifier = identifier
         self._last_display_name = display_text
+
+        self._refresh_summary()
 
         self._debug(
             "Selection set edildi | "
@@ -323,10 +364,9 @@ class DosyaSecici(BoxLayout):
 
     def clear_selection(self) -> None:
         self._selection = None
-        self.path_input.text = ""
-        self.path_hint.text = "Seçilen belge burada görünecek"
         self._last_identifier = ""
         self._last_display_name = ""
+        self._refresh_summary()
 
     # =========================================================
     # ACTIONS
@@ -338,7 +378,7 @@ class DosyaSecici(BoxLayout):
         identifier = self.get_path()
         self._debug(f"Fonksiyonları göster tetiklendi: {identifier}")
 
-        if not identifier:
+        if not self._selection and not identifier:
             self._show_info_popup(
                 "Fonksiyon Listesi",
                 "Önce bir belge seçmelisiniz.",
@@ -354,11 +394,9 @@ class DosyaSecici(BoxLayout):
         self._debug("Dosya seçici açılıyor")
 
         if platform == "android":
-            picker = self._get_android_document_picker()
-            picker.open_picker()
+            self._get_android_document_picker().open_picker()
         else:
-            picker = self._get_desktop_picker()
-            picker.open_popup()
+            self._get_desktop_picker().open_popup()
 
     # =========================================================
     # AUTO TRIGGER
@@ -367,7 +405,7 @@ class DosyaSecici(BoxLayout):
         final_identifier = self.get_path()
         self._debug(f"Otomatik tetikleme ({reason}): {final_identifier}")
 
-        if not final_identifier:
+        if not final_identifier and self._selection is None:
             return
 
         try:
