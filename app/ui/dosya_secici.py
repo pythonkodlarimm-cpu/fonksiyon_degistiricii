@@ -4,7 +4,7 @@ DOSYA: app/ui/dosya_secici.py
 
 ROL:
 - Dosya seçici UI organizatörü
-- Seç / Fonksiyonları Göster aksiyonlarını yönetir
+- Dosya Seç / Fonksiyonları Göster aksiyonlarını yönetir
 - Platforma göre uygun picker'ı çağırır
 - Seçilen belgeyi üst katmana bildirir
 
@@ -16,12 +16,13 @@ MİMARİ:
 - Ağır modüller uygulama açılışında yüklenmez
 
 DAVRANIŞ:
-- Başlangıçta yalnızca büyük Dosya Seç ikonu görünür
-- Dosya seçildikten sonra Fonksiyonları Göster ikonu görünür
-- Dosya seçimi sonrası tarama arka planda otomatik tetiklenir
-- Güvenilirlik için otomatik tetikleme birden fazla kez kısa aralıkla denenir
+- Uygulama açılışında iki ikon da görünür
+- Dosya Seç ile picker açılır
+- Dosya seçildikten sonra otomatik tarama da tetiklenir
+- Fonksiyonları Göster butonu seçili dosyayı tekrar tarar
+- Dosya yoksa kullanıcıya bilgi verir
 
-SURUM: 25
+SURUM: 26
 TARIH: 2026-03-16
 IMZA: FY.
 """
@@ -65,13 +66,11 @@ class DosyaSecici(BoxLayout):
         self.path_hint = None
         self.toolbar = None
         self.select_tool = None
-        self.refresh_tool = None
+        self.show_functions_tool = None
 
-        self._refresh_tool_visible_width = dp(118)
-        self._select_tool_visible_width = dp(128)
+        self._tool_visible_width = dp(120)
 
         self._build_ui()
-        self._update_refresh_visibility()
 
     # =========================================================
     # DEBUG
@@ -166,7 +165,7 @@ class DosyaSecici(BoxLayout):
         self.add_widget(self.path_hint)
 
         self.toolbar = IconToolbar(
-            spacing_dp=28,
+            spacing_dp=24,
             padding_dp=8,
         )
 
@@ -174,17 +173,17 @@ class DosyaSecici(BoxLayout):
             icon_name="dosya_sec.png",
             text="Dosya Seç",
             on_release=self._handle_select_pressed,
-            icon_size_dp=56,
+            icon_size_dp=54,
             text_size="13sp",
             color=TEXT_MUTED,
             icon_bg=None,
         )
 
-        self.refresh_tool = self.toolbar.add_tool(
+        self.show_functions_tool = self.toolbar.add_tool(
             icon_name="fonksiyon_listesinde_goster.png",
             text="Fonksiyonları Göster",
-            on_release=self._handle_refresh,
-            icon_size_dp=44,
+            on_release=self._handle_show_functions,
+            icon_size_dp=46,
             text_size="10sp",
             color=TEXT_MUTED,
             icon_bg=None,
@@ -194,62 +193,15 @@ class DosyaSecici(BoxLayout):
 
         try:
             self.select_tool.size_hint_x = None
-            self.select_tool.width = self._select_tool_visible_width
-        except Exception:
-            pass
-
-    # =========================================================
-    # ICON VISIBILITY
-    # =========================================================
-    def _has_selection(self) -> bool:
-        if self._selection is not None:
-            try:
-                if str(self._selection_identifier(self._selection) or "").strip():
-                    return True
-            except Exception:
-                pass
-
-        if str(self._last_identifier or "").strip():
-            return True
-
-        try:
-            if str(self.path_input.text or "").strip():
-                return True
-        except Exception:
-            pass
-
-        return False
-
-    def _set_tool_visible(self, widget, visible: bool, width: float) -> None:
-        if widget is None:
-            return
-
-        try:
-            widget.disabled = not visible
+            self.select_tool.width = self._tool_visible_width
         except Exception:
             pass
 
         try:
-            widget.opacity = 1 if visible else 0
+            self.show_functions_tool.size_hint_x = None
+            self.show_functions_tool.width = self._tool_visible_width
         except Exception:
             pass
-
-        try:
-            widget.size_hint_x = None
-        except Exception:
-            pass
-
-        try:
-            widget.width = width if visible else 0.01
-        except Exception:
-            pass
-
-    def _update_refresh_visibility(self) -> None:
-        self._set_tool_visible(
-            self.refresh_tool,
-            self._has_selection(),
-            self._refresh_tool_visible_width,
-        )
 
     # =========================================================
     # SELECTION HELPERS
@@ -299,6 +251,25 @@ class DosyaSecici(BoxLayout):
 
         return self._selection_identifier(selection)
 
+    def _has_selection(self) -> bool:
+        if self._selection is not None:
+            try:
+                if str(self._selection_identifier(self._selection) or "").strip():
+                    return True
+            except Exception:
+                pass
+
+        if str(self._last_identifier or "").strip():
+            return True
+
+        try:
+            if str(self.path_input.text or "").strip():
+                return True
+        except Exception:
+            pass
+
+        return False
+
     # =========================================================
     # PUBLIC API
     # =========================================================
@@ -329,7 +300,6 @@ class DosyaSecici(BoxLayout):
         if temiz and not self._last_display_name:
             self._last_display_name = temiz
 
-        self._update_refresh_visibility()
         self._debug(f"Identifier set edildi: {temiz}")
 
     def set_selection(self, selection) -> None:
@@ -344,8 +314,6 @@ class DosyaSecici(BoxLayout):
         self._last_identifier = identifier
         self._last_display_name = display_text
 
-        self._update_refresh_visibility()
-
         self._debug(
             "Selection set edildi | "
             f"source={getattr(selection, 'source', '')} "
@@ -359,7 +327,6 @@ class DosyaSecici(BoxLayout):
         self.path_hint.text = "Seçilen belge burada görünecek"
         self._last_identifier = ""
         self._last_display_name = ""
-        self._update_refresh_visibility()
 
     # =========================================================
     # ACTIONS
@@ -367,11 +334,15 @@ class DosyaSecici(BoxLayout):
     def _handle_select_pressed(self, *_args):
         self._open_selector()
 
-    def _handle_refresh(self, *_args):
+    def _handle_show_functions(self, *_args):
         identifier = self.get_path()
         self._debug(f"Fonksiyonları göster tetiklendi: {identifier}")
 
         if not identifier:
+            self._show_info_popup(
+                "Fonksiyon Listesi",
+                "Önce bir belge seçmelisiniz.",
+            )
             return
 
         if self.on_refresh:
