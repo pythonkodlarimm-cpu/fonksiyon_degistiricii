@@ -2,43 +2,29 @@ Fonksiyon Değiştirici
 
 Python fonksiyonlarını güvenli biçimde tarayan, düzenleyen, güncelleyen ve yedekten geri yükleyen modüler Kivy aracı 
 
-
-
 Seç • Tara • Düzenle • Doğrula • Güncelle • Geri Yükle 
 
-📌 Overview 
+Demo 
+
+İçindekiler Genel Bakış Kullanım Rehberi Mimari Güvenlik Gizlilik Politikası Proje Özeti 
 
 Fonksiyon Değiştirici, Python dosyalarındaki fonksiyonları tarayan,
-seçilen fonksiyon üzerinde düzenleme yapılmasını sağlayan ve değişiklikleri
-güvenli biçimde uygulayan modüler bir araçtır.
+seçilen fonksiyonu düzenlemeye izin veren ve değişiklikleri güvenli
+biçimde uygulayan modüler bir araçtır.
 
-Bu proje bir tam IDE değildir.
+Tam bir IDE değildir.
 
-Bunun yerine şu iş akışını sunar:
+Bunun yerine:
 
-Python fonksiyonlarını tarama Fonksiyon bazlı kod düzenleme Güvenli güncelleme mekanizması Otomatik yedek oluşturma Hızlı geri yükleme 
+fonksiyon bazlı düzenleme güvenli güncelleme otomatik yedek geri yükleme 
 
-Mobil ortamda Python kod düzenleme için tasarlanmıştır.
+akışı sunar.
 
-🎬 Demo 
-
-✨ Features Python fonksiyonlarını otomatik tarama Fonksiyon bazlı düzenleme Kod doğrulama Güvenli güncelleme Otomatik yedek sistemi Tek tık geri yükleme Modüler mimari Android ve Desktop uyumu 📚 Documentation 
-
-Proje dokümantasyonu:
-
-Genel Bakış Kullanım Rehberi Mimari Güvenlik Gizlilik Politikası ⚙ Installation 
-
-Gerekli bağımlılıkları yükleyin:
-
-pip install kivy pygments ▶ Running 
-
-Uygulamayı başlatmak için:
-
-python main.py 🧩 Project Structure app ├ core ├ services └ ui docs ├ overview.md ├ usage.md ├ architecture.md ├ security.md └ privacy_policy.md 🌐 Developer Website 
+Kurulum pip install kivy pygments Çalıştırma python main.py Repo Yapısı app ├ core ├ services └ ui docs ├ overview.md ├ usage.md ├ architecture.md ├ security.md └ privacy_policy.md 🌐 Developer Website 
 
 Proje için oluşturulan GitHub Pages sayfası:
 
-https://pythonkodlarimm-cpu.github.io/fonksiyon_degistirici/ 
+https://pythonkodlarimm-cpu.github.io/fonksiyon_degistirici/
 
 Bu sayfada:
 
@@ -46,25 +32,17 @@ uygulama tanıtımı özellikler geliştirici bilgileri gizlilik politikası
 
 bulunur.
 
-🔒 Privacy Policy 
+🔒 Gizlilik Politikası 
 
-Uygulamanın gizlilik politikası:
+Gizlilik politikası:
 
-docs/privacy_policy.md 
+docs/privacy_policy.md
 
 GitHub Pages üzerinden görüntülemek için:
 
-https://pythonkodlarimm-cpu.github.io/fonksiyon_degistirici/privacy-policy.html 📄 License 
+https://pythonkodlarimm-cpu.github.io/fonksiyon_degistirici/privacy-policy.html
 
-Bu proje MIT License altında dağıtılmaktadır.
+Lisans 
 
-Detaylar için:
-
-LICENSE 👨‍💻 Developer 
-
-FY Apps
-
-Android developer tools
-Python utilities
-Security and productivity applications
+Bu proje MIT lisansı altında dağıtılmaktadır.
 
