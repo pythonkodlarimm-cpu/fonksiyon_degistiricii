@@ -4,7 +4,7 @@ DOSYA: app/ui/dosya_secici.py
 
 ROL:
 - Dosya seçici UI organizatörü
-- Seç / Yenile aksiyonlarını yönetir
+- Seç / Fonksiyonları Göster aksiyonlarını yönetir
 - Platforma göre uygun picker'ı çağırır
 - Seçilen belgeyi üst katmana bildirir
 
@@ -16,12 +16,12 @@ MİMARİ:
 - Ağır modüller uygulama açılışında yüklenmez
 
 DAVRANIŞ:
-- Android'de ACTION_OPEN_DOCUMENT ile tek dosya seçilir
-- Dosya uzantısı burada kısıtlanmaz
-- Seçim sonrası otomatik tarama başlar
-- Yenile akışı yalnızca seçim varsa görünür ve çalışır
+- Başlangıçta yalnızca büyük Dosya Seç ikonu görünür
+- Dosya seçildikten sonra Fonksiyonları Göster ikonu görünür
+- Dosya seçimi sonrası tarama arka planda otomatik tetiklenir
+- Güvenilirlik için otomatik tetikleme birden fazla kez kısa aralıkla denenir
 
-SURUM: 23
+SURUM: 25
 TARIH: 2026-03-16
 IMZA: FY.
 """
@@ -66,7 +66,9 @@ class DosyaSecici(BoxLayout):
         self.toolbar = None
         self.select_tool = None
         self.refresh_tool = None
-        self._refresh_tool_visible_width = dp(88)
+
+        self._refresh_tool_visible_width = dp(118)
+        self._select_tool_visible_width = dp(128)
 
         self._build_ui()
         self._update_refresh_visibility()
@@ -164,34 +166,40 @@ class DosyaSecici(BoxLayout):
         self.add_widget(self.path_hint)
 
         self.toolbar = IconToolbar(
-            spacing_dp=24,
+            spacing_dp=28,
             padding_dp=8,
         )
 
         self.select_tool = self.toolbar.add_tool(
             icon_name="dosya_sec.png",
             text="Dosya Seç",
-            on_release=self._open_selector,
-            icon_size_dp=42,
-            text_size="12sp",
+            on_release=self._handle_select_pressed,
+            icon_size_dp=56,
+            text_size="13sp",
             color=TEXT_MUTED,
             icon_bg=None,
         )
 
         self.refresh_tool = self.toolbar.add_tool(
             icon_name="fonksiyon_listesinde_goster.png",
-            text="Yenile",
+            text="Fonksiyonları Göster",
             on_release=self._handle_refresh,
-            icon_size_dp=42,
-            text_size="12sp",
+            icon_size_dp=44,
+            text_size="10sp",
             color=TEXT_MUTED,
             icon_bg=None,
         )
 
         self.add_widget(self.toolbar)
 
+        try:
+            self.select_tool.size_hint_x = None
+            self.select_tool.width = self._select_tool_visible_width
+        except Exception:
+            pass
+
     # =========================================================
-    # REFRESH TOOL VISIBILITY
+    # ICON VISIBILITY
     # =========================================================
     def _has_selection(self) -> bool:
         if self._selection is not None:
@@ -212,7 +220,7 @@ class DosyaSecici(BoxLayout):
 
         return False
 
-    def _set_tool_visible(self, widget, visible: bool) -> None:
+    def _set_tool_visible(self, widget, visible: bool, width: float) -> None:
         if widget is None:
             return
 
@@ -232,12 +240,16 @@ class DosyaSecici(BoxLayout):
             pass
 
         try:
-            widget.width = self._refresh_tool_visible_width if visible else 0.01
+            widget.width = width if visible else 0.01
         except Exception:
             pass
 
     def _update_refresh_visibility(self) -> None:
-        self._set_tool_visible(self.refresh_tool, self._has_selection())
+        self._set_tool_visible(
+            self.refresh_tool,
+            self._has_selection(),
+            self._refresh_tool_visible_width,
+        )
 
     # =========================================================
     # SELECTION HELPERS
@@ -352,15 +364,14 @@ class DosyaSecici(BoxLayout):
     # =========================================================
     # ACTIONS
     # =========================================================
+    def _handle_select_pressed(self, *_args):
+        self._open_selector()
+
     def _handle_refresh(self, *_args):
         identifier = self.get_path()
-        self._debug(f"Yenile tetiklendi: {identifier}")
+        self._debug(f"Fonksiyonları göster tetiklendi: {identifier}")
 
         if not identifier:
-            self._show_info_popup(
-                "Yenileme",
-                "Önce bir belge seçmelisiniz.",
-            )
             return
 
         if self.on_refresh:
@@ -379,6 +390,27 @@ class DosyaSecici(BoxLayout):
             picker.open_popup()
 
     # =========================================================
+    # AUTO TRIGGER
+    # =========================================================
+    def _trigger_scan_attempt(self, reason: str) -> None:
+        final_identifier = self.get_path()
+        self._debug(f"Otomatik tetikleme ({reason}): {final_identifier}")
+
+        if not final_identifier:
+            return
+
+        try:
+            if self.on_scan:
+                self.on_scan(final_identifier)
+        except Exception as exc:
+            self._debug(f"Otomatik tetikleme hatası ({reason}): {exc}")
+
+    def _auto_trigger_scan_sequence(self) -> None:
+        Clock.schedule_once(lambda *_: self._trigger_scan_attempt("hemen"), 0)
+        Clock.schedule_once(lambda *_: self._trigger_scan_attempt("kisa_gecikme"), 0.12)
+        Clock.schedule_once(lambda *_: self._trigger_scan_attempt("ikinci_gecikme"), 0.35)
+
+    # =========================================================
     # PICKER CALLBACK
     # =========================================================
     def _after_picker_selected(self, selection) -> None:
@@ -393,25 +425,4 @@ class DosyaSecici(BoxLayout):
             return
 
         self.set_selection(selection)
-
-        def _run_scan(_dt):
-            final_identifier = self.get_path()
-            self._debug(f"Otomatik tarama başlıyor: {final_identifier}")
-
-            if not final_identifier:
-                self._show_info_popup(
-                    "Tarama Hatası",
-                    "Dosya kimliği boş olduğu için tarama başlatılamadı.",
-                )
-                return
-
-            try:
-                if self.on_scan:
-                    self.on_scan(final_identifier)
-            except Exception as exc:
-                self._show_info_popup(
-                    "Tarama Hatası",
-                    f"Dosya seçildi ama tarama başlatılamadı:\n{exc}",
-                )
-
-        Clock.schedule_once(_run_scan, 0)
+        self._auto_trigger_scan_sequence()
