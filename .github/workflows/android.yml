@@ -113,10 +113,15 @@ jobs:
           test -f buildozer.spec
           test -f main.py
           test -f app/assets/icons/presplash.png
+          test -d android/src
+          test -f android/src/org/fy/bridge/AdMobBridge.java
+          test -f android/src/org/fy/bridge/BillingBridge.java
           echo "---- buildozer.spec ----"
           sed -n '1,220p' buildozer.spec
           echo "---- icons ----"
           ls -la app/assets/icons || true
+          echo "---- android/src ----"
+          find android/src -maxdepth 6 -type f | sort
 
       - name: Python paketleri
         shell: bash
