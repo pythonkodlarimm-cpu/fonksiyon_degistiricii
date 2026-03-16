@@ -5,17 +5,11 @@ DOSYA: app/ui/tum_dosya_erisim_paneli.py
 ROL:
 - Android'de tüm dosya erişimi durumunu kullanıcıya göstermek
 - Gerekirse kullanıcıyı ilgili ayar ekranına yönlendirmek
-- Açık / kapalı durumu büyük ikon ile vurgulamak
+- Açık / kapalı durumu premium kart görünümünde göstermek
 - Kapalı durumda sürekli pulse ile dikkat çekmek
 - Açık durumda kısa süre pulse gösterip sonra sakinleştirmek
-- Aksiyon ikonu ile erişim açma / kapatma yönlendirmesi yapmak
 
-MİMARİ:
-- Kendi görünümünü kendi çizer
-- Root sadece ekrana ekler
-- Android özel izin servisi ile konuşur
-
-SURUM: 3
+SURUM: 5
 TARIH: 2026-03-16
 IMZA: FY.
 """
@@ -24,8 +18,6 @@ from __future__ import annotations
 
 from kivy.animation import Animation
 from kivy.clock import Clock
-from kivy.graphics import Color
-from kivy.graphics import RoundedRectangle
 from kivy.metrics import dp
 from kivy.uix.behaviors import ButtonBehavior
 from kivy.uix.boxlayout import BoxLayout
@@ -34,6 +26,7 @@ from kivy.uix.label import Label
 from kivy.utils import platform
 
 from app.ui.iconlu_baslik import IconluBaslik
+from app.ui.kart import Kart
 from app.ui.tema import TEXT_MUTED, TEXT_PRIMARY
 
 
@@ -41,132 +34,127 @@ class TiklanabilirIcon(ButtonBehavior, Image):
     pass
 
 
-class TumDosyaErisimPaneli(BoxLayout):
+class TumDosyaErisimPaneli(Kart):
     def __init__(self, on_status_changed=None, **kwargs):
         super().__init__(
             orientation="vertical",
             size_hint_y=None,
-            height=dp(198),
+            height=dp(138),
             spacing=dp(8),
-            padding=(dp(8), dp(8), dp(8), dp(8)),
+            padding=(dp(12), dp(10), dp(12), dp(10)),
+            bg=(0.08, 0.11, 0.16, 1),
+            border=(0.18, 0.21, 0.27, 1),
+            radius=16,
             **kwargs,
         )
 
         self.on_status_changed = on_status_changed
 
-        self.header = None
         self.status_icon = None
         self.info_label = None
+        self.detail_label = None
         self.action_open_icon = None
         self.action_close_icon = None
 
         self._pulse_anim = None
         self._stop_pulse_event = None
         self._last_status = None
-        self._action_icon_visible_width = dp(84)
+        self._action_icon_visible_width = dp(70)
 
         self._build_ui()
         self.refresh_status()
 
-    # ---------------------------------------------------------
-    # debug
-    # ---------------------------------------------------------
     def _debug(self, message: str) -> None:
         try:
             print("[TUM_DOSYA_ERISIM]", str(message))
         except Exception:
             pass
 
-    # ---------------------------------------------------------
-    # ui
-    # ---------------------------------------------------------
     def _build_ui(self) -> None:
-        with self.canvas.before:
-            self._bg_color = Color(0.10, 0.13, 0.18, 1)
-            self._bg_rect = RoundedRectangle(radius=[dp(14)])
-
-        self.bind(pos=self._update_canvas, size=self._update_canvas)
-
-        self.header = IconluBaslik(
-            text="Tüm Dosya Erişimi",
-            icon_name="folder_open.png",
-            height_dp=30,
-            font_size="15sp",
-            color=TEXT_PRIMARY,
-        )
-        self.add_widget(self.header)
-
-        status_row = BoxLayout(
+        ust = BoxLayout(
             orientation="horizontal",
             size_hint_y=None,
-            height=dp(86),
-            spacing=dp(8),
+            height=dp(64),
+            spacing=dp(10),
         )
-
-        left_spacer = Label(size_hint_x=1)
-        right_spacer = Label(size_hint_x=1)
 
         self.status_icon = TiklanabilirIcon(
             source="app/assets/icons/erisim_kapali.png",
             size_hint=(None, None),
-            size=(dp(70), dp(70)),
+            size=(dp(50), dp(50)),
             allow_stretch=True,
             keep_ratio=True,
             opacity=1,
         )
         self.status_icon.bind(on_release=self._handle_status_icon_click)
+        ust.add_widget(self.status_icon)
 
-        status_row.add_widget(left_spacer)
-        status_row.add_widget(self.status_icon)
-        status_row.add_widget(right_spacer)
-        self.add_widget(status_row)
+        metinler = BoxLayout(
+            orientation="vertical",
+            spacing=dp(2),
+        )
+
+        baslik = IconluBaslik(
+            text="Tüm Dosya Erişimi",
+            icon_name="folder_open.png",
+            height_dp=24,
+            font_size="14sp",
+            color=TEXT_PRIMARY,
+        )
+        baslik.size_hint_y = None
+        baslik.height = dp(24)
+        metinler.add_widget(baslik)
 
         self.info_label = Label(
             text="Durum kontrol ediliyor...",
-            size_hint_y=None,
-            height=dp(30),
-            color=TEXT_MUTED,
-            font_size="12sp",
-            halign="center",
+            color=TEXT_PRIMARY,
+            font_size="14sp",
+            halign="left",
             valign="middle",
+            size_hint_y=None,
+            height=dp(22),
+            bold=True,
         )
-        self.info_label.bind(
-            size=lambda inst, size: setattr(inst, "text_size", (size[0], None))
-        )
-        self.add_widget(self.info_label)
+        self.info_label.bind(size=lambda inst, size: setattr(inst, "text_size", (size[0], None)))
+        metinler.add_widget(self.info_label)
 
-        action_row = BoxLayout(
+        self.detail_label = Label(
+            text="Bu izin dosya tarama akışı için önerilir.",
+            color=TEXT_MUTED,
+            font_size="11sp",
+            halign="left",
+            valign="middle",
+            size_hint_y=None,
+            height=dp(18),
+        )
+        self.detail_label.bind(size=lambda inst, size: setattr(inst, "text_size", (size[0], None)))
+        metinler.add_widget(self.detail_label)
+
+        ust.add_widget(metinler)
+        self.add_widget(ust)
+
+        alt = BoxLayout(
             orientation="horizontal",
             size_hint_y=None,
-            height=dp(56),
+            height=dp(32),
             spacing=dp(10),
         )
 
-        self.action_open_icon = TiklanabilirIcon(
-            source="app/assets/icons/erisimi_ac_aksiyon.png",
-            size_hint=(None, None),
-            size=(dp(44), dp(44)),
-            allow_stretch=True,
-            keep_ratio=True,
-            opacity=1,
-        )
-        self.action_open_icon.bind(on_release=self._handle_open_action)
-
-        self.action_close_icon = TiklanabilirIcon(
-            source="app/assets/icons/erisimi_kapat_aksiyon.png",
-            size_hint=(None, None),
-            size=(dp(44), dp(44)),
-            allow_stretch=True,
-            keep_ratio=True,
-            opacity=1,
-        )
-        self.action_close_icon.bind(on_release=self._handle_close_action)
+        alt.add_widget(Label(size_hint_x=1))
 
         self._action_open_wrap = BoxLayout(
             orientation="horizontal",
             size_hint=(None, None),
-            size=(self._action_icon_visible_width, dp(48)),
+            size=(self._action_icon_visible_width, dp(30)),
         )
+        self.action_open_icon = TiklanabilirIcon(
+            source="app/assets/icons/erisimi_ac_aksiyon.png",
+            size_hint=(None, None),
+            size=(dp(28), dp(28)),
+            allow_stretch=True,
+            keep_ratio=True,
+        )
+        self.action_open_icon.bind(on_release=self._handle_open_action)
         self._action_open_wrap.add_widget(Label(size_hint_x=1))
         self._action_open_wrap.add_widget(self.action_open_icon)
         self._action_open_wrap.add_widget(Label(size_hint_x=1))
@@ -174,27 +162,24 @@ class TumDosyaErisimPaneli(BoxLayout):
         self._action_close_wrap = BoxLayout(
             orientation="horizontal",
             size_hint=(None, None),
-            size=(self._action_icon_visible_width, dp(48)),
+            size=(self._action_icon_visible_width, dp(30)),
         )
+        self.action_close_icon = TiklanabilirIcon(
+            source="app/assets/icons/erisimi_kapat_aksiyon.png",
+            size_hint=(None, None),
+            size=(dp(28), dp(28)),
+            allow_stretch=True,
+            keep_ratio=True,
+        )
+        self.action_close_icon.bind(on_release=self._handle_close_action)
         self._action_close_wrap.add_widget(Label(size_hint_x=1))
         self._action_close_wrap.add_widget(self.action_close_icon)
         self._action_close_wrap.add_widget(Label(size_hint_x=1))
 
-        action_row.add_widget(Label(size_hint_x=1))
-        action_row.add_widget(self._action_open_wrap)
-        action_row.add_widget(self._action_close_wrap)
-        action_row.add_widget(Label(size_hint_x=1))
+        alt.add_widget(self._action_open_wrap)
+        alt.add_widget(self._action_close_wrap)
+        self.add_widget(alt)
 
-        self.add_widget(action_row)
-        self._update_canvas()
-
-    def _update_canvas(self, *_args):
-        self._bg_rect.pos = self.pos
-        self._bg_rect.size = self.size
-
-    # ---------------------------------------------------------
-    # pulse
-    # ---------------------------------------------------------
     def _cancel_stop_event(self):
         try:
             if self._stop_pulse_event is not None:
@@ -205,29 +190,24 @@ class TumDosyaErisimPaneli(BoxLayout):
 
     def _stop_pulse(self):
         self._cancel_stop_event()
-
         try:
             if self._pulse_anim is not None:
                 self._pulse_anim.cancel(self.status_icon)
         except Exception:
             pass
-
         self._pulse_anim = None
-
         try:
             self.status_icon.opacity = 1
-            self.status_icon.size = (dp(70), dp(70))
+            self.status_icon.size = (dp(50), dp(50))
         except Exception:
             pass
 
     def _start_pulse_forever(self):
         self._stop_pulse()
         try:
-            self.status_icon.opacity = 1
-            self.status_icon.size = (dp(70), dp(70))
             anim = (
-                Animation(opacity=0.70, size=(dp(82), dp(82)), duration=0.55)
-                + Animation(opacity=1.00, size=(dp(70), dp(70)), duration=0.55)
+                Animation(opacity=0.72, size=(dp(58), dp(58)), duration=0.55)
+                + Animation(opacity=1.00, size=(dp(50), dp(50)), duration=0.55)
             )
             anim.repeat = True
             anim.start(self.status_icon)
@@ -238,46 +218,23 @@ class TumDosyaErisimPaneli(BoxLayout):
     def _start_pulse_for_seconds(self, seconds: float):
         self._stop_pulse()
         try:
-            self.status_icon.opacity = 1
-            self.status_icon.size = (dp(70), dp(70))
             anim = (
-                Animation(opacity=0.78, size=(dp(80), dp(80)), duration=0.50)
-                + Animation(opacity=1.00, size=(dp(70), dp(70)), duration=0.50)
+                Animation(opacity=0.78, size=(dp(56), dp(56)), duration=0.50)
+                + Animation(opacity=1.00, size=(dp(50), dp(50)), duration=0.50)
             )
             anim.repeat = True
             anim.start(self.status_icon)
             self._pulse_anim = anim
-            self._stop_pulse_event = Clock.schedule_once(
-                lambda *_: self._stop_pulse(),
-                max(0.1, float(seconds)),
-            )
+            self._stop_pulse_event = Clock.schedule_once(lambda *_: self._stop_pulse(), max(0.1, float(seconds)))
         except Exception:
             pass
 
-    # ---------------------------------------------------------
-    # visibility helpers
-    # ---------------------------------------------------------
     def _set_wrap_visible(self, wrap, visible: bool) -> None:
         if wrap is None:
             return
-
         try:
             wrap.opacity = 1 if visible else 0
-        except Exception:
-            pass
-
-        try:
-            wrap.size_hint_x = None
-        except Exception:
-            pass
-
-        try:
             wrap.width = self._action_icon_visible_width if visible else 0.01
-        except Exception:
-            pass
-
-        try:
-            wrap.disabled = not visible
         except Exception:
             pass
 
@@ -289,20 +246,17 @@ class TumDosyaErisimPaneli(BoxLayout):
         self._set_wrap_visible(self._action_open_wrap, False)
         self._set_wrap_visible(self._action_close_wrap, True)
 
-    # ---------------------------------------------------------
-    # state ui
-    # ---------------------------------------------------------
-    def _set_info(self, text: str) -> None:
-        self.info_label.text = str(text or "")
-
     def _apply_closed_state(self):
         try:
             self.status_icon.source = "app/assets/icons/erisim_kapali.png"
         except Exception:
             pass
-
-        self._bg_color.rgba = (0.20, 0.12, 0.12, 1)
-        self.info_label.color = (1.0, 0.78, 0.78, 1)
+        self.set_bg_rgba((0.16, 0.09, 0.10, 1))
+        self.set_border_rgba((0.30, 0.14, 0.16, 1))
+        self.info_label.text = "Tüm dosya erişimi kapalı"
+        self.info_label.color = (1.0, 0.82, 0.82, 1)
+        self.detail_label.text = "Öneri: erişimi açıp sonra dosya seç."
+        self.detail_label.color = (0.96, 0.72, 0.72, 1)
         self._show_open_action()
         self._start_pulse_forever()
 
@@ -311,84 +265,62 @@ class TumDosyaErisimPaneli(BoxLayout):
             self.status_icon.source = "app/assets/icons/erisim_acik.png"
         except Exception:
             pass
-
-        self._bg_color.rgba = (0.08, 0.22, 0.14, 1)
-        self.info_label.color = (0.78, 1.0, 0.84, 1)
+        self.set_bg_rgba((0.08, 0.18, 0.12, 1))
+        self.set_border_rgba((0.14, 0.30, 0.20, 1))
+        self.info_label.text = "Tüm dosya erişimi açık"
+        self.info_label.color = (0.82, 1.0, 0.86, 1)
+        self.detail_label.text = "Belge seçimi ve tarama için hazır."
+        self.detail_label.color = (0.72, 0.94, 0.78, 1)
         self._show_close_action()
         self._start_pulse_for_seconds(10.0)
 
     def _apply_non_android_state(self):
-        try:
-            self.status_icon.source = "app/assets/icons/erisim_kapali.png"
-        except Exception:
-            pass
-
-        self._bg_color.rgba = (0.10, 0.13, 0.18, 1)
-        self.info_label.color = TEXT_MUTED
+        self.info_label.text = "Android ortamı değil"
+        self.info_label.color = TEXT_PRIMARY
+        self.detail_label.text = "Bu panel Android üzerinde etkin çalışır."
+        self.detail_label.color = TEXT_MUTED
         self._show_open_action()
         self._stop_pulse()
 
-    # ---------------------------------------------------------
-    # service actions
-    # ---------------------------------------------------------
     def _open_settings(self) -> None:
         if platform != "android":
-            self._set_info("Bu ayar yalnızca Android'de kullanılabilir.")
+            self._apply_non_android_state()
             return
 
         try:
-            from app.services.android_ozel_izin_servisi import (
-                tum_dosya_erisim_ayarlari_ac,
-            )
-
+            from app.services.android_ozel_izin_servisi import tum_dosya_erisim_ayarlari_ac
             tum_dosya_erisim_ayarlari_ac()
-            self._set_info(
-                "Ayar ekranı açıldı. İzin değişikliğinden sonra geri dön."
-            )
+            self.detail_label.text = "Ayar ekranı açıldı. Geri dönünce durum yenilenir."
         except Exception as exc:
-            self._set_info(f"Ayar ekranı açılamadı: {exc}")
+            self.detail_label.text = f"Ayar ekranı açılamadı: {exc}"
             self._debug(f"Ayar ekranı açılamadı: {exc}")
 
-    # ---------------------------------------------------------
-    # public refresh
-    # ---------------------------------------------------------
     def refresh_status(self) -> None:
         if platform != "android":
             self._last_status = False
             self._apply_non_android_state()
-            self._set_info("Android dışında tüm dosya erişimi kullanılmaz.")
             return
 
         try:
-            from app.services.android_ozel_izin_servisi import (
-                tum_dosya_erisim_izni_var_mi,
-            )
-
+            from app.services.android_ozel_izin_servisi import tum_dosya_erisim_izni_var_mi
             durum = bool(tum_dosya_erisim_izni_var_mi())
-            onceki = self._last_status
             self._last_status = durum
 
             if durum:
                 self._apply_open_state()
-                self._set_info("Tüm dosya erişimi açık.")
             else:
                 self._apply_closed_state()
-                self._set_info("Tüm dosya erişimi kapalı. Açmak için ikona bas.")
 
             if self.on_status_changed:
                 self.on_status_changed(durum)
 
-            self._debug(f"Tüm dosya erişimi durumu: {durum} | önceki: {onceki}")
-
+            self._debug(f"Tüm dosya erişimi durumu: {durum}")
         except Exception as exc:
             self._last_status = False
             self._apply_closed_state()
-            self._set_info(f"İzin durumu okunamadı: {exc}")
+            self.detail_label.text = f"İzin durumu okunamadı: {exc}"
             self._debug(f"İzin durumu okunamadı: {exc}")
 
-    # ---------------------------------------------------------
-    # click handlers
-    # ---------------------------------------------------------
     def _handle_status_icon_click(self, *_args) -> None:
         self._open_settings()
 
