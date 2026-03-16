@@ -1,110 +1,70 @@
-<p align="center">
-  <img src="docs/banner.png" width="100%">
-</p>
+Fonksiyon Değiştirici 
 
-<h1 align="center">Fonksiyon Değiştirici</h1>
+Python fonksiyonlarını güvenli biçimde tarayan, düzenleyen, güncelleyen ve yedekten geri yükleyen modüler Kivy aracı 
 
-<p align="center">
-Python fonksiyonlarını güvenli biçimde tarayan, düzenleyen, güncelleyen ve yedekten geri yükleyen modüler Kivy aracı
-</p>
 
-<p align="center">
 
-<img src="https://img.shields.io/github/stars/pythonkodlarimm-cpu/fonksiyon_degistirici?style=for-the-badge&logo=github">
+Seç • Tara • Düzenle • Doğrula • Güncelle • Geri Yükle 
 
-<img src="https://img.shields.io/github/forks/pythonkodlarimm-cpu/fonksiyon_degistirici?style=for-the-badge&logo=github">
+📌 Overview 
 
-<img src="https://img.shields.io/github/watchers/pythonkodlarimm-cpu/fonksiyon_degistirici?style=for-the-badge&logo=github">
+Fonksiyon Değiştirici, Python dosyalarındaki fonksiyonları tarayan,
+seçilen fonksiyon üzerinde düzenleme yapılmasını sağlayan ve değişiklikleri
+güvenli biçimde uygulayan modüler bir araçtır.
 
-<img src="https://img.shields.io/github/license/pythonkodlarimm-cpu/fonksiyon_degistirici?style=for-the-badge">
+Bu proje bir tam IDE değildir.
 
-<img src="https://img.shields.io/github/v/release/pythonkodlarimm-cpu/fonksiyon_degistirici?style=for-the-badge">
+Bunun yerine şu iş akışını sunar:
 
-<img src="https://img.shields.io/badge/Python-3.x-3776AB?style=for-the-badge&logo=python&logoColor=white">
+Python fonksiyonlarını tarama Fonksiyon bazlı kod düzenleme Güvenli güncelleme mekanizması Otomatik yedek oluşturma Hızlı geri yükleme 
 
-<img src="https://img.shields.io/badge/Kivy-2.x-1D9A6C?style=for-the-badge">
+Mobil ortamda Python kod düzenleme için tasarlanmıştır.
 
-<img src="https://img.shields.io/badge/Platform-Android%20%7C%20Desktop-2F80ED?style=for-the-badge">
+🎬 Demo 
 
-<img src="https://img.shields.io/badge/Architecture-Modular-F2994A?style=for-the-badge">
+✨ Features Python fonksiyonlarını otomatik tarama Fonksiyon bazlı düzenleme Kod doğrulama Güvenli güncelleme Otomatik yedek sistemi Tek tık geri yükleme Modüler mimari Android ve Desktop uyumu 📚 Documentation 
 
-<img src="https://img.shields.io/badge/Status-Active-27AE60?style=for-the-badge">
+Proje dokümantasyonu:
 
-</p>
+Genel Bakış Kullanım Rehberi Mimari Güvenlik Gizlilik Politikası ⚙ Installation 
 
----
+Gerekli bağımlılıkları yükleyin:
 
-<p align="center">
-<b>Seç • Tara • Düzenle • Doğrula • Güncelle • Geri Yükle</b>
-</p>
+pip install kivy pygments ▶ Running 
 
----
+Uygulamayı başlatmak için:
 
-# Demo
+python main.py 🧩 Project Structure app ├ core ├ services └ ui docs ├ overview.md ├ usage.md ├ architecture.md ├ security.md └ privacy_policy.md 🌐 Developer Website 
 
-<p align="center">
-  <img src="docs/demo.gif" width="90%">
-</p>
+Proje için oluşturulan GitHub Pages sayfası:
 
----
+https://pythonkodlarimm-cpu.github.io/fonksiyon_degistirici/ 
 
-# İçindekiler
+Bu sayfada:
 
-- [Genel Bakış](docs/overview.md)
-- [Kullanım Rehberi](docs/usage.md)
-- [Mimari](docs/architecture.md)
-- [Güvenlik](docs/security.md)
-- [Gizlilik Politikası](docs/privacy_policy.md)
+uygulama tanıtımı özellikler geliştirici bilgileri gizlilik politikası 
 
----
+bulunur.
 
-# Proje Özeti
+🔒 Privacy Policy 
 
-Fonksiyon Değiştirici, Python dosyalarındaki fonksiyonları tarayan,  
-seçilen fonksiyonu düzenlemeye izin veren ve değişiklikleri güvenli  
-biçimde uygulayan modüler bir araçtır.
+Uygulamanın gizlilik politikası:
 
-Tam bir IDE değildir.
+docs/privacy_policy.md 
 
-Bunun yerine:
+GitHub Pages üzerinden görüntülemek için:
 
-- fonksiyon bazlı düzenleme
-- güvenli güncelleme
-- otomatik yedek
-- geri yükleme
+https://pythonkodlarimm-cpu.github.io/fonksiyon_degistirici/privacy-policy.html 📄 License 
 
-akışı sunar.
+Bu proje MIT License altında dağıtılmaktadır.
 
----
+Detaylar için:
 
-# Kurulum
+LICENSE 👨‍💻 Developer 
 
-pip install kivy pygments
+FY Apps
 
----
+Android developer tools
+Python utilities
+Security and productivity applications
 
-# Çalıştırma
-
-python main.py
-
----
-
-# Repo Yapısı
-
-app  
-├ core  
-├ services  
-└ ui  
-
-docs  
-├ overview.md  
-├ usage.md  
-├ architecture.md  
-├ security.md  
-└ privacy_policy.md  
-
----
-
-# Lisans
-
-Bu proje MIT lisansı altında dağıtılmaktadır.
