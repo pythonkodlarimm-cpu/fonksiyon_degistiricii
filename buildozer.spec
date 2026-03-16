@@ -33,7 +33,7 @@ android.enable_androidx = True
 android.allow_backup = True
 android.release_artifact = apk
 
-android.add_src = java
+android.add_src = android/src
 
 android.gradle_dependencies = \
     com.google.android.gms:play-services-ads:22.6.0,\
