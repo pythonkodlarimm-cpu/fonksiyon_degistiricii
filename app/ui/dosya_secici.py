@@ -19,9 +19,9 @@ DAVRANIŞ:
 - Android'de ACTION_OPEN_DOCUMENT ile tek dosya seçilir
 - Dosya uzantısı burada kısıtlanmaz
 - Seçim sonrası otomatik tarama başlar
-- Yenile akışında son seçilen belge kimliği tekrar kullanılır
+- Yenile akışı yalnızca seçim varsa görünür ve çalışır
 
-SURUM: 22
+SURUM: 23
 TARIH: 2026-03-16
 IMZA: FY.
 """
@@ -60,14 +60,29 @@ class DosyaSecici(BoxLayout):
         self._last_identifier = ""
         self._last_display_name = ""
 
-        self._build_ui()
+        self.header = None
+        self.path_input = None
+        self.path_hint = None
+        self.toolbar = None
+        self.select_tool = None
+        self.refresh_tool = None
+        self._refresh_tool_visible_width = dp(88)
 
+        self._build_ui()
+        self._update_refresh_visibility()
+
+    # =========================================================
+    # DEBUG
+    # =========================================================
     def _debug(self, message: str) -> None:
         try:
             print("[DOSYA_SECICI]", str(message))
         except Exception:
             pass
 
+    # =========================================================
+    # LAZY IMPORT
+    # =========================================================
     def _show_info_popup(self, title: str, message: str) -> None:
         from app.ui.dosya_secici_paketi.info_popup import show_info_popup
 
@@ -103,6 +118,9 @@ class DosyaSecici(BoxLayout):
 
         return self._android_document_picker
 
+    # =========================================================
+    # UI
+    # =========================================================
     def _build_ui(self) -> None:
         self.header = IconluBaslik(
             text="Belge / Kod Dosyası",
@@ -150,9 +168,9 @@ class DosyaSecici(BoxLayout):
             padding_dp=8,
         )
 
-        self.toolbar.add_tool(
-            icon_name="folder_open.png",
-            text="Seç",
+        self.select_tool = self.toolbar.add_tool(
+            icon_name="dosya_sec.png",
+            text="Dosya Seç",
             on_release=self._open_selector,
             icon_size_dp=42,
             text_size="12sp",
@@ -160,8 +178,8 @@ class DosyaSecici(BoxLayout):
             icon_bg=None,
         )
 
-        self.toolbar.add_tool(
-            icon_name="refresh.png",
+        self.refresh_tool = self.toolbar.add_tool(
+            icon_name="fonksiyon_listesinde_goster.png",
             text="Yenile",
             on_release=self._handle_refresh,
             icon_size_dp=42,
@@ -172,6 +190,58 @@ class DosyaSecici(BoxLayout):
 
         self.add_widget(self.toolbar)
 
+    # =========================================================
+    # REFRESH TOOL VISIBILITY
+    # =========================================================
+    def _has_selection(self) -> bool:
+        if self._selection is not None:
+            try:
+                if str(self._selection_identifier(self._selection) or "").strip():
+                    return True
+            except Exception:
+                pass
+
+        if str(self._last_identifier or "").strip():
+            return True
+
+        try:
+            if str(self.path_input.text or "").strip():
+                return True
+        except Exception:
+            pass
+
+        return False
+
+    def _set_tool_visible(self, widget, visible: bool) -> None:
+        if widget is None:
+            return
+
+        try:
+            widget.disabled = not visible
+        except Exception:
+            pass
+
+        try:
+            widget.opacity = 1 if visible else 0
+        except Exception:
+            pass
+
+        try:
+            widget.size_hint_x = None
+        except Exception:
+            pass
+
+        try:
+            widget.width = self._refresh_tool_visible_width if visible else 0.01
+        except Exception:
+            pass
+
+    def _update_refresh_visibility(self) -> None:
+        self._set_tool_visible(self.refresh_tool, self._has_selection())
+
+    # =========================================================
+    # SELECTION HELPERS
+    # =========================================================
     def _selection_identifier(self, selection) -> str:
         if selection is None:
             return ""
@@ -217,6 +287,9 @@ class DosyaSecici(BoxLayout):
 
         return self._selection_identifier(selection)
 
+    # =========================================================
+    # PUBLIC API
+    # =========================================================
     def get_path(self) -> str:
         if self._selection is not None:
             identifier = self._selection_identifier(self._selection)
@@ -240,8 +313,11 @@ class DosyaSecici(BoxLayout):
         self.path_input.text = temiz
         self.path_hint.text = temiz if temiz else "Seçilen belge burada görünecek"
         self._last_identifier = temiz
+
         if temiz and not self._last_display_name:
             self._last_display_name = temiz
+
+        self._update_refresh_visibility()
         self._debug(f"Identifier set edildi: {temiz}")
 
     def set_selection(self, selection) -> None:
@@ -256,6 +332,8 @@ class DosyaSecici(BoxLayout):
         self._last_identifier = identifier
         self._last_display_name = display_text
 
+        self._update_refresh_visibility()
+
         self._debug(
             "Selection set edildi | "
             f"source={getattr(selection, 'source', '')} "
@@ -269,7 +347,11 @@ class DosyaSecici(BoxLayout):
         self.path_hint.text = "Seçilen belge burada görünecek"
         self._last_identifier = ""
         self._last_display_name = ""
+        self._update_refresh_visibility()
 
+    # =========================================================
+    # ACTIONS
+    # =========================================================
     def _handle_refresh(self, *_args):
         identifier = self.get_path()
         self._debug(f"Yenile tetiklendi: {identifier}")
@@ -296,6 +378,9 @@ class DosyaSecici(BoxLayout):
             picker = self._get_desktop_picker()
             picker.open_popup()
 
+    # =========================================================
+    # PICKER CALLBACK
+    # =========================================================
     def _after_picker_selected(self, selection) -> None:
         identifier = self._selection_identifier(selection)
         self._debug(f"Seçim sonucu geldi: {identifier}")
