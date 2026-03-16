@@ -6,13 +6,15 @@ ROL:
 - Uygulamanın ana root widget'ı
 - Dosya seçme, fonksiyon tarama, seçim, güncelleme ve geri yükleme akışını yönetir
 - UI katmanını çekirdek servislerle bağlar
+- Geçici bildirim overlay katmanını yönetir
 
 MİMARİ:
 - Root çizim yapmaz
 - Root sadece yerleşim + state + akış yönetir
 - Görsel çizim alt bileşenlerin kendi içinde kalır
+- Ana içerik ve overlay katmanı ayrıdır
 
-SURUM: 14
+SURUM: 15
 TARIH: 2026-03-16
 IMZA: FY.
 """
@@ -24,6 +26,7 @@ from pathlib import Path
 
 from kivy.metrics import dp
 from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.floatlayout import FloatLayout
 from kivy.uix.label import Label
 from kivy.uix.scrollview import ScrollView
 from kivy.utils import platform
@@ -46,23 +49,28 @@ from app.services.belge_oturumu_servisi import (
     son_yedek_yolu,
 )
 from app.services.dosya_servisi import read_text
+from app.services.gecici_bildirim_servisi import gecici_bildirim_servisi
 from app.ui.dosya_secici import DosyaSecici
 from app.ui.dosya_secici_paketi.models import DocumentSelection
 from app.ui.durum_cubugu import DurumCubugu
 from app.ui.editor_paneli import EditorPaneli
 from app.ui.fonksiyon_listesi import FonksiyonListesi
+from app.ui.gecici_bildirim import GeciciBildirimKatmani
 from app.ui.kart import Kart
 from app.ui.tum_dosya_erisim_paneli import TumDosyaErisimPaneli
 
 
-class RootWidget(BoxLayout):
+class RootWidget(FloatLayout):
     def __init__(self, **kwargs):
-        super().__init__(
+        super().__init__(**kwargs)
+
+        self.main_root = BoxLayout(
             orientation="vertical",
             spacing=dp(8),
             padding=dp(8),
-            **kwargs,
+            size_hint=(1, 1),
         )
+        self.add_widget(self.main_root)
 
         self.current_file_path = ""
         self.current_session = None
@@ -79,6 +87,7 @@ class RootWidget(BoxLayout):
         self.version_wrap = None
         self.version_label = None
         self.bottom_bar = None
+        self.toast_layer = None
         self.app_version_text = self._resolve_app_version()
 
         try:
@@ -206,7 +215,7 @@ class RootWidget(BoxLayout):
         self.main_column.add_widget(self.editor)
 
         self.scroll.add_widget(self.main_column)
-        self.add_widget(self.scroll)
+        self.main_root.add_widget(self.scroll)
 
         self.bottom_bar = BoxLayout(
             orientation="vertical",
@@ -223,13 +232,18 @@ class RootWidget(BoxLayout):
         self.bottom_bar.add_widget(self.version_wrap)
 
         self.bottom_bar.height = int(self.status.height) + int(self.version_wrap.height) + int(dp(4))
-        self.add_widget(self.bottom_bar)
+        self.main_root.add_widget(self.bottom_bar)
+
+        self.toast_layer = GeciciBildirimKatmani()
+        self.add_widget(self.toast_layer)
+        gecici_bildirim_servisi.register_layer(self.toast_layer)
 
     def _build_fallback_error_ui(self, hata_metni: str) -> BoxLayout:
         root = BoxLayout(
             orientation="vertical",
             spacing=dp(10),
             padding=dp(12),
+            size_hint=(1, 1),
         )
 
         baslik = Label(
@@ -295,6 +309,22 @@ class RootWidget(BoxLayout):
         except Exception:
             pass
 
+    def show_toast(self, text: str, icon_name: str = "", duration: float = 2.4) -> None:
+        try:
+            gecici_bildirim_servisi.show(
+                text=str(text or ""),
+                icon_name=str(icon_name or ""),
+                duration=float(duration or 2.4),
+            )
+        except Exception:
+            pass
+
+    def hide_toast(self) -> None:
+        try:
+            gecici_bildirim_servisi.hide_immediately()
+        except Exception:
+            pass
+
     def _on_file_access_status_changed(self, durum: bool) -> None:
         try:
             if durum:
@@ -314,17 +344,20 @@ class RootWidget(BoxLayout):
         self.selected_item = None
 
         try:
-            self.dosya_secici.clear_selection()
+            if self.dosya_secici is not None:
+                self.dosya_secici.clear_selection()
         except Exception:
             pass
 
         try:
-            self.function_list.clear_all()
+            if self.function_list is not None:
+                self.function_list.clear_all()
         except Exception:
             pass
 
         try:
-            self.editor.clear_all()
+            if self.editor is not None:
+                self.editor.clear_all()
         except Exception:
             pass
 
@@ -333,12 +366,14 @@ class RootWidget(BoxLayout):
         self.selected_item = None
 
         try:
-            self.function_list.clear_all()
+            if self.function_list is not None:
+                self.function_list.clear_all()
         except Exception:
             pass
 
         try:
-            self.editor.clear_all()
+            if self.editor is not None:
+                self.editor.clear_all()
         except Exception:
             pass
 
@@ -346,14 +381,16 @@ class RootWidget(BoxLayout):
         self.selected_item = None
 
         try:
-            self.function_list.clear_selection()
-            self.function_list.clear_new_preview()
+            if self.function_list is not None:
+                self.function_list.clear_selection()
+                self.function_list.clear_new_preview()
         except Exception:
             pass
 
         try:
-            self.editor.clear_selection()
-            self.editor.set_new_code_text("")
+            if self.editor is not None:
+                self.editor.clear_selection()
+                self.editor.set_new_code_text("")
         except Exception:
             pass
 
@@ -370,7 +407,8 @@ class RootWidget(BoxLayout):
         if not self.current_file_path:
             self.items = []
             try:
-                self.function_list.clear_all()
+                if self.function_list is not None:
+                    self.function_list.clear_all()
             except Exception:
                 pass
             return
@@ -378,28 +416,31 @@ class RootWidget(BoxLayout):
         self.items = scan_functions_from_file(self.current_file_path)
 
         try:
-            self.function_list.set_items(self.items)
+            if self.function_list is not None:
+                self.function_list.set_items(self.items)
         except Exception:
             pass
 
     def _selection_from_ui(self):
         try:
-            secim = self.dosya_secici.get_selection()
-            if secim is not None:
-                return secim
+            if self.dosya_secici is not None:
+                secim = self.dosya_secici.get_selection()
+                if secim is not None:
+                    return secim
         except Exception:
             pass
 
         try:
-            ham = str(self.dosya_secici.get_path() or "").strip()
-            if ham and Path(ham).exists() and Path(ham).is_file():
-                return DocumentSelection(
-                    source="filesystem",
-                    uri="",
-                    local_path=ham,
-                    display_name=Path(ham).name,
-                    mime_type="",
-                )
+            if self.dosya_secici is not None:
+                ham = str(self.dosya_secici.get_path() or "").strip()
+                if ham and Path(ham).exists() and Path(ham).is_file():
+                    return DocumentSelection(
+                        source="filesystem",
+                        uri="",
+                        local_path=ham,
+                        display_name=Path(ham).name,
+                        mime_type="",
+                    )
         except Exception:
             pass
 
@@ -439,7 +480,8 @@ class RootWidget(BoxLayout):
             return
 
         try:
-            self.dosya_secici.set_path(source_identifier or working_path)
+            if self.dosya_secici is not None:
+                self.dosya_secici.set_path(source_identifier or working_path)
         except Exception:
             pass
 
@@ -479,14 +521,16 @@ class RootWidget(BoxLayout):
         self.selected_item = item
 
         try:
-            self.editor.set_item(item)
-            self.editor.set_new_code_text("")
+            if self.editor is not None:
+                self.editor.set_item(item)
+                self.editor.set_new_code_text("")
         except Exception:
             pass
 
         try:
-            self.function_list.set_selected_preview(str(getattr(item, "source", "") or ""))
-            self.function_list.clear_new_preview()
+            if self.function_list is not None:
+                self.function_list.set_selected_preview(str(getattr(item, "source", "") or ""))
+                self.function_list.clear_new_preview()
         except Exception:
             pass
 
@@ -557,12 +601,14 @@ class RootWidget(BoxLayout):
                 return
 
             try:
-                self.function_list.set_new_preview(str(new_code or ""))
+                if self.function_list is not None:
+                    self.function_list.set_new_preview(str(new_code or ""))
             except Exception:
                 pass
 
             try:
-                self.editor.set_new_code_text(str(new_code or ""))
+                if self.editor is not None:
+                    self.editor.set_new_code_text(str(new_code or ""))
             except Exception:
                 pass
 
@@ -576,16 +622,18 @@ class RootWidget(BoxLayout):
             self.selected_item = refreshed
 
             try:
-                self.function_list.set_items(self.items)
-                self.function_list.selected_item = refreshed
-                self.function_list.set_selected_preview(str(getattr(refreshed, "source", "") or ""))
-                self.function_list.set_new_preview(str(new_code or ""))
+                if self.function_list is not None:
+                    self.function_list.set_items(self.items)
+                    self.function_list.selected_item = refreshed
+                    self.function_list.set_selected_preview(str(getattr(refreshed, "source", "") or ""))
+                    self.function_list.set_new_preview(str(new_code or ""))
             except Exception:
                 pass
 
             try:
-                self.editor.set_item(refreshed)
-                self.editor.set_new_code_text(str(new_code or ""))
+                if self.editor is not None:
+                    self.editor.set_item(refreshed)
+                    self.editor.set_new_code_text(str(new_code or ""))
             except Exception:
                 pass
 
