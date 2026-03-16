@@ -7,27 +7,27 @@ ROL:
 - Dosya seçme, fonksiyon tarama, seçim, güncelleme ve geri yükleme akışını yönetir
 - UI katmanını çekirdek servislerle bağlar
 - Geçici bildirim overlay katmanını yönetir
-- Premium / reklam karar akışını merkezi olarak yönetir
+- Reklam test akışını manuel olarak yönetir
 
 MİMARİ:
 - Root çizim yapmaz
 - Root sadece yerleşim + state + akış yönetir
 - Görsel çizim alt bileşenlerin kendi içinde kalır
 - Ana içerik ve overlay katmanı ayrıdır
-- Premium ve reklam mantığı servis katmanına delegasyonla çalışır
 
 NOT:
 - Şu anda reklam tarafında TEST banner kullanılmaktadır.
 - Yayın öncesi reklam servisi içindeki test reklam birimi gerçek reklam birimi ile değiştirilmelidir.
 - GEÇİCİ TEST DEĞİŞİKLİĞİ:
-  Açılış crash sorununu izole etmek için __init__ içinde self._premium_kontrol()
-  çağrısı geçici olarak kapatılmıştır.
-- Reklam testi artık açılışta değil, manuel test butonu ile yapılır.
+  Açılış crash sorununu izole etmek için premium tarafı tamamen devre dışı bırakılmıştır.
+- Premium servisi import edilmez.
+- Premium kontrolü çalıştırılmaz.
+- Reklam testi açılışta değil, manuel test butonu ile yapılır.
 - Eklenen geçici butonlar:
   1) Reklam Test
   2) Reklam Gizle
 
-SURUM: 19
+SURUM: 20
 TARIH: 2026-03-16
 IMZA: FY.
 """
@@ -64,7 +64,6 @@ from app.services.belge_oturumu_servisi import (
 )
 from app.services.dosya_servisi import read_text
 from app.services.gecici_bildirim_servisi import gecici_bildirim_servisi
-from app.services.premium_servisi import premium_servisi
 from app.services.reklam_servisi import reklam_servisi
 from app.ui.dosya_secici import DosyaSecici
 from app.ui.dosya_secici_paketi.models import DocumentSelection
@@ -110,9 +109,9 @@ class RootWidget(FloatLayout):
         try:
             self._build_ui()
 
-            # GEÇİCİ TEST:
-            # Açılışta çökme sorununu izole etmek için premium/reklam başlangıcı kapatıldı.
-            # self._premium_kontrol()
+            # PREMIUM GEÇİCİ OLARAK DEVRE DIŞI:
+            # Açılış crash sorununu izole etmek için premium tarafı tamamen çıkarıldı.
+            # İleride geri açılacaksa ayrıca tekrar entegre edilecek.
 
             self.set_status_info("Hazır. Manuel reklam testi aktif.", "onaylandi.png")
         except Exception:
@@ -131,34 +130,8 @@ class RootWidget(FloatLayout):
             pass
 
     # =========================================================
-    # PREMIUM / REKLAM
+    # REKLAM TEST
     # =========================================================
-    def _premium_kontrol(self) -> None:
-        """
-        Premium kullanıcıda reklam yüklenmez.
-        Free kullanıcıda test banner yüklenir.
-
-        NOT:
-        Bu metot şu anda dosyada tutuluyor ancak __init__ içinde
-        geçici olarak çağrılmıyor. Amaç açılış crash'ini izole etmektir.
-        """
-        try:
-            if premium_servisi.premium_aktif_mi():
-                self._debug("Premium aktif -> reklam yuklenmeyecek")
-            else:
-                if platform == "android":
-                    reklam_servisi.reklam_yukle()
-                    reklam_servisi.reklam_goster()
-                self._debug("Free kullanici -> test reklam yukleme cagrildi")
-        except Exception as exc:
-            self._debug(f"Premium/Reklam kontrol hatasi: {exc}")
-
-    def premium_durumu_yenile(self) -> None:
-        try:
-            self._premium_kontrol()
-        except Exception:
-            pass
-
     def _manuel_reklam_test(self, _instance=None) -> None:
         """
         GEÇİCİ TEST:
@@ -820,3 +793,5 @@ class RootWidget(FloatLayout):
         except Exception:
             self.set_status_error("Geri yükleme hatası oluştu.")
             print(traceback.format_exc())
+
+Guncelle sadece reklam servisi kalacak şekilde premium yorumla dediğim gibi
