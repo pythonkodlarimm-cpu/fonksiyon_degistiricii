@@ -12,7 +12,7 @@ source.exclude_patterns = *.bak,*.tmp,*.swp,.DS_Store
 
 version = 0.1.1
 
-requirements = python3,kivy,pygments,pyjnius
+requirements = python3==3.10.11,kivy==2.3.0,pygments,pyjnius
 
 orientation = portrait
 fullscreen = 0
