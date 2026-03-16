@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/pythonkodlarimm-cpu/fonksiyon_degistirici/main/docs/banner.png" width="100%">
+  <img src="https://raw.githubusercontent.com/pythonkodlarimm-cpu/fonksiyon_degistiricii/main/docs/banner.png" width="100%">
 </p>
 
 <h1 align="center">Fonksiyon Değiştirici</h1>
@@ -9,11 +9,11 @@ Python fonksiyonlarını güvenli biçimde tarayan, düzenleyen, güncelleyen ve
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/github/stars/pythonkodlarimm-cpu/fonksiyon_degistirici?style=for-the-badge&logo=github">
-  <img src="https://img.shields.io/github/forks/pythonkodlarimm-cpu/fonksiyon_degistirici?style=for-the-badge&logo=github">
-  <img src="https://img.shields.io/github/watchers/pythonkodlarimm-cpu/fonksiyon_degistirici?style=for-the-badge&logo=github">
-  <img src="https://img.shields.io/github/license/pythonkodlarimm-cpu/fonksiyon_degistirici?style=for-the-badge">
-  <img src="https://img.shields.io/github/v/release/pythonkodlarimm-cpu/fonksiyon_degistirici?style=for-the-badge">
+  <img src="https://img.shields.io/github/stars/pythonkodlarimm-cpu/fonksiyon_degistiricii?style=for-the-badge&logo=github">
+  <img src="https://img.shields.io/github/forks/pythonkodlarimm-cpu/fonksiyon_degistiricii?style=for-the-badge&logo=github">
+  <img src="https://img.shields.io/github/watchers/pythonkodlarimm-cpu/fonksiyon_degistiricii?style=for-the-badge&logo=github">
+  <img src="https://img.shields.io/github/license/pythonkodlarimm-cpu/fonksiyon_degistiricii?style=for-the-badge">
+  <img src="https://img.shields.io/github/v/release/pythonkodlarimm-cpu/fonksiyon_degistiricii?style=for-the-badge">
 </p>
 
 <p align="center">
@@ -35,7 +35,7 @@ Python fonksiyonlarını güvenli biçimde tarayan, düzenleyen, güncelleyen ve
 # Demo
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/pythonkodlarimm-cpu/fonksiyon_degistirici/main/docs/demo.gif" width="90%">
+  <img src="https://raw.githubusercontent.com/pythonkodlarimm-cpu/fonksiyon_degistiricii/main/docs/demo.gif" width="90%">
 </p>
 
 ---
