@@ -36,8 +36,7 @@ android.release_artifact = apk
 android.add_src = android/src
 
 android.gradle_dependencies = \
-    com.google.android.gms:play-services-ads:22.6.0,\
-    com.android.billingclient:billing:6.1.0
+    com.google.android.gms:play-services-ads:22.6.0
 
 android.meta_data = \
     com.google.android.gms.ads.APPLICATION_ID=ca-app-pub-5522917995813710~6900495663
