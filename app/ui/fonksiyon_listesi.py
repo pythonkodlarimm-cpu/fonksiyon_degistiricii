@@ -15,13 +15,8 @@ MİMARİ:
 - Liste görünürlüğü burada yönetilir
 - Üst aksiyon alanında icon_toolbar kullanılır
 
-ANDROID / APK NOTLARI:
-- Dosya seçici artık Android'de sistem picker üzerinden geçici dosya yolu üretebilir
-- Bu widget dosya yoluna bağımlı değildir; sadece taranmış FunctionItem listesi ile çalışır
-- Geçici dosya, normal dosya, güvenli klasör veya farklı depolama sağlayıcısı ayrımı yapmaz
-
-SURUM: 5
-TARIH: 2026-03-15
+SURUM: 7
+TARIH: 2026-03-16
 IMZA: FY.
 """
 
@@ -30,8 +25,6 @@ from __future__ import annotations
 from typing import Iterable
 
 from kivy.clock import Clock
-from kivy.graphics import Color
-from kivy.graphics import RoundedRectangle
 from kivy.metrics import dp
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button
@@ -42,6 +35,7 @@ from kivy.uix.textinput import TextInput
 
 from app.ui.icon_toolbar import IconToolbar
 from app.ui.iconlu_baslik import IconluBaslik
+from app.ui.kart import Kart
 from app.ui.tema import (
     CARD_BG,
     CARD_BG_DARK,
@@ -53,31 +47,13 @@ from app.ui.tema import (
 )
 
 
-class _PanelKart(BoxLayout):
-    def __init__(self, bg=(0.14, 0.14, 0.17, 1), radius=16, **kwargs):
-        super().__init__(**kwargs)
-        self._bg = tuple(bg)
-        self._radius = float(radius)
-
-        with self.canvas.before:
-            self._bg_color = Color(*self._bg)
-            self._bg_rect = RoundedRectangle(radius=[dp(self._radius)])
-
-        self.bind(pos=self._update_canvas, size=self._update_canvas)
-        self._update_canvas()
-
-    def _update_canvas(self, *_args):
-        self._bg_rect.pos = self.pos
-        self._bg_rect.size = self.size
-
-
 class FonksiyonListesi(BoxLayout):
     def __init__(self, on_select, **kwargs):
         super().__init__(
             orientation="vertical",
             spacing=dp(8),
             size_hint_y=None,
-            height=dp(620),
+            height=dp(664),
             **kwargs,
         )
 
@@ -108,19 +84,31 @@ class FonksiyonListesi(BoxLayout):
         row = BoxLayout(
             orientation="horizontal",
             size_hint_y=None,
-            height=dp(44),
+            height=dp(40),
             spacing=dp(8),
         )
 
         self.header = IconluBaslik(
             text="Fonksiyonlar",
             icon_name="layers.png",
-            height_dp=34,
-            font_size="16sp",
+            height_dp=30,
+            font_size="15sp",
             color=TEXT_PRIMARY,
             size_hint_x=1,
         )
         row.add_widget(self.header)
+
+        self.count_label = Label(
+            text="0 / 0",
+            size_hint_x=None,
+            width=dp(74),
+            color=TEXT_MUTED,
+            font_size="12sp",
+            halign="right",
+            valign="middle",
+        )
+        self.count_label.bind(size=lambda inst, size: setattr(inst, "text_size", size))
+        row.add_widget(self.count_label)
 
         self.add_widget(row)
 
@@ -133,7 +121,7 @@ class FonksiyonListesi(BoxLayout):
             icon_name="visibility_on.png",
             text="Liste",
             on_release=self._toggle_list_visibility,
-            icon_size_dp=32,
+            icon_size_dp=30,
             text_size="10sp",
             color=TEXT_MUTED,
             icon_bg=None,
@@ -141,12 +129,13 @@ class FonksiyonListesi(BoxLayout):
         self.add_widget(self.header_toolbar)
 
     def _build_search_box(self) -> None:
-        self.search_wrap = _PanelKart(
+        self.search_wrap = Kart(
             orientation="vertical",
             size_hint_y=None,
             height=dp(48),
             padding=(0, 0),
             bg=INPUT_BG,
+            border=(0.20, 0.24, 0.30, 1),
             radius=RADIUS_MD,
         )
 
@@ -169,20 +158,21 @@ class FonksiyonListesi(BoxLayout):
         self.add_widget(self.search_wrap)
 
     def _build_list_box(self) -> None:
-        self.list_wrap = _PanelKart(
+        self.list_wrap = Kart(
             orientation="vertical",
             spacing=dp(8),
             size_hint_y=None,
-            height=dp(230),
-            padding=(dp(8), dp(8)),
+            height=dp(256),
+            padding=(dp(10), dp(10)),
             bg=CARD_BG_SOFT,
+            border=(0.18, 0.22, 0.28, 1),
             radius=RADIUS_MD,
         )
 
         self.list_info_label = Label(
-            text="Taranan fonksiyonlar aşağıda listelenir.",
+            text="Belge tarandığında fonksiyonlar burada listelenir.",
             size_hint_y=None,
-            height=dp(20),
+            height=dp(18),
             color=TEXT_MUTED,
             font_size="12sp",
             halign="left",
@@ -230,13 +220,14 @@ class FonksiyonListesi(BoxLayout):
         self.add_widget(self.new_preview_card)
 
     def _build_preview_card(self, title: str, icon_name: str):
-        card = _PanelKart(
+        card = Kart(
             orientation="vertical",
             size_hint_y=None,
             height=dp(118),
             padding=(dp(12), dp(10)),
             spacing=dp(8),
             bg=CARD_BG_DARK,
+            border=(0.18, 0.21, 0.27, 1),
             radius=RADIUS_MD,
         )
 
@@ -244,7 +235,7 @@ class FonksiyonListesi(BoxLayout):
             text=title,
             icon_name=icon_name,
             height_dp=28,
-            font_size="14sp",
+            font_size="13sp",
             color=TEXT_PRIMARY,
         )
         card.add_widget(head)
@@ -461,19 +452,18 @@ class FonksiyonListesi(BoxLayout):
         lineno = int(getattr(item, "lineno", 0) or 0)
         end_lineno = int(getattr(item, "end_lineno", 0) or 0)
         signature = str(getattr(item, "signature", "") or "").strip()
-        path = str(getattr(item, "path", "") or "")
 
         satir = f"{kind}  •  Satır: {lineno}-{end_lineno}"
 
         if signature:
-            return f"{display_name}\n{satir}\n{signature}\n{path}"
-        return f"{display_name}\n{satir}\n{path}"
+            return f"{display_name}\n{satir}\n{signature}"
+        return f"{display_name}\n{satir}"
 
     def _button_height(self, item) -> float:
         signature = str(getattr(item, "signature", "") or "").strip()
         if signature:
-            return dp(104)
-        return dp(84)
+            return dp(92)
+        return dp(72)
 
     def _make_item_button(self, item, is_selected: bool) -> Button:
         btn = Button(
@@ -524,7 +514,7 @@ class FonksiyonListesi(BoxLayout):
                 self.container.add_widget(self._make_empty_label())
 
         toplam = len(self.all_items)
-        self.header.set_text(f"Fonksiyonlar ({count}/{toplam})")
+        self.count_label.text = f"{count} / {toplam}"
 
         if self.is_list_visible:
             if keep_scroll and self.selected_item is not None:
@@ -609,13 +599,13 @@ class FonksiyonListesi(BoxLayout):
 
     def _sync_list_visibility(self) -> None:
         if self.is_list_visible:
-            self.list_wrap.height = dp(230)
-            self.list_info_label.text = "Taranan fonksiyonlar aşağıda listelenir."
+            self.list_wrap.height = dp(256)
+            self.list_info_label.text = "Belge tarandığında fonksiyonlar burada listelenir."
             self.scroll.disabled = False
             self.scroll.opacity = 1
             self.scroll.size_hint_y = 1
         else:
-            self.list_wrap.height = dp(52)
+            self.list_wrap.height = dp(54)
             self.list_info_label.text = "Liste kapalı. Göz ikonuna basarak aç."
             self.scroll.disabled = True
             self.scroll.opacity = 0
