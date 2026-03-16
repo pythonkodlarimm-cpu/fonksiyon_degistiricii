@@ -9,19 +9,23 @@ Python fonksiyonlarını güvenli biçimde tarayan, düzenleyen, güncelleyen ve
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/github/stars/pythonkodlarimm-cpu/fonksiyon_degistiricii?style=for-the-badge&logo=github">
-  <img src="https://img.shields.io/github/forks/pythonkodlarimm-cpu/fonksiyon_degistiricii?style=for-the-badge&logo=github">
-  <img src="https://img.shields.io/github/watchers/pythonkodlarimm-cpu/fonksiyon_degistiricii?style=for-the-badge&logo=github">
-  <img src="https://img.shields.io/github/license/pythonkodlarimm-cpu/fonksiyon_degistiricii?style=for-the-badge">
-  <img src="https://img.shields.io/github/v/release/pythonkodlarimm-cpu/fonksiyon_degistiricii?style=for-the-badge">
+
+<img src="https://img.shields.io/github/stars/pythonkodlarimm-cpu/fonksiyon_degistiricii?style=for-the-badge&logo=github">
+<img src="https://img.shields.io/github/forks/pythonkodlarimm-cpu/fonksiyon_degistiricii?style=for-the-badge&logo=github">
+<img src="https://img.shields.io/github/watchers/pythonkodlarimm-cpu/fonksiyon_degistiricii?style=for-the-badge&logo=github">
+<img src="https://img.shields.io/github/license/pythonkodlarimm-cpu/fonksiyon_degistiricii?style=for-the-badge">
+<img src="https://img.shields.io/github/v/release/pythonkodlarimm-cpu/fonksiyon_degistiricii?style=for-the-badge">
+
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Python-3.x-3776AB?style=for-the-badge&logo=python&logoColor=white">
-  <img src="https://img.shields.io/badge/Kivy-2.x-1D9A6C?style=for-the-badge">
-  <img src="https://img.shields.io/badge/Platform-Android%20%7C%20Desktop-2F80ED?style=for-the-badge">
-  <img src="https://img.shields.io/badge/Architecture-Modular-F2994A?style=for-the-badge">
-  <img src="https://img.shields.io/badge/Status-Active-27AE60?style=for-the-badge">
+
+<img src="https://img.shields.io/badge/Python-3.x-3776AB?style=for-the-badge&logo=python&logoColor=white">
+<img src="https://img.shields.io/badge/Kivy-2.x-1D9A6C?style=for-the-badge">
+<img src="https://img.shields.io/badge/Platform-Android%20%7C%20Desktop-2F80ED?style=for-the-badge">
+<img src="https://img.shields.io/badge/Architecture-Modular-F2994A?style=for-the-badge">
+<img src="https://img.shields.io/badge/Status-Active-27AE60?style=for-the-badge">
+
 </p>
 
 ---
@@ -52,24 +56,27 @@ Python fonksiyonlarını güvenli biçimde tarayan, düzenleyen, güncelleyen ve
 
 # Proje Özeti
 
-Fonksiyon Değiştirici, Python dosyalarındaki fonksiyonları tarayan,  
-seçilen fonksiyonu düzenlemeye izin veren ve değişiklikleri güvenli  
-biçimde uygulayan modüler bir araçtır.
+**Fonksiyon Değiştirici**, Python dosyaları içerisindeki fonksiyonları analiz eden ve güvenli şekilde güncelleyebilen modüler bir geliştirme aracıdır.
 
-Tam bir IDE değildir.
+Bu araç bir **tam IDE değildir**.  
+Bunun yerine **fonksiyon seviyesinde düzenleme** üzerine odaklanır.
 
-Bunun yerine şu akışı sunar:
+Sağladığı temel özellikler:
 
-- fonksiyon bazlı düzenleme  
-- güvenli güncelleme  
-- otomatik yedek oluşturma  
-- hızlı geri yükleme  
+- Python dosyası içindeki fonksiyonları otomatik tarama  
+- Fonksiyon bazlı düzenleme  
+- Güvenli güncelleme mekanizması  
+- Otomatik yedek oluşturma  
+- Tek tıklamayla geri yükleme  
+- Mobil uyumlu arayüz
 
-Bu yapı özellikle mobil ortamda Python kodu düzenlemek için tasarlanmıştır.
+Bu mimari özellikle **Android üzerinde Python kodu düzenlemek** için tasarlanmıştır.
 
 ---
 
 # Kurulum
+
+Gerekli paketleri yükleyin:
 
 ```bash
 pip install kivy pygments
@@ -79,6 +86,8 @@ pip install kivy pygments
 
 # Çalıştırma
 
+Projeyi çalıştırmak için:
+
 ```bash
 python main.py
 ```
@@ -87,47 +96,45 @@ python main.py
 
 # Repo Yapısı
 
-```text
+```
 app
-├ core
-├ services
-└ ui
+├─ core
+├─ services
+└─ ui
 
 docs
-├ architecture.md
-├ banner.png
-├ demo.gif
-├ index.html
-├ overview.md
-├ privacy-policy.html
-├ security.md
-└ usage.md
+├─ architecture.md
+├─ banner.png
+├─ demo.gif
+├─ index.html
+├─ overview.md
+├─ privacy-policy.html
+├─ security.md
+└─ usage.md
 
 android
-└ src
-    └ org
-        └ fy
-            └ bridge
-                ├ AdMobBridge.java
-                └ BillingBridge.java
+└─ src
+    └─ org
+        └─ fy
+            └─ bridge
+                ├─ AdMobBridge.java
+                └─ BillingBridge.java
 ```
 
 ---
 
 # Developer Website
 
-Proje için oluşturulan GitHub Pages sayfası:
+Proje için GitHub Pages üzerinden yayınlanan geliştirici sayfası:
 
-https://pythonkodlarimm-cpu.github.io/fonksiyon_degistirici/
+https://pythonkodlarimm-cpu.github.io/fonksiyon_degistiricii/
 
-Bu sayfada:
+Bu sayfa şunları içerir:
 
 - uygulama tanıtımı  
-- özellikler  
+- teknik mimari özeti  
 - geliştirici bilgileri  
-- gizlilik politikası  
-
-bulunur.
+- gizlilik politikası
 
 ---
 
@@ -135,10 +142,10 @@ bulunur.
 
 Uygulamanın gizlilik politikası:
 
-https://pythonkodlarimm-cpu.github.io/fonksiyon_degistirici/privacy-policy.html
+https://pythonkodlarimm-cpu.github.io/fonksiyon_degistiricii/privacy-policy.html
 
 ---
 
 # Lisans
 
-Bu proje MIT lisansı altında dağıtılmaktadır.
+Bu proje **MIT lisansı** altında dağıtılmaktadır.
