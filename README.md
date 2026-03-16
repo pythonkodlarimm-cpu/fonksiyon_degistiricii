@@ -11,15 +11,23 @@ Python fonksiyonlarını güvenli biçimde tarayan, düzenleyen, güncelleyen ve
 <p align="center">
 
 <img src="https://img.shields.io/github/stars/pythonkodlarimm-cpu/fonksiyon_degistirici?style=for-the-badge&logo=github">
+
 <img src="https://img.shields.io/github/forks/pythonkodlarimm-cpu/fonksiyon_degistirici?style=for-the-badge&logo=github">
+
 <img src="https://img.shields.io/github/watchers/pythonkodlarimm-cpu/fonksiyon_degistirici?style=for-the-badge&logo=github">
+
 <img src="https://img.shields.io/github/license/pythonkodlarimm-cpu/fonksiyon_degistirici?style=for-the-badge">
+
 <img src="https://img.shields.io/github/v/release/pythonkodlarimm-cpu/fonksiyon_degistirici?style=for-the-badge">
 
 <img src="https://img.shields.io/badge/Python-3.x-3776AB?style=for-the-badge&logo=python&logoColor=white">
+
 <img src="https://img.shields.io/badge/Kivy-2.x-1D9A6C?style=for-the-badge">
+
 <img src="https://img.shields.io/badge/Platform-Android%20%7C%20Desktop-2F80ED?style=for-the-badge">
+
 <img src="https://img.shields.io/badge/Architecture-Modular-F2994A?style=for-the-badge">
+
 <img src="https://img.shields.io/badge/Status-Active-27AE60?style=for-the-badge">
 
 </p>
@@ -71,5 +79,32 @@ akışı sunar.
 
 # Kurulum
 
-```bash
 pip install kivy pygments
+
+---
+
+# Çalıştırma
+
+python main.py
+
+---
+
+# Repo Yapısı
+
+app  
+├ core  
+├ services  
+└ ui  
+
+docs  
+├ overview.md  
+├ usage.md  
+├ architecture.md  
+├ security.md  
+└ privacy_policy.md  
+
+---
+
+# Lisans
+
+Bu proje MIT lisansı altında dağıtılmaktadır.
