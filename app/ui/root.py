@@ -12,7 +12,7 @@ MİMARİ:
 - Root sadece yerleşim + state + akış yönetir
 - Görsel çizim alt bileşenlerin kendi içinde kalır
 
-SURUM: 11
+SURUM: 12
 TARIH: 2026-03-16
 IMZA: FY.
 """
