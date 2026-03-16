@@ -10,13 +10,15 @@ Python fonksiyonlarını güvenli biçimde tarayan, düzenleyen, güncelleyen ve
 
 <p align="center">
 
-<img src="https://img.shields.io/github/stars/YOUR_USERNAME/fonksiyon_degistirici?style=for-the-badge&logo=github">
-<img src="https://img.shields.io/github/forks/YOUR_USERNAME/fonksiyon_degistirici?style=for-the-badge&logo=github">
-<img src="https://img.shields.io/github/watchers/YOUR_USERNAME/fonksiyon_degistirici?style=for-the-badge&logo=github">
+<img src="https://img.shields.io/github/stars/pythonkodlarimm-cpu/fonksiyon_degistirici?style=for-the-badge&logo=github">
 
-<img src="https://img.shields.io/github/license/YOUR_USERNAME/fonksiyon_degistirici?style=for-the-badge">
+<img src="https://img.shields.io/github/forks/pythonkodlarimm-cpu/fonksiyon_degistirici?style=for-the-badge&logo=github">
 
-<img src="https://img.shields.io/github/release/YOUR_USERNAME/fonksiyon_degistirici?style=for-the-badge">
+<img src="https://img.shields.io/github/watchers/pythonkodlarimm-cpu/fonksiyon_degistirici?style=for-the-badge&logo=github">
+
+<img src="https://img.shields.io/github/license/pythonkodlarimm-cpu/fonksiyon_degistirici?style=for-the-badge">
+
+<img src="https://img.shields.io/github/v/release/pythonkodlarimm-cpu/fonksiyon_degistirici?style=for-the-badge">
 
 <img src="https://img.shields.io/badge/Python-3.x-3776AB?style=for-the-badge&logo=python&logoColor=white">
 
@@ -46,8 +48,6 @@ Python fonksiyonlarını güvenli biçimde tarayan, düzenleyen, güncelleyen ve
 
 ---
 
----
-
 # İçindekiler
 
 - [Genel Bakış](docs/overview.md)
@@ -59,8 +59,8 @@ Python fonksiyonlarını güvenli biçimde tarayan, düzenleyen, güncelleyen ve
 
 # Proje Özeti
 
-Fonksiyon Değiştirici, Python dosyalarındaki fonksiyonları tarayan,
-seçilen fonksiyonu düzenlemeye izin veren ve değişiklikleri güvenli
+Fonksiyon Değiştirici, Python dosyalarındaki fonksiyonları tarayan,  
+seçilen fonksiyonu düzenlemeye izin veren ve değişiklikleri güvenli  
 biçimde uygulayan modüler bir araçtır.
 
 Tam bir IDE değildir.
@@ -80,7 +80,9 @@ akışı sunar.
 
 pip install kivy pygments
 
-Çalıştırma
+---
+
+# Çalıştırma
 
 python main.py
 
@@ -88,11 +90,19 @@ python main.py
 
 # Repo Yapısı
 
-app ├─ core ├─ services └─ ui
-docs ├─ overview.md ├─ usage.md ├─ architecture.md └─ security.md
+app  
+├─ core  
+├─ services  
+└─ ui  
+
+docs  
+├─ overview.md  
+├─ usage.md  
+├─ architecture.md  
+└─ security.md  
 
 ---
 
 # Lisans
 
-Bu proje MIT lisansı altında dağıtılacaktır.
+Bu proje MIT lisansı altında dağıtılmaktadır.
