@@ -2,7 +2,7 @@
   <img src="docs/banner.png" width="100%">
 </p>
 
-<h1 align="center">Fonksiyon Değiştirici</h1>
+<h1 align="center">Fonksiyon Değiştiricii</h1>
 
 <p align="center">
 Python fonksiyonlarını güvenli biçimde tarayan, düzenleyen, güncelleyen ve yedekten geri yükleyen modüler Kivy aracı
