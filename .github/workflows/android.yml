@@ -71,6 +71,7 @@ jobs:
         run: |
           set -euxo pipefail
           echo "PWD=$(pwd)"
+          echo "REPO=${{ github.repository }}"
           echo "ANDROID_HOME=$ANDROID_HOME"
           echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
           echo "ANDROIDAPI=$ANDROIDAPI"
@@ -145,16 +146,16 @@ jobs:
           spec_path = Path("buildozer.spec")
           text = spec_path.read_text(encoding="utf-8")
 
-          yeni_surume = os.environ["APP_VERSION"]
+          yeni_surum = os.environ["APP_VERSION"]
           pattern = r"(?m)^version\s*=\s*.*$"
 
           if re.search(pattern, text):
-              text = re.sub(pattern, f"version = {yeni_surume}", text, count=1)
+              text = re.sub(pattern, f"version = {yeni_surum}", text, count=1)
           else:
               raise SystemExit("buildozer.spec içinde 'version =' satırı bulunamadı.")
 
           spec_path.write_text(text, encoding="utf-8")
-          print(f"Yeni sürüm yazıldı: {yeni_surume}")
+          print(f"Yeni sürüm yazıldı: {yeni_surum}")
           PY
 
           echo "---- Güncellenmiş buildozer.spec sürüm satırı ----"
