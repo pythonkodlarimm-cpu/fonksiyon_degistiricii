@@ -15,7 +15,7 @@ NOT:
 - Dış boş satırlar otomatik temizlenir
 - Başarılı doğrulamada yeşil bilgi kutusu + pulse icon gösterilir
 
-SURUM: 19
+SURUM: 20
 TARIH: 2026-03-16
 IMZA: FY.
 """
@@ -168,17 +168,29 @@ class BilgiKutusu(BoxLayout):
         super().__init__(
             orientation="horizontal",
             size_hint_y=None,
-            height=dp(40),
-            padding=(dp(10), dp(6)),
+            height=dp(44),
+            padding=(dp(12), dp(8)),
             spacing=dp(8),
             **kwargs,
         )
 
         self._pulse_anim = None
 
+        self._bg_info = (0.10, 0.16, 0.22, 1)
+        self._bg_success = (0.08, 0.24, 0.14, 1)
+        self._bg_warning = (0.24, 0.18, 0.08, 1)
+        self._bg_error = (0.24, 0.12, 0.12, 1)
+
         with self.canvas.before:
-            self._bg_color = Color(0.10, 0.16, 0.22, 1)
+            self._bg_color = Color(*self._bg_info)
             self._bg_rect = RoundedRectangle(radius=[dp(12)])
+
+        with self.canvas.after:
+            self._border_color = Color(0.20, 0.24, 0.30, 1)
+            self._border_line = Line(
+                rounded_rectangle=(0, 0, 0, 0, dp(12)),
+                width=1.0,
+            )
 
         self.bind(pos=self._update_canvas, size=self._update_canvas)
         self._update_canvas()
@@ -208,6 +220,13 @@ class BilgiKutusu(BoxLayout):
     def _update_canvas(self, *_args):
         self._bg_rect.pos = self.pos
         self._bg_rect.size = self.size
+        self._border_line.rounded_rectangle = (
+            self.x,
+            self.y,
+            self.width,
+            self.height,
+            dp(12),
+        )
 
     def _sync_label_size(self, widget, size):
         widget.text_size = (size[0], None)
@@ -220,40 +239,61 @@ class BilgiKutusu(BoxLayout):
             pass
         self._pulse_anim = None
 
-    def _start_pulse(self):
+    def _start_pulse(self, seconds: float | None = None):
         self._stop_pulse()
         try:
             self.status_icon.opacity = 1
             self.status_icon.size = (dp(20), dp(20))
             anim = (
-                Animation(opacity=0.65, size=(dp(24), dp(24)), duration=0.45)
+                Animation(opacity=0.68, size=(dp(24), dp(24)), duration=0.45)
                 + Animation(opacity=1.0, size=(dp(20), dp(20)), duration=0.45)
             )
-            anim.repeat = True
+            anim.repeat = seconds is None
             anim.start(self.status_icon)
             self._pulse_anim = anim
+
+            if seconds is not None:
+                Clock.schedule_once(lambda *_: self._stop_pulse(), max(0.1, float(seconds)))
         except Exception:
             self.status_icon.opacity = 1
+
+    def _hide_icon(self):
+        self._stop_pulse()
+        self.status_icon.opacity = 0
 
     def set_text(self, text: str):
         self.label.text = str(text or "")
 
-    def set_neutral(self):
-        self._stop_pulse()
-        self.status_icon.opacity = 0
-        self._bg_color.rgba = (0.10, 0.16, 0.22, 1)
+    def set_info(self, text: str):
+        self.set_text(text)
+        self._hide_icon()
+        self._bg_color.rgba = self._bg_info
+        self._border_color.rgba = (0.20, 0.24, 0.30, 1)
         self.label.color = (0.88, 0.94, 1, 1)
 
-    def set_error(self):
-        self._stop_pulse()
-        self.status_icon.opacity = 0
-        self._bg_color.rgba = (0.24, 0.12, 0.12, 1)
-        self.label.color = (1, 0.78, 0.78, 1)
+    def set_neutral(self):
+        self.set_info("Hazır.")
 
-    def set_success(self):
-        self._bg_color.rgba = (0.08, 0.24, 0.14, 1)
+    def set_success(self, text: str, pulse_seconds: float = 6.0):
+        self.set_text(text)
+        self._bg_color.rgba = self._bg_success
+        self._border_color.rgba = (0.14, 0.30, 0.20, 1)
         self.label.color = (0.76, 1.00, 0.82, 1)
-        self._start_pulse()
+        self._start_pulse(seconds=pulse_seconds)
+
+    def set_warning(self, text: str):
+        self.set_text(text)
+        self._hide_icon()
+        self._bg_color.rgba = self._bg_warning
+        self._border_color.rgba = (0.34, 0.24, 0.08, 1)
+        self.label.color = (1.00, 0.92, 0.72, 1)
+
+    def set_error(self, text: str):
+        self.set_text(text)
+        self._hide_icon()
+        self._bg_color.rgba = self._bg_error
+        self._border_color.rgba = (0.34, 0.14, 0.14, 1)
+        self.label.color = (1, 0.78, 0.78, 1)
 
 
 class SadeKodAlani(KodPaneli):
@@ -299,7 +339,7 @@ class EditorPaneli(BoxLayout):
         self._editor_popup = None
 
         self._build_ui()
-        self._set_status_neutral("Hazır.", 0)
+        self._set_status_info("Hazır.", 0)
 
     # ---------------------------------------------------------
     # UI
@@ -308,12 +348,12 @@ class EditorPaneli(BoxLayout):
         self.path_label = IconluBaslik(
             text="Seçili fonksiyon: -",
             icon_name="edit.png",
-            height_dp=38,
-            font_size="16sp",
+            height_dp=36,
+            font_size="15sp",
             color=TEXT_PRIMARY,
         )
         self.path_label.size_hint_y = None
-        self.path_label.height = dp(38)
+        self.path_label.height = dp(36)
         self.add_widget(self.path_label)
 
         self.error_box = BilgiKutusu()
@@ -355,21 +395,21 @@ class EditorPaneli(BoxLayout):
         wrap = BoxLayout(
             orientation="vertical",
             size_hint_y=None,
-            height=dp(82),
+            height=dp(74),
             spacing=dp(2),
         )
 
         row = BoxLayout(
             orientation="horizontal",
             size_hint_y=None,
-            height=dp(42),
+            height=dp(36),
             spacing=dp(8),
         )
         row.add_widget(
             IconluBaslik(
                 text=title,
                 icon_name=icon_name,
-                height_dp=36,
+                height_dp=32,
                 font_size="14sp",
                 color=(0.80, 0.89, 1, 1),
                 size_hint_x=1,
@@ -379,12 +419,12 @@ class EditorPaneli(BoxLayout):
 
         toolbar = IconToolbar(spacing_dp=12, padding_dp=0)
         toolbar.size_hint_y = None
-        toolbar.height = dp(40)
+        toolbar.height = dp(34)
         toolbar.add_tool(
             icon_name=action_icon,
             text=action_text,
             on_release=callback,
-            icon_size_dp=34,
+            icon_size_dp=32,
             text_size="10sp",
             color=TEXT_MUTED,
             icon_bg=None,
@@ -393,15 +433,15 @@ class EditorPaneli(BoxLayout):
         return wrap
 
     def _build_action_toolbar(self) -> None:
-        self.action_toolbar = IconToolbar(spacing_dp=22, padding_dp=6)
+        self.action_toolbar = IconToolbar(spacing_dp=20, padding_dp=6)
         self.action_toolbar.size_hint_y = None
-        self.action_toolbar.height = dp(82)
+        self.action_toolbar.height = dp(78)
 
         self.action_toolbar.add_tool(
             icon_name="clear.png",
             text="Temizle",
             on_release=self._clear_new_code,
-            icon_size_dp=40,
+            icon_size_dp=38,
             text_size="11sp",
             color=TEXT_MUTED,
             icon_bg=None,
@@ -411,7 +451,7 @@ class EditorPaneli(BoxLayout):
             icon_name="upload.png",
             text="Güncelle",
             on_release=self._handle_update,
-            icon_size_dp=40,
+            icon_size_dp=38,
             text_size="11sp",
             color=TEXT_MUTED,
             icon_bg=None,
@@ -421,7 +461,7 @@ class EditorPaneli(BoxLayout):
             icon_name="code_check.png",
             text="Kontrol Et",
             on_release=self._check_new_code,
-            icon_size_dp=40,
+            icon_size_dp=38,
             text_size="10sp",
             color=TEXT_MUTED,
             icon_bg=None,
@@ -431,7 +471,7 @@ class EditorPaneli(BoxLayout):
             icon_name="file_copy.png",
             text="Kopyala",
             on_release=self._copy_current_to_new,
-            icon_size_dp=40,
+            icon_size_dp=38,
             text_size="11sp",
             color=TEXT_MUTED,
             icon_bg=None,
@@ -441,7 +481,7 @@ class EditorPaneli(BoxLayout):
             icon_name="geri_yukle.png",
             text="Geri Yükle",
             on_release=self._handle_restore,
-            icon_size_dp=40,
+            icon_size_dp=38,
             text_size="10sp",
             color=TEXT_MUTED,
             icon_bg=None,
@@ -462,7 +502,7 @@ class EditorPaneli(BoxLayout):
         self.path_label.set_text("Seçili fonksiyon: -")
         self.current_code_area.text = ""
         self.new_code_area.text = ""
-        self._set_status_neutral("Hazır.", 0)
+        self._set_status_info("Hazır.", 0)
 
     def set_new_code_text(self, text: str) -> None:
         self._set_new_code(text)
@@ -519,10 +559,17 @@ class EditorPaneli(BoxLayout):
             pass
         return 0
 
-    def _set_status_neutral(self, message="", line_no=0):
+    def _set_status_info(self, message="", line_no=0):
         temiz = str(message or "").strip() or "Hazır."
-        self.error_box.set_text(temiz)
-        self.error_box.set_neutral()
+        self.error_box.set_info(temiz)
+        try:
+            self.new_code_area.set_error_line(line_no)
+        except Exception:
+            pass
+
+    def _set_status_warning(self, message="", line_no=0):
+        temiz = str(message or "").strip() or "Uyarı."
+        self.error_box.set_warning(temiz)
         try:
             self.new_code_area.set_error_line(line_no)
         except Exception:
@@ -530,8 +577,7 @@ class EditorPaneli(BoxLayout):
 
     def _set_status_error(self, message="", line_no=0):
         temiz = str(message or "").strip() or "Hata oluştu."
-        self.error_box.set_text(temiz)
-        self.error_box.set_error()
+        self.error_box.set_error(temiz)
         try:
             self.new_code_area.set_error_line(line_no)
         except Exception:
@@ -539,8 +585,7 @@ class EditorPaneli(BoxLayout):
 
     def _set_status_success(self, message="", line_no=0):
         temiz = str(message or "").strip() or "Doğrulama doğru."
-        self.error_box.set_text(temiz)
-        self.error_box.set_success()
+        self.error_box.set_success(temiz, pulse_seconds=6.0)
         try:
             self.new_code_area.set_error_line(line_no)
         except Exception:
@@ -598,7 +643,7 @@ class EditorPaneli(BoxLayout):
         yeni_path = str(getattr(item, "path", "") or "")
 
         self.current_item = item
-        self._set_status_neutral("Hazır.", 0)
+        self._set_status_info("Hazır.", 0)
 
         if item is None:
             self._close_popups()
@@ -629,12 +674,12 @@ class EditorPaneli(BoxLayout):
     # ACTIONS
     # ---------------------------------------------------------
     def _copy_current_to_new(self, *_args):
-        self._set_status_neutral("Mevcut kod yeni alana kopyalandı.", 0)
         self._set_new_code(self.current_code_area.text)
+        self._set_status_info("Mevcut kod yeni alana kopyalandı.", 0)
 
     def _clear_new_code(self, *_args):
         self._set_new_code("")
-        self._set_status_neutral("Yeni kod alanı temizlendi.", 0)
+        self._set_status_info("Yeni kod alanı temizlendi.", 0)
 
     def _check_new_code(self, *_args):
         ok, hata, satir = self._validate_new_code(self.new_code_area.text)
@@ -645,7 +690,7 @@ class EditorPaneli(BoxLayout):
 
     def _handle_update(self, *_args):
         if not self.on_update or self.current_item is None:
-            self._set_status_error("Güncellenecek öğe seçilmedi.", 0)
+            self._set_status_warning("Güncellenecek öğe seçilmedi.", 0)
             return
 
         yeni = self._normalize_code_text(self.new_code_area.text, trim_outer_blank_lines=True)
@@ -657,7 +702,7 @@ class EditorPaneli(BoxLayout):
             return
 
         try:
-            self._set_status_neutral("Güncelleme uygulanıyor...", 0)
+            self._set_status_info("Güncelleme uygulanıyor...", 0)
             self.on_update(self.current_item, yeni)
             self._set_status_success("Güncelleme tamamlandı.", 0)
         except Exception as exc:
@@ -665,11 +710,11 @@ class EditorPaneli(BoxLayout):
 
     def _handle_restore(self, *_args):
         if not self.on_restore:
-            self._set_status_error("Geri yükleme callback bağlı değil.", 0)
+            self._set_status_warning("Geri yükleme callback bağlı değil.", 0)
             return
 
         try:
-            self._set_status_neutral("Geri yükleme uygulanıyor...", 0)
+            self._set_status_info("Geri yükleme uygulanıyor...", 0)
             self.on_restore()
             self._set_status_success("Geri yükleme tamamlandı.", 0)
         except Exception as exc:
