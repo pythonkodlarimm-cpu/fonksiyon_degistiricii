@@ -337,3 +337,4 @@ jobs:
           name: fonksiyon-degistirici-apk-${{ env.APP_VERSION }}
           path: bin/*.apk
           if-no-files-found: warn
+
