@@ -10,15 +10,15 @@ Python fonksiyonlarını güvenli biçimde tarayan, düzenleyen, güncelleyen ve
 
 <p align="center">
 
-<img src="https://img.shields.io/github/stars/pythonkodlarimm-cpu/fonksiyon_degistirici?style=for-the-badge&logo=github">
+<img src="https://img.shields.io/github/stars/pythonkodlarimm-cpu/fonksiyon_degistiricii?style=for-the-badge&logo=github">
 
-<img src="https://img.shields.io/github/forks/pythonkodlarimm-cpu/fonksiyon_degistirici?style=for-the-badge&logo=github">
+<img src="https://img.shields.io/github/forks/pythonkodlarimm-cpu/fonksiyon_degistiricii?style=for-the-badge&logo=github">
 
-<img src="https://img.shields.io/github/watchers/pythonkodlarimm-cpu/fonksiyon_degistirici?style=for-the-badge&logo=github">
+<img src="https://img.shields.io/github/watchers/pythonkodlarimm-cpu/fonksiyon_degistiricii?style=for-the-badge&logo=github">
 
-<img src="https://img.shields.io/github/license/pythonkodlarimm-cpu/fonksiyon_degistirici?style=for-the-badge">
+<img src="https://img.shields.io/github/license/pythonkodlarimm-cpu/fonksiyon_degistiricii?style=for-the-badge">
 
-<img src="https://img.shields.io/github/v/release/pythonkodlarimm-cpu/fonksiyon_degistirici?style=for-the-badge">
+<img src="https://img.shields.io/github/v/release/pythonkodlarimm-cpu/fonksiyon_degistiricii?style=for-the-badge">
 
 <img src="https://img.shields.io/badge/Python-3.x-3776AB?style=for-the-badge&logo=python&logoColor=white">
 
