@@ -19,8 +19,15 @@ MİMARİ:
 NOT:
 - Şu anda reklam tarafında TEST banner kullanılmaktadır.
 - Yayın öncesi reklam servisi içindeki test reklam birimi gerçek reklam birimi ile değiştirilmelidir.
+- GEÇİCİ TEST DEĞİŞİKLİĞİ:
+  Açılış crash sorununu izole etmek için __init__ içinde self._premium_kontrol()
+  çağrısı geçici olarak kapatılmıştır.
+- Reklam testi artık açılışta değil, manuel test butonu ile yapılır.
+- Eklenen geçici butonlar:
+  1) Reklam Test
+  2) Reklam Gizle
 
-SURUM: 17
+SURUM: 19
 TARIH: 2026-03-16
 IMZA: FY.
 """
@@ -32,6 +39,7 @@ from pathlib import Path
 
 from kivy.metrics import dp
 from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.button import Button
 from kivy.uix.floatlayout import FloatLayout
 from kivy.uix.label import Label
 from kivy.uix.scrollview import ScrollView
@@ -96,12 +104,17 @@ class RootWidget(FloatLayout):
         self.version_label = None
         self.bottom_bar = None
         self.toast_layer = None
+        self.test_tools_bar = None
         self.app_version_text = self._resolve_app_version()
 
         try:
             self._build_ui()
-            self._premium_kontrol()
-            self.set_status_info("Hazır.", "onaylandi.png")
+
+            # GEÇİCİ TEST:
+            # Açılışta çökme sorununu izole etmek için premium/reklam başlangıcı kapatıldı.
+            # self._premium_kontrol()
+
+            self.set_status_info("Hazır. Manuel reklam testi aktif.", "onaylandi.png")
         except Exception:
             hata = traceback.format_exc()
             print(hata)
@@ -125,9 +138,9 @@ class RootWidget(FloatLayout):
         Premium kullanıcıda reklam yüklenmez.
         Free kullanıcıda test banner yüklenir.
 
-        Not:
-        Reklam servisi şu anda test reklam birimi kullanmaktadır.
-        Yayın öncesi gerçek reklam birimi ile değiştirilmelidir.
+        NOT:
+        Bu metot şu anda dosyada tutuluyor ancak __init__ içinde
+        geçici olarak çağrılmıyor. Amaç açılış crash'ini izole etmektir.
         """
         try:
             if premium_servisi.premium_aktif_mi():
@@ -135,15 +148,55 @@ class RootWidget(FloatLayout):
             else:
                 if platform == "android":
                     reklam_servisi.reklam_yukle()
+                    reklam_servisi.reklam_goster()
                 self._debug("Free kullanici -> test reklam yukleme cagrildi")
-        except Exception:
-            pass
+        except Exception as exc:
+            self._debug(f"Premium/Reklam kontrol hatasi: {exc}")
 
     def premium_durumu_yenile(self) -> None:
         try:
             self._premium_kontrol()
         except Exception:
             pass
+
+    def _manuel_reklam_test(self, _instance=None) -> None:
+        """
+        GEÇİCİ TEST:
+        Reklam entegrasyonunu uygulama açıldıktan sonra manuel olarak dener.
+        """
+        try:
+            if platform != "android":
+                self.set_status_warning("Reklam testi sadece Android'de çalışır.")
+                return
+
+            reklam_servisi.reklam_yukle()
+            reklam_servisi.reklam_goster()
+
+            self.set_status_success("Reklam test çağrısı gönderildi.")
+            self.show_toast("Reklam test çağrısı gönderildi.", "onaylandi.png", 2.0)
+            self._debug("Manuel reklam testi çalıştırıldı")
+        except Exception as exc:
+            self.set_status_error(f"Reklam test hatası: {exc}")
+            self._debug(f"Manuel reklam test hatası: {exc}")
+
+    def _manuel_reklam_gizle(self, _instance=None) -> None:
+        """
+        GEÇİCİ TEST:
+        Görünen banner varsa gizler.
+        """
+        try:
+            if platform != "android":
+                self.set_status_warning("Reklam gizleme testi sadece Android'de çalışır.")
+                return
+
+            reklam_servisi.reklam_kapat()
+
+            self.set_status_info("Reklam gizleme çağrısı gönderildi.", "warning.png")
+            self.show_toast("Reklam gizleme çağrısı gönderildi.", "warning.png", 2.0)
+            self._debug("Manuel reklam gizleme çalıştırıldı")
+        except Exception as exc:
+            self.set_status_error(f"Reklam gizleme hatası: {exc}")
+            self._debug(f"Manuel reklam gizleme hatası: {exc}")
 
     # =========================================================
     # VERSION
@@ -204,6 +257,42 @@ class RootWidget(FloatLayout):
 
         return kart
 
+    def _build_test_tools_bar(self) -> Kart:
+        kart = Kart(
+            orientation="horizontal",
+            size_hint_y=None,
+            height=dp(58),
+            padding=(dp(8), dp(8), dp(8), dp(8)),
+            spacing=dp(8),
+            bg=(0.08, 0.11, 0.16, 1),
+            border=(0.16, 0.22, 0.30, 1),
+            radius=14,
+        )
+
+        reklam_test_btn = Button(
+            text="Reklam Test",
+            size_hint=(0.5, 1),
+            background_normal="",
+            background_down="",
+            background_color=(0.16, 0.62, 0.34, 1),
+            color=(1, 1, 1, 1),
+        )
+        reklam_test_btn.bind(on_release=self._manuel_reklam_test)
+        kart.add_widget(reklam_test_btn)
+
+        reklam_gizle_btn = Button(
+            text="Reklam Gizle",
+            size_hint=(0.5, 1),
+            background_normal="",
+            background_down="",
+            background_color=(0.74, 0.20, 0.20, 1),
+            color=(1, 1, 1, 1),
+        )
+        reklam_gizle_btn.bind(on_release=self._manuel_reklam_gizle)
+        kart.add_widget(reklam_gizle_btn)
+
+        return kart
+
     # =========================================================
     # UI
     # =========================================================
@@ -229,6 +318,10 @@ class RootWidget(FloatLayout):
         )
         self.file_access_panel.size_hint_y = None
         self.main_column.add_widget(self.file_access_panel)
+
+        # GEÇİCİ TEST ARAÇLARI
+        self.test_tools_bar = self._build_test_tools_bar()
+        self.main_column.add_widget(self.test_tools_bar)
 
         self.dosya_secici = DosyaSecici(
             on_scan=self.scan_file,
