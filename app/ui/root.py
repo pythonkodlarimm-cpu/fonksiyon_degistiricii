@@ -793,5 +793,3 @@ class RootWidget(FloatLayout):
         except Exception:
             self.set_status_error("Geri yükleme hatası oluştu.")
             print(traceback.format_exc())
-
-Guncelle sadece reklam servisi kalacak şekilde premium yorumla dediğim gibi
