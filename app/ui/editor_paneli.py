@@ -8,6 +8,7 @@ ROL:
 - Popup üzerinden geniş edit desteği verir
 - Güncelleme öncesi temel doğrulama ve hata gösterimi yapar
 - Son yedekten geri yükleme aksiyonunu tetikler
+- Geçici bildirim servisi ile kısa aksiyon geri bildirimi üretir
 
 NOT:
 - Satır numarası kullanılmaz
@@ -15,7 +16,7 @@ NOT:
 - Dış boş satırlar otomatik temizlenir
 - Başarılı doğrulamada yeşil bilgi kutusu + pulse icon gösterilir
 
-SURUM: 20
+SURUM: 21
 TARIH: 2026-03-16
 IMZA: FY.
 """
@@ -38,6 +39,7 @@ from kivy.uix.label import Label
 from kivy.uix.popup import Popup
 from pygments.lexers import PythonLexer
 
+from app.services.gecici_bildirim_servisi import gecici_bildirim_servisi
 from app.ui.icon_toolbar import IconToolbar
 from app.ui.iconlu_baslik import IconluBaslik
 from app.ui.tema import ACCENT, INPUT_BG, RADIUS_MD, TEXT_MUTED, TEXT_PRIMARY
@@ -253,7 +255,10 @@ class BilgiKutusu(BoxLayout):
             self._pulse_anim = anim
 
             if seconds is not None:
-                Clock.schedule_once(lambda *_: self._stop_pulse(), max(0.1, float(seconds)))
+                Clock.schedule_once(
+                    lambda *_: self._stop_pulse(),
+                    max(0.1, float(seconds)),
+                )
         except Exception:
             self.status_icon.opacity = 1
 
@@ -391,7 +396,14 @@ class EditorPaneli(BoxLayout):
 
         self._build_action_toolbar()
 
-    def _build_title_row(self, title: str, icon_name: str, action_icon: str, action_text: str, callback):
+    def _build_title_row(
+        self,
+        title: str,
+        icon_name: str,
+        action_icon: str,
+        action_text: str,
+        callback,
+    ):
         wrap = BoxLayout(
             orientation="vertical",
             size_hint_y=None,
@@ -510,6 +522,16 @@ class EditorPaneli(BoxLayout):
     # ---------------------------------------------------------
     # HELPERS
     # ---------------------------------------------------------
+    def _toast(self, text: str, icon_name: str = "", duration: float = 2.2) -> None:
+        try:
+            gecici_bildirim_servisi.show(
+                text=str(text or ""),
+                icon_name=str(icon_name or ""),
+                duration=float(duration or 2.2),
+            )
+        except Exception:
+            pass
+
     def _close_popups(self) -> None:
         for attr in ("_current_popup", "_editor_popup"):
             popup = getattr(self, attr, None)
@@ -676,21 +698,26 @@ class EditorPaneli(BoxLayout):
     def _copy_current_to_new(self, *_args):
         self._set_new_code(self.current_code_area.text)
         self._set_status_info("Mevcut kod yeni alana kopyalandı.", 0)
+        self._toast("Kod düzenleme alanına kopyalandı.", "file_copy.png", 2.4)
 
     def _clear_new_code(self, *_args):
         self._set_new_code("")
         self._set_status_info("Yeni kod alanı temizlendi.", 0)
+        self._toast("Yeni kod alanı temizlendi.", "clear.png", 2.0)
 
     def _check_new_code(self, *_args):
         ok, hata, satir = self._validate_new_code(self.new_code_area.text)
         if ok:
             self._set_status_success("Doğrulama doğru.", 0)
+            self._toast("Kod doğrulaması başarılı.", "code_check.png", 2.2)
         else:
             self._set_status_error(hata, satir)
+            self._toast("Kod doğrulaması başarısız.", "warning.png", 2.2)
 
     def _handle_update(self, *_args):
         if not self.on_update or self.current_item is None:
             self._set_status_warning("Güncellenecek öğe seçilmedi.", 0)
+            self._toast("Önce fonksiyon seçmelisiniz.", "warning.png", 2.0)
             return
 
         yeni = self._normalize_code_text(self.new_code_area.text, trim_outer_blank_lines=True)
@@ -699,26 +726,32 @@ class EditorPaneli(BoxLayout):
         ok, hata, satir = self._validate_new_code(yeni)
         if not ok:
             self._set_status_error(hata, satir)
+            self._toast("Güncelleme öncesi doğrulama başarısız.", "warning.png", 2.2)
             return
 
         try:
             self._set_status_info("Güncelleme uygulanıyor...", 0)
             self.on_update(self.current_item, yeni)
             self._set_status_success("Güncelleme tamamlandı.", 0)
+            self._toast("Fonksiyon güncellendi.", "upload.png", 2.4)
         except Exception as exc:
             self._set_status_error(str(exc), self._extract_line_number(exc))
+            self._toast("Güncelleme hatası oluştu.", "error.png", 2.4)
 
     def _handle_restore(self, *_args):
         if not self.on_restore:
             self._set_status_warning("Geri yükleme callback bağlı değil.", 0)
+            self._toast("Geri yükleme servisi bağlı değil.", "warning.png", 2.0)
             return
 
         try:
             self._set_status_info("Geri yükleme uygulanıyor...", 0)
             self.on_restore()
             self._set_status_success("Geri yükleme tamamlandı.", 0)
+            self._toast("Son yedekten geri yükleme tamamlandı.", "geri_yukle.png", 2.4)
         except Exception as exc:
             self._set_status_error(str(exc), self._extract_line_number(exc))
+            self._toast("Geri yükleme hatası oluştu.", "error.png", 2.4)
 
     # ---------------------------------------------------------
     # POPUPS
@@ -846,6 +879,7 @@ class EditorPaneli(BoxLayout):
             self._set_new_code(yeni)
             popup.dismiss()
             self._set_status_success("Doğrulama doğru.", 0)
+            self._toast("Yeni kod düzenleme alanına aktarıldı.", "onaylandi.png", 2.2)
 
         refs["copy"].bind(on_release=mevcuttan_al)
         refs["save"].bind(on_release=kaydet)
