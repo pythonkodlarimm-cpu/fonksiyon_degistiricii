@@ -2,6 +2,7 @@ package org.fy.bridge;
 
 import android.app.Activity;
 import android.view.Gravity;
+import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
 
@@ -13,17 +14,27 @@ import com.google.android.gms.ads.MobileAds;
 public class AdMobBridge {
 
     private static AdView banner;
+    private static boolean initialized = false;
 
     public static void initialize(Activity activity) {
-        MobileAds.initialize(activity);
+        activity.runOnUiThread(() -> {
+            try {
+                if (!initialized) {
+                    MobileAds.initialize(activity);
+                    initialized = true;
+                }
+            } catch (Throwable t) {
+                t.printStackTrace();
+            }
+        });
     }
 
     public static void loadBanner(Activity activity, String adUnitId) {
         activity.runOnUiThread(() -> {
             try {
                 if (banner != null) {
-                    ViewGroup parent = (ViewGroup) banner.getParent();
-                    if (parent != null) {
+                    if (banner.getParent() instanceof ViewGroup) {
+                        ViewGroup parent = (ViewGroup) banner.getParent();
                         parent.removeView(banner);
                     }
                     banner.destroy();
@@ -45,8 +56,8 @@ public class AdMobBridge {
                 activity.addContentView(banner, params);
                 banner.loadAd(request);
 
-            } catch (Exception e) {
-                e.printStackTrace();
+            } catch (Throwable t) {
+                t.printStackTrace();
             }
         });
     }
@@ -55,10 +66,10 @@ public class AdMobBridge {
         activity.runOnUiThread(() -> {
             try {
                 if (banner != null) {
-                    banner.setVisibility(AdView.GONE);
+                    banner.setVisibility(View.GONE);
                 }
-            } catch (Exception e) {
-                e.printStackTrace();
+            } catch (Throwable t) {
+                t.printStackTrace();
             }
         });
     }
@@ -67,10 +78,10 @@ public class AdMobBridge {
         activity.runOnUiThread(() -> {
             try {
                 if (banner != null) {
-                    banner.setVisibility(AdView.VISIBLE);
+                    banner.setVisibility(View.VISIBLE);
                 }
-            } catch (Exception e) {
-                e.printStackTrace();
+            } catch (Throwable t) {
+                t.printStackTrace();
             }
         });
     }
@@ -79,16 +90,16 @@ public class AdMobBridge {
         activity.runOnUiThread(() -> {
             try {
                 if (banner != null) {
-                    ViewGroup parent = (ViewGroup) banner.getParent();
-                    if (parent != null) {
+                    if (banner.getParent() instanceof ViewGroup) {
+                        ViewGroup parent = (ViewGroup) banner.getParent();
                         parent.removeView(banner);
                     }
                     banner.destroy();
                     banner = null;
                 }
-            } catch (Exception e) {
-                e.printStackTrace();
+            } catch (Throwable t) {
+                t.printStackTrace();
             }
         });
     }
-                  }
+}
