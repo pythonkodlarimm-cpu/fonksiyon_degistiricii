@@ -23,8 +23,13 @@ DAVRANIŞ:
 - Ham URI ekranda ana metin olarak gösterilmez
 - Dosya adı ve kısa durum bilgisi öne çıkarılır
 
-SURUM: 29
-TARIH: 2026-03-16
+API 34 UYUMLULUK NOTU:
+- Android tarafında sistem picker yalnızca lazy import ile çağrılır
+- Dosya seçimi sonrası identifier ve display name güvenli şekilde normalize edilir
+- Paket içindeki DocumentSelection / picker yapısıyla uyumludur
+
+SURUM: 30
+TARIH: 2026-03-17
 IMZA: FY.
 """
 
@@ -47,9 +52,9 @@ class DosyaSecici(Kart):
         super().__init__(
             orientation="vertical",
             size_hint_y=None,
-            height=dp(172),
-            spacing=dp(8),
-            padding=(dp(12), dp(10), dp(12), dp(12)),
+            height=dp(196),
+            spacing=dp(10),
+            padding=(dp(14), dp(12), dp(14), dp(14)),
             bg=(0.08, 0.11, 0.16, 1),
             border=(0.18, 0.21, 0.27, 1),
             radius=16,
@@ -74,7 +79,7 @@ class DosyaSecici(Kart):
         self.select_tool = None
         self.show_functions_tool = None
 
-        self._tool_visible_width = dp(116)
+        self._tool_visible_width = dp(132)
 
         self._build_ui()
         self._refresh_summary()
@@ -133,30 +138,30 @@ class DosyaSecici(Kart):
         self.header = IconluBaslik(
             text="Belge / Kod Dosyası",
             icon_name="schema.png",
-            height_dp=28,
-            font_size="14sp",
+            height_dp=32,
+            font_size="15sp",
             color=TEXT_PRIMARY,
         )
         self.header.size_hint_y = None
-        self.header.height = dp(28)
+        self.header.height = dp(32)
         self.add_widget(self.header)
 
         summary_wrap = BoxLayout(
             orientation="vertical",
             size_hint_y=None,
-            height=dp(54),
-            spacing=dp(2),
+            height=dp(64),
+            spacing=dp(4),
         )
 
         self.file_name_label = Label(
             text="Dosya seçilmedi",
             color=TEXT_PRIMARY,
-            font_size="16sp",
+            font_size="17sp",
             bold=True,
             halign="left",
             valign="middle",
             size_hint_y=None,
-            height=dp(24),
+            height=dp(26),
             shorten=True,
             shorten_from="right",
         )
@@ -168,11 +173,11 @@ class DosyaSecici(Kart):
         self.file_detail_label = Label(
             text="Seçilen belge kimliği burada kısa biçimde görünür.",
             color=TEXT_MUTED,
-            font_size="11sp",
+            font_size="12sp",
             halign="left",
             valign="middle",
             size_hint_y=None,
-            height=dp(16),
+            height=dp(18),
             shorten=True,
             shorten_from="right",
         )
@@ -184,11 +189,11 @@ class DosyaSecici(Kart):
         self.status_hint_label = Label(
             text="Belge seçmeniz bekleniyor.",
             color=(0.76, 0.82, 0.92, 1),
-            font_size="11sp",
+            font_size="12sp",
             halign="left",
             valign="middle",
             size_hint_y=None,
-            height=dp(16),
+            height=dp(18),
             shorten=True,
             shorten_from="right",
         )
@@ -200,16 +205,16 @@ class DosyaSecici(Kart):
         self.add_widget(summary_wrap)
 
         self.toolbar = IconToolbar(
-            spacing_dp=26,
-            padding_dp=6,
+            spacing_dp=30,
+            padding_dp=8,
         )
 
         self.select_tool = self.toolbar.add_tool(
             icon_name="dosya_sec.png",
             text="Dosya Seç",
             on_release=self._handle_select_pressed,
-            icon_size_dp=46,
-            text_size="12sp",
+            icon_size_dp=54,
+            text_size="13sp",
             color=TEXT_MUTED,
             icon_bg=None,
         )
@@ -218,8 +223,8 @@ class DosyaSecici(Kart):
             icon_name="fonksiyon_listesinde_goster.png",
             text="Fonksiyonları Göster",
             on_release=self._handle_show_functions,
-            icon_size_dp=40,
-            text_size="10sp",
+            icon_size_dp=48,
+            text_size="11sp",
             color=TEXT_MUTED,
             icon_bg=None,
         )
@@ -227,6 +232,7 @@ class DosyaSecici(Kart):
         try:
             self.select_tool.size_hint_x = None
             self.select_tool.width = self._tool_visible_width
+
             self.show_functions_tool.size_hint_x = None
             self.show_functions_tool.width = self._tool_visible_width
         except Exception:
@@ -282,7 +288,7 @@ class DosyaSecici(Kart):
 
         return ""
 
-    def _short_identifier(self, value: str, limit: int = 56) -> str:
+    def _short_identifier(self, value: str, limit: int = 60) -> str:
         metin = str(value or "").strip()
         if len(metin) <= limit:
             return metin
@@ -393,10 +399,17 @@ class DosyaSecici(Kart):
     def _open_selector(self, *_args):
         self._debug("Dosya seçici açılıyor")
 
-        if platform == "android":
-            self._get_android_document_picker().open_picker()
-        else:
-            self._get_desktop_picker().open_popup()
+        try:
+            if platform == "android":
+                self._get_android_document_picker().open_picker()
+            else:
+                self._get_desktop_picker().open_popup()
+        except Exception as exc:
+            self._debug(f"Seçici açma hatası: {exc}")
+            self._show_info_popup(
+                "Dosya Seçici",
+                f"Seçici açılamadı: {exc}",
+            )
 
     # =========================================================
     # AUTO TRIGGER
