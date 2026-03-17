@@ -30,6 +30,14 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      - name: Secret mask uygula
+        shell: bash
+        run: |
+          echo "::add-mask::${{ secrets.ANDROID_KEYSTORE_PASSWORD }}"
+          echo "::add-mask::${{ secrets.ANDROID_KEY_ALIAS_PASSWORD }}"
+          echo "::add-mask::${{ secrets.ANDROID_KEYSTORE_BASE64 }}"
+          echo "::add-mask::${{ secrets.ANDROID_KEY_ALIAS }}"
+
       - name: Sistem paketleri
         shell: bash
         run: |
@@ -113,14 +121,10 @@ jobs:
           test -f buildozer.spec
           test -f main.py
           test -f app/assets/icons/presplash.png
-          test -d android/src
-          test -f android/src/org/fy/bridge/AdMobBridge.java
           echo "---- buildozer.spec ----"
           sed -n '1,220p' buildozer.spec
           echo "---- icons ----"
           ls -la app/assets/icons || true
-          echo "---- android/src ----"
-          find android/src -maxdepth 6 -type f | sort
 
       - name: Python paketleri
         shell: bash
@@ -175,15 +179,16 @@ jobs:
           rm -rf .buildozer
           rm -rf bin
           rm -f build.log
+          rm -f build_sanitized.log
           rm -f summary.md
           rm -f env_dump.txt
           rm -f sdk_list.txt
 
-      - name: Ortam dump al
+      - name: Ortam dump al (güvenli)
         shell: bash
         run: |
           set -euxo pipefail
-          env | sort > env_dump.txt
+          env | sort | grep -E "ANDROID|JAVA_HOME|pythonLocation|RUNNER_OS|BUILD_NUMBER|APP_VERSION" > env_dump.txt
           /usr/local/lib/android/sdk/tools/bin/sdkmanager --list > sdk_list.txt || true
 
       - name: APK derle
@@ -198,6 +203,24 @@ jobs:
           test -f "${{ github.workspace }}/release.keystore"
           ls -lh "${{ github.workspace }}/release.keystore"
           buildozer android release 2>&1 | tee build.log
+
+      - name: Logları sanitize et (secret maskele)
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          if [ -f build.log ]; then
+            cp build.log build_sanitized.log
+
+            sed -i 's/\(passw\|passwd\|password\)[^ ]*/***MASKED***/gi' build_sanitized.log
+            sed -i 's/\(key\|alias\)[^ ]*/***MASKED***/gi' build_sanitized.log
+            sed -i 's/AKIA[0-9A-Z]\{16\}/***MASKED***/g' build_sanitized.log
+            sed -i 's/ghp_[A-Za-z0-9]\{30,\}/***MASKED***/g' build_sanitized.log
+            sed -i 's/[A-Za-z0-9+\/=]\{40,\}/***MASKED***/g' build_sanitized.log
+          else
+            touch build_sanitized.log
+          fi
 
       - name: İmzayı doğrula
         if: ${{ success() }}
@@ -223,7 +246,7 @@ jobs:
                   return ""
               return p.read_text(encoding="utf-8", errors="ignore")
 
-          log_text = oku("build.log")
+          log_text = oku("build_sanitized.log")
           ansi_re = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
           clean = ansi_re.sub("", log_text)
           lines = clean.splitlines()
@@ -322,7 +345,7 @@ jobs:
         with:
           name: build-diagnostics-${{ env.APP_VERSION }}
           path: |
-            build.log
+            build_sanitized.log
             summary.md
             env_dump.txt
             sdk_list.txt
