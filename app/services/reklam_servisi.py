@@ -68,41 +68,78 @@ class ReklamServisi:
             return
 
         try:
-            activity, AdMobBridge = self._android_bridge()
+            gecici_bildirim_servisi.show(
+                text="Adım 1: PythonActivity aranıyor",
+                icon_name="onaylandi.png",
+                duration=1.5,
+            )
+
+            PythonActivity = autoclass("org.kivy.android.PythonActivity")
+
+            gecici_bildirim_servisi.show(
+                text="Adım 2: activity alındı",
+                icon_name="onaylandi.png",
+                duration=1.5,
+            )
+
+            activity = PythonActivity.mActivity
+
+            gecici_bildirim_servisi.show(
+                text="Adım 3: AdMobBridge aranıyor",
+                icon_name="onaylandi.png",
+                duration=1.5,
+            )
+
+            AdMobBridge = autoclass("org.fy.bridge.AdMobBridge")
+
+            gecici_bildirim_servisi.show(
+                text="Adım 4: Bridge bulundu",
+                icon_name="onaylandi.png",
+                duration=1.5,
+            )
 
             if not self._initialized:
                 AdMobBridge.initialize(activity)
                 self._initialized = True
                 print("[REKLAM] AdMob initialize tamamlandı")
 
+                gecici_bildirim_servisi.show(
+                    text="Adım 5: initialize tamam",
+                    icon_name="onaylandi.png",
+                    duration=1.5,
+                )
+
             ad_unit_id = self.REAL_BANNER_ID if use_real_ad else self.TEST_BANNER_ID
             self._son_kullanilan_id = ad_unit_id
+
+            gecici_bildirim_servisi.show(
+                text="Adım 6: loadBanner çağrılıyor",
+                icon_name="onaylandi.png",
+                duration=1.5,
+            )
 
             AdMobBridge.loadBanner(activity, ad_unit_id)
             self._banner_yuklendi = True
 
+            gecici_bildirim_servisi.show(
+                text="Adım 7: loadBanner tamam",
+                icon_name="onaylandi.png",
+                duration=2.0,
+            )
+
             if use_real_ad:
-                print("[REKLAM] Gerçek banner yüklendi")
-                gecici_bildirim_servisi.show(
-                    text="Gerçek reklam yükleme başlatıldı.",
-                    icon_name="onaylandi.png",
-                    duration=2.5,
-                )
+                print("[REKLAM] Gerçek banner yükleme çağrısı tamamlandı")
             else:
-                print("[REKLAM] Test banner yüklendi")
-                gecici_bildirim_servisi.show(
-                    text="Test reklam yükleme başlatıldı.",
-                    icon_name="onaylandi.png",
-                    duration=2.5,
-                )
+                print("[REKLAM] Test banner yükleme çağrısı tamamlandı")
 
         except Exception as exc:
             self._banner_yuklendi = False
-            print("[REKLAM] yükleme hatası:", exc)
+            hata = f"{type(exc).__name__}: {exc}"
+            print("[REKLAM] yükleme hatası:", hata)
             gecici_bildirim_servisi.show(
-                text=f"Reklam yükleme hatası: {exc}",
+                text=hata,
                 icon_name="warning.png",
-                duration=3.0,
+                duration=4.0,
             )
 
     # =========================================================
@@ -138,11 +175,12 @@ class ReklamServisi:
             )
 
         except Exception as exc:
-            print("[REKLAM] gösterme hatası:", exc)
+            hata = f"{type(exc).__name__}: {exc}"
+            print("[REKLAM] gösterme hatası:", hata)
             gecici_bildirim_servisi.show(
-                text=f"Reklam gösterme hatası: {exc}",
+                text=hata,
                 icon_name="warning.png",
-                duration=3.0,
+                duration=4.0,
             )
 
     # =========================================================
@@ -169,11 +207,12 @@ class ReklamServisi:
             )
 
         except Exception as exc:
-            print("[REKLAM] kapatma hatası:", exc)
+            hata = f"{type(exc).__name__}: {exc}"
+            print("[REKLAM] kapatma hatası:", hata)
             gecici_bildirim_servisi.show(
-                text=f"Reklam gizleme hatası: {exc}",
+                text=hata,
                 icon_name="warning.png",
-                duration=3.0,
+                duration=4.0,
             )
 
     # =========================================================
@@ -203,11 +242,12 @@ class ReklamServisi:
             )
 
         except Exception as exc:
-            print("[REKLAM] yok etme hatası:", exc)
+            hata = f"{type(exc).__name__}: {exc}"
+            print("[REKLAM] yok etme hatası:", hata)
             gecici_bildirim_servisi.show(
-                text=f"Reklam yok etme hatası: {exc}",
+                text=hata,
                 icon_name="warning.png",
-                duration=3.0,
+                duration=4.0,
             )
 
     # =========================================================
