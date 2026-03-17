@@ -196,6 +196,8 @@ jobs:
           ANDROIDNDK: /home/runner/.buildozer/android/platform/android-ndk-r25b
           ANDROID_NDK_HOME: /home/runner/.buildozer/android/platform/android-ndk-r25b
           ANDROID_NDK_ROOT: /home/runner/.buildozer/android/platform/android-ndk-r25b
+          GRADLE_OPTS: -Xmx4g -Dfile.encoding=UTF-8
+          _JAVA_OPTIONS: -Xmx4g
         run: |
           set -euxo pipefail
           test -f "${{ github.workspace }}/release.keystore"
@@ -254,6 +256,9 @@ jobs:
               "unsigned",
               "p4a_release",
               "validatesigningrelease",
+              "heap space",
+              "outofmemoryerror",
+              "mergedexrelease",
           )
 
           parcali = []
@@ -271,7 +276,7 @@ jobs:
           out.append("")
 
           if parcali:
-              for idx, parca in enumerate(parcali[:8], 1):
+              for idx, parca in enumerate(parcali[:10], 1):
                   out.append(f"### Kritik parça {idx}")
                   out.append("```text")
                   out.append(parca)
@@ -307,12 +312,14 @@ jobs:
                       "ANDROID_NDK_HOME",
                       "ANDROID_NDK_ROOT",
                       "ANDROIDNDK",
+                      "GRADLE_OPTS",
+                      "_JAVA_OPTIONS",
                   ]):
                       secili.append(line)
               out.append("")
               out.append("## Ortam özeti")
               out.append("```text")
-              out.append("\n".join(secili[:180]))
+              out.append("\n".join(secili[:220]))
               out.append("```")
 
           Path("summary.md").write_text("\n".join(out), encoding="utf-8")
