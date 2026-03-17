@@ -49,7 +49,7 @@ jobs:
 
           echo "ANDROID_HOME=/usr/local/lib/android/sdk" >> "$GITHUB_ENV"
           echo "ANDROID_SDK_ROOT=/usr/local/lib/android/sdk" >> "$GITHUB_ENV"
-          echo "ANDROIDAPI=31" >> "$GITHUB_ENV"
+          echo "ANDROIDAPI=34" >> "$GITHUB_ENV"
           echo "ANDROIDMINAPI=21" >> "$GITHUB_ENV"
 
           SDKMANAGER_BIN="$(find /usr/local/lib/android/sdk -type f -name sdkmanager | head -n 1 || true)"
@@ -93,17 +93,17 @@ jobs:
           set -euxo pipefail
           yes | /usr/local/lib/android/sdk/tools/bin/sdkmanager --licenses >/dev/null || true
           /usr/local/lib/android/sdk/tools/bin/sdkmanager "platform-tools"
-          /usr/local/lib/android/sdk/tools/bin/sdkmanager "platforms;android-31"
-          /usr/local/lib/android/sdk/tools/bin/sdkmanager "build-tools;31.0.0"
+          /usr/local/lib/android/sdk/tools/bin/sdkmanager "platforms;android-34"
+          /usr/local/lib/android/sdk/tools/bin/sdkmanager "build-tools;34.0.0"
 
       - name: Kurulu Android paketlerini doğrula
         shell: bash
         run: |
           set -euxo pipefail
           /usr/local/lib/android/sdk/tools/bin/sdkmanager --list | sed -n '/Installed packages:/,/Available Packages:/p' || true
-          test -f /usr/local/lib/android/sdk/platforms/android-31/android.jar
+          test -f /usr/local/lib/android/sdk/platforms/android-34/android.jar
           ls -la /usr/local/lib/android/sdk/platforms
-          ls -la /usr/local/lib/android/sdk/platforms/android-31
+          ls -la /usr/local/lib/android/sdk/platforms/android-34
           ls -la /usr/local/lib/android/sdk/build-tools || true
 
       - name: Repo dosyalarını kontrol et
@@ -207,7 +207,7 @@ jobs:
           APK_PATH="$(find bin -name '*.apk' ! -name '*unsigned*' | head -n 1)"
           test -n "$APK_PATH"
           echo "Kontrol edilen APK: $APK_PATH"
-          /usr/local/lib/android/sdk/build-tools/31.0.0/apksigner verify --verbose "$APK_PATH"
+          /usr/local/lib/android/sdk/build-tools/34.0.0/apksigner verify --verbose "$APK_PATH"
 
       - name: Hata özeti hazırla
         if: ${{ failure() }}
