@@ -15,16 +15,12 @@ MİMARİ:
 - Ana içerik ve overlay katmanı ayrıdır
 
 NOT:
-- GEÇİCİ KRİTİK TEST SÜRÜMÜDÜR.
-- Açılışta çökme sorununu izole etmek için reklam ve premium tarafı tamamen çıkarılmıştır.
-- Bu dosyada:
-  - premium servisi import edilmez
-  - reklam servisi import edilmez
-  - reklam test butonları bulunmaz
-- Amaç yalnızca uygulama çekirdeğinin stabil açılıp açılmadığını doğrulamaktır.
+- Bu sürüm reklamsızdır.
+- Premium / reklam entegrasyonu bu dosyada bulunmaz.
+- Ana uygulama akışı korunmuştur.
 
-SURUM: 21
-TARIH: 2026-03-16
+SURUM: 23
+TARIH: 2026-03-17
 IMZA: FY.
 """
 
@@ -101,7 +97,7 @@ class RootWidget(FloatLayout):
 
         try:
             self._build_ui()
-            self.set_status_info("Hazır. İzolasyon test sürümü.", "onaylandi.png")
+            self.set_status_info("Hazır.", "onaylandi.png")
         except Exception:
             hata = traceback.format_exc()
             print(hata)
