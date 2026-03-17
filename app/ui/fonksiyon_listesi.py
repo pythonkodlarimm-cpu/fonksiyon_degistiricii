@@ -6,7 +6,7 @@ ROL:
 - Taranan fonksiyonları listeler
 - Arama / filtreleme yapar
 - Seçilen fonksiyonu üst katmana bildirir
-- Göz ikonu ile listeyi açıp kapatır
+- Göz ikonu ile listeyi geniş / dar görünüm arasında değiştirir
 - Seçilen kod ve yeni kod için kısa önizleme gösterir
 
 MİMARİ:
@@ -15,8 +15,13 @@ MİMARİ:
 - Liste görünürlüğü burada yönetilir
 - Üst aksiyon alanında icon_toolbar kullanılır
 
-SURUM: 7
-TARIH: 2026-03-16
+API 34 UYUMLULUK NOTU:
+- Bu dosya doğrudan Android API çağrısı yapmaz
+- Kivy tabanlı liste ve arama akışı platform bağımsızdır
+- Büyük liste / dar liste davranışı güvenli şekilde yönetilir
+
+SURUM: 8
+TARIH: 2026-03-17
 IMZA: FY.
 """
 
@@ -53,7 +58,7 @@ class FonksiyonListesi(BoxLayout):
             orientation="vertical",
             spacing=dp(8),
             size_hint_y=None,
-            height=dp(664),
+            height=dp(760),
             **kwargs,
         )
 
@@ -61,10 +66,15 @@ class FonksiyonListesi(BoxLayout):
         self.all_items = []
         self.filtered_items = []
         self.selected_item = None
-        self.is_list_visible = True
+
+        # False değil; dar mod bile liste gösterir.
+        self.is_list_expanded = True
 
         self._selected_preview_text = ""
         self._new_preview_text = ""
+
+        self._expanded_list_height = dp(360)
+        self._compact_list_height = dp(188)
 
         self._build_ui()
 
@@ -76,23 +86,25 @@ class FonksiyonListesi(BoxLayout):
         self._build_search_box()
         self._build_list_box()
         self._build_preview_boxes()
+
         self._sync_list_visibility()
         self._selected_preview_card_text_guncelle()
         self._new_preview_card_text_guncelle()
+        self._render_items([], keep_scroll=False)
 
     def _build_header_row(self) -> None:
         row = BoxLayout(
             orientation="horizontal",
             size_hint_y=None,
-            height=dp(40),
+            height=dp(42),
             spacing=dp(8),
         )
 
         self.header = IconluBaslik(
             text="Fonksiyonlar",
             icon_name="layers.png",
-            height_dp=30,
-            font_size="15sp",
+            height_dp=32,
+            font_size="16sp",
             color=TEXT_PRIMARY,
             size_hint_x=1,
         )
@@ -101,9 +113,9 @@ class FonksiyonListesi(BoxLayout):
         self.count_label = Label(
             text="0 / 0",
             size_hint_x=None,
-            width=dp(74),
+            width=dp(84),
             color=TEXT_MUTED,
-            font_size="12sp",
+            font_size="13sp",
             halign="right",
             valign="middle",
         )
@@ -121,7 +133,7 @@ class FonksiyonListesi(BoxLayout):
             icon_name="visibility_on.png",
             text="Liste",
             on_release=self._toggle_list_visibility,
-            icon_size_dp=30,
+            icon_size_dp=32,
             text_size="10sp",
             color=TEXT_MUTED,
             icon_bg=None,
@@ -132,7 +144,7 @@ class FonksiyonListesi(BoxLayout):
         self.search_wrap = Kart(
             orientation="vertical",
             size_hint_y=None,
-            height=dp(48),
+            height=dp(52),
             padding=(0, 0),
             bg=INPUT_BG,
             border=(0.20, 0.24, 0.30, 1),
@@ -140,7 +152,7 @@ class FonksiyonListesi(BoxLayout):
         )
 
         self.search_input = TextInput(
-            hint_text="Fonksiyon ara...",
+            hint_text="Tüm fonksiyonları görüntüleyebilir ve arayabilirsiniz...",
             multiline=False,
             size_hint=(1, 1),
             background_normal="",
@@ -149,7 +161,7 @@ class FonksiyonListesi(BoxLayout):
             foreground_color=TEXT_PRIMARY,
             cursor_color=TEXT_PRIMARY,
             hint_text_color=TEXT_MUTED,
-            padding=(dp(12), dp(12)),
+            padding=(dp(12), dp(13)),
             write_tab=False,
             font_size="14sp",
         )
@@ -162,7 +174,7 @@ class FonksiyonListesi(BoxLayout):
             orientation="vertical",
             spacing=dp(8),
             size_hint_y=None,
-            height=dp(256),
+            height=self._expanded_list_height,
             padding=(dp(10), dp(10)),
             bg=CARD_BG_SOFT,
             border=(0.18, 0.22, 0.28, 1),
@@ -170,7 +182,7 @@ class FonksiyonListesi(BoxLayout):
         )
 
         self.list_info_label = Label(
-            text="Belge tarandığında fonksiyonlar burada listelenir.",
+            text="Tüm fonksiyonlar aşağıda listelenir ve aranabilir.",
             size_hint_y=None,
             height=dp(18),
             color=TEXT_MUTED,
@@ -184,6 +196,20 @@ class FonksiyonListesi(BoxLayout):
             size=lambda inst, size: setattr(inst, "text_size", (size[0], None))
         )
         self.list_wrap.add_widget(self.list_info_label)
+
+        self.table_header = BoxLayout(
+            orientation="horizontal",
+            size_hint_y=None,
+            height=dp(26),
+            spacing=dp(8),
+        )
+
+        self.table_header.add_widget(self._build_table_header_label("Fonksiyon", 0.54))
+        self.table_header.add_widget(self._build_table_header_label("Tür", 0.14))
+        self.table_header.add_widget(self._build_table_header_label("Satır", 0.16))
+        self.table_header.add_widget(self._build_table_header_label("İmza", 0.16))
+
+        self.list_wrap.add_widget(self.table_header)
 
         self.scroll = ScrollView(
             do_scroll_x=False,
@@ -206,6 +232,19 @@ class FonksiyonListesi(BoxLayout):
         self.list_wrap.add_widget(self.scroll)
         self.add_widget(self.list_wrap)
 
+    def _build_table_header_label(self, text: str, size_hint_x: float) -> Label:
+        lbl = Label(
+            text=text,
+            size_hint_x=size_hint_x,
+            color=(0.76, 0.84, 0.96, 1),
+            font_size="11sp",
+            halign="left",
+            valign="middle",
+            bold=True,
+        )
+        lbl.bind(size=lambda inst, size: setattr(inst, "text_size", size))
+        return lbl
+
     def _build_preview_boxes(self) -> None:
         self.selected_preview_card = self._build_preview_card(
             title="Seçilen Kod Önizleme",
@@ -223,7 +262,7 @@ class FonksiyonListesi(BoxLayout):
         card = Kart(
             orientation="vertical",
             size_hint_y=None,
-            height=dp(118),
+            height=dp(122),
             padding=(dp(12), dp(10)),
             spacing=dp(8),
             bg=CARD_BG_DARK,
@@ -446,43 +485,98 @@ class FonksiyonListesi(BoxLayout):
             return qualified_name
         return str(getattr(item, "name", "") or "-")
 
-    def _button_text(self, item) -> str:
-        display_name = self._display_name(item)
-        kind = str(getattr(item, "kind", "") or "")
-        lineno = int(getattr(item, "lineno", 0) or 0)
-        end_lineno = int(getattr(item, "end_lineno", 0) or 0)
+    def _signature_short(self, item, limit: int = 26) -> str:
         signature = str(getattr(item, "signature", "") or "").strip()
+        if not signature:
+            return "-"
+        if len(signature) <= limit:
+            return signature
+        return signature[: limit - 3] + "..."
 
-        satir = f"{kind}  •  Satır: {lineno}-{end_lineno}"
+    def _row_bg(self, is_selected: bool):
+        if is_selected:
+            return (0.20, 0.34, 0.52, 1)
+        return CARD_BG
 
-        if signature:
-            return f"{display_name}\n{satir}\n{signature}"
-        return f"{display_name}\n{satir}"
-
-    def _button_height(self, item) -> float:
-        signature = str(getattr(item, "signature", "") or "").strip()
-        if signature:
-            return dp(92)
-        return dp(72)
-
-    def _make_item_button(self, item, is_selected: bool) -> Button:
-        btn = Button(
-            text=self._button_text(item),
+    def _build_item_row(self, item, is_selected: bool):
+        row = Kart(
+            orientation="horizontal",
             size_hint_y=None,
-            height=self._button_height(item),
-            halign="left",
-            valign="middle",
+            height=dp(70),
+            padding=(dp(10), dp(8)),
+            spacing=dp(8),
+            bg=self._row_bg(is_selected),
+            border=(0.18, 0.22, 0.28, 1),
+            radius=RADIUS_MD,
+        )
+
+        btn = Button(
+            text="",
             background_normal="",
             background_down="",
-            background_color=(0.20, 0.34, 0.52, 1) if is_selected else CARD_BG,
+            background_color=(0, 0, 0, 0),
+            size_hint=(1, 1),
+        )
+        btn.bind(on_release=lambda _btn, current=item: self._select(current))
+
+        content = BoxLayout(
+            orientation="horizontal",
+            spacing=dp(8),
+        )
+
+        ad = Label(
+            text=self._display_name(item),
+            size_hint_x=0.54,
             color=TEXT_PRIMARY,
             font_size="13sp",
-            bold=False,
-            shorten=False,
+            halign="left",
+            valign="middle",
+            shorten=True,
+            shorten_from="right",
         )
-        btn.bind(size=self._sync_text_size)
-        btn.bind(on_release=lambda _btn, current=item: self._select(current))
-        return btn
+        ad.bind(size=lambda inst, size: setattr(inst, "text_size", size))
+        content.add_widget(ad)
+
+        tur = Label(
+            text=str(getattr(item, "kind", "") or "-"),
+            size_hint_x=0.14,
+            color=(0.84, 0.88, 0.96, 1),
+            font_size="12sp",
+            halign="left",
+            valign="middle",
+            shorten=True,
+            shorten_from="right",
+        )
+        tur.bind(size=lambda inst, size: setattr(inst, "text_size", size))
+        content.add_widget(tur)
+
+        satir = Label(
+            text=f"{int(getattr(item, 'lineno', 0) or 0)}-{int(getattr(item, 'end_lineno', 0) or 0)}",
+            size_hint_x=0.16,
+            color=(0.80, 0.88, 0.94, 1),
+            font_size="12sp",
+            halign="left",
+            valign="middle",
+        )
+        satir.bind(size=lambda inst, size: setattr(inst, "text_size", size))
+        content.add_widget(satir)
+
+        imza = Label(
+            text=self._signature_short(item),
+            size_hint_x=0.16,
+            color=TEXT_MUTED,
+            font_size="11sp",
+            halign="left",
+            valign="middle",
+            shorten=True,
+            shorten_from="right",
+        )
+        imza.bind(size=lambda inst, size: setattr(inst, "text_size", size))
+        content.add_widget(imza)
+
+        row.add_widget(content)
+        row.add_widget(btn)
+        return row
 
     def _make_empty_label(self) -> Label:
         bos = Label(
@@ -501,32 +595,24 @@ class FonksiyonListesi(BoxLayout):
         self.clear_items()
         count = 0
 
-        if self.is_list_visible:
-            for item in items:
-                count += 1
-                is_selected = (
-                    self.selected_item is not None
-                    and self._item_key(item) == self._item_key(self.selected_item)
-                )
-                self.container.add_widget(self._make_item_button(item, is_selected))
+        for item in items:
+            count += 1
+            is_selected = (
+                self.selected_item is not None
+                and self._item_key(item) == self._item_key(self.selected_item)
+            )
+            self.container.add_widget(self._build_item_row(item, is_selected))
 
-            if count == 0:
-                self.container.add_widget(self._make_empty_label())
+        if count == 0:
+            self.container.add_widget(self._make_empty_label())
 
         toplam = len(self.all_items)
         self.count_label.text = f"{count} / {toplam}"
 
-        if self.is_list_visible:
-            if keep_scroll and self.selected_item is not None:
-                Clock.schedule_once(self._selected_itemi_gorunur_tut, 0)
-            else:
-                Clock.schedule_once(self._scroll_top, 0)
-
-    def _sync_text_size(self, widget, size):
-        try:
-            widget.text_size = (size[0] - dp(18), size[1] - dp(12))
-        except Exception:
-            pass
+        if keep_scroll and self.selected_item is not None:
+            Clock.schedule_once(self._selected_itemi_gorunur_tut, 0)
+        else:
+            Clock.schedule_once(self._scroll_top, 0)
 
     def _sync_label_size(self, widget, size):
         try:
@@ -587,30 +673,28 @@ class FonksiyonListesi(BoxLayout):
             pass
 
     def _update_toggle_icon(self) -> None:
-        if self.is_list_visible:
+        if self.is_list_expanded:
             self._set_toggle_icon("visibility_on.png")
         else:
             self._set_toggle_icon("visibility_off.png")
 
     def _toggle_list_visibility(self, *_args):
-        self.is_list_visible = not self.is_list_visible
+        self.is_list_expanded = not self.is_list_expanded
         self._sync_list_visibility()
         self._render_items(self.filtered_items, keep_scroll=False)
 
     def _sync_list_visibility(self) -> None:
-        if self.is_list_visible:
-            self.list_wrap.height = dp(256)
-            self.list_info_label.text = "Belge tarandığında fonksiyonlar burada listelenir."
-            self.scroll.disabled = False
-            self.scroll.opacity = 1
-            self.scroll.size_hint_y = 1
+        if self.is_list_expanded:
+            self.list_wrap.height = self._expanded_list_height
+            self.list_info_label.text = "Tüm fonksiyonlar geniş listede görüntülenir ve aranabilir."
         else:
-            self.list_wrap.height = dp(54)
-            self.list_info_label.text = "Liste kapalı. Göz ikonuna basarak aç."
-            self.scroll.disabled = True
-            self.scroll.opacity = 0
-            self.scroll.size_hint_y = None
-            self.scroll.height = 0
+            self.list_wrap.height = self._compact_list_height
+            self.list_info_label.text = "Dar görünüm açık. Yine kaydırarak 3-4 fonksiyon görebilirsiniz."
+
+        self.scroll.disabled = False
+        self.scroll.opacity = 1
+        self.scroll.size_hint_y = 1
+        self.table_header.opacity = 1
 
         self._update_toggle_icon()
 
