@@ -11,9 +11,10 @@ APK / Android UYUMLULUK NOTLARI:
 - İkon değişiminde source güncellendikten sonra reload() çağrılır.
 - Boş ikon durumunda source temizlenir ve opacity düşürülür.
 - Label alanı yatayda genişleyerek taşmayı azaltır.
+- Bu bileşen doğrudan Android API çağrısı yapmaz; API 34 ile güvenle kullanılabilir.
 
-SURUM: 3
-TARIH: 2026-03-16
+SURUM: 4
+TARIH: 2026-03-17
 IMZA: FY.
 """
 
@@ -86,26 +87,38 @@ class DurumCubugu(Kart):
         self._apply_info_style()
 
     def _sync_label_size(self, widget, size):
-        widget.text_size = (size[0], size[1])
+        try:
+            widget.text_size = (size[0], size[1])
+        except Exception:
+            pass
 
     def _set_icon(self, icon_name: str = "") -> None:
-        if icon_name:
+        temiz_ad = str(icon_name or "").strip()
+
+        if temiz_ad:
             try:
-                ikon_yolu = icon_path(icon_name)
+                ikon_yolu = icon_path(temiz_ad)
             except Exception:
                 ikon_yolu = ""
 
             if ikon_yolu:
-                self.icon.source = ikon_yolu
-                self.icon.opacity = 1
                 try:
+                    self.icon.source = ikon_yolu
+                    self.icon.opacity = 1
                     self.icon.reload()
                 except Exception:
-                    pass
+                    try:
+                        self.icon.source = ikon_yolu
+                        self.icon.opacity = 1
+                    except Exception:
+                        pass
                 return
 
-        self.icon.source = ""
-        self.icon.opacity = 0
+        try:
+            self.icon.source = ""
+            self.icon.opacity = 0
+        except Exception:
+            pass
 
     def _apply_info_style(self) -> None:
         self.set_bg_rgba(self._bg_info)
