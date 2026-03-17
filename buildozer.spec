@@ -22,7 +22,7 @@ presplash.filename = app/assets/icons/presplash.png
 
 android.permissions = READ_EXTERNAL_STORAGE,(name=android.permission.WRITE_EXTERNAL_STORAGE;maxSdkVersion=28),INTERNET,ACCESS_NETWORK_STATE
 
-android.api = 34
+android.api = 33
 android.minapi = 21
 
 android.sdk_path = /usr/local/lib/android/sdk
