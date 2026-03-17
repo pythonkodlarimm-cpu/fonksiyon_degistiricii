@@ -172,4 +172,4 @@ public class AdMobBridge {
             }
         });
     }
-                                          }
+                    }
