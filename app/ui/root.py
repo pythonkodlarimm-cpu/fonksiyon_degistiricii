@@ -7,6 +7,7 @@ ROL:
 - Dosya seçme, fonksiyon tarama, seçim, güncelleme ve geri yükleme akışını yönetir
 - UI katmanını çekirdek servislerle bağlar
 - Geçici bildirim overlay katmanını yönetir
+- Reklam test akışını manuel olarak yönetir
 
 MİMARİ:
 - Root çizim yapmaz
@@ -15,11 +16,12 @@ MİMARİ:
 - Ana içerik ve overlay katmanı ayrıdır
 
 NOT:
-- Bu sürüm reklamsızdır.
-- Premium / reklam entegrasyonu bu dosyada bulunmaz.
-- Ana uygulama akışı korunmuştur.
+- Bu sürümde reklam servisi geri eklenmiştir.
+- Reklam otomatik yüklenmez.
+- Reklam sadece manuel test butonu ile çağrılır.
+- buildozer.spec ve android.yml yapısına dokunulmaz.
 
-SURUM: 23
+SURUM: 24
 TARIH: 2026-03-17
 IMZA: FY.
 """
@@ -31,6 +33,7 @@ from pathlib import Path
 
 from kivy.metrics import dp
 from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.button import Button
 from kivy.uix.floatlayout import FloatLayout
 from kivy.uix.label import Label
 from kivy.uix.scrollview import ScrollView
@@ -55,6 +58,7 @@ from app.services.belge_oturumu_servisi import (
 )
 from app.services.dosya_servisi import read_text
 from app.services.gecici_bildirim_servisi import gecici_bildirim_servisi
+from app.services.reklam_servisi import reklam_servisi
 from app.ui.dosya_secici import DosyaSecici
 from app.ui.dosya_secici_paketi.models import DocumentSelection
 from app.ui.durum_cubugu import DurumCubugu
@@ -85,6 +89,7 @@ class RootWidget(FloatLayout):
         self.scroll = None
         self.main_column = None
         self.file_access_panel = None
+        self.reklam_test_karti = None
         self.dosya_secici = None
         self.function_list = None
         self.editor = None
@@ -104,9 +109,6 @@ class RootWidget(FloatLayout):
             self.clear_widgets()
             self.add_widget(self._build_fallback_error_ui(hata))
 
-    # =========================================================
-    # DEBUG
-    # =========================================================
     def _debug(self, message: str) -> None:
         try:
             print("[ROOT]", str(message))
@@ -114,8 +116,33 @@ class RootWidget(FloatLayout):
             pass
 
     # =========================================================
-    # VERSION
+    # REKLAM TEST
     # =========================================================
+    def _manuel_reklam_test(self, _instance=None) -> None:
+        try:
+            if platform != "android":
+                self.set_status_warning("Reklam testi sadece Android'de çalışır.")
+                return
+
+            reklam_servisi.reklam_yukle()
+            reklam_servisi.reklam_goster()
+            self.set_status_success("Reklam test çağrısı gönderildi.")
+        except Exception as exc:
+            self.set_status_error(f"Reklam test hatası: {exc}")
+            self._debug(f"Reklam test hatası: {exc}")
+
+    def _manuel_reklam_gizle(self, _instance=None) -> None:
+        try:
+            if platform != "android":
+                self.set_status_warning("Reklam gizleme sadece Android'de çalışır.")
+                return
+
+            reklam_servisi.reklam_kapat()
+            self.set_status_info("Reklam gizleme çağrısı gönderildi.", "warning.png")
+        except Exception as exc:
+            self.set_status_error(f"Reklam gizleme hatası: {exc}")
+            self._debug(f"Reklam gizleme hatası: {exc}")
+
     def _resolve_app_version(self) -> str:
         if platform == "android":
             try:
@@ -135,7 +162,6 @@ class RootWidget(FloatLayout):
 
         try:
             from app import __version__ as app_version  # type: ignore
-
             temiz = str(app_version or "").strip()
             if temiz:
                 return temiz
@@ -169,12 +195,44 @@ class RootWidget(FloatLayout):
         )
         self.version_label.bind(size=lambda inst, size: setattr(inst, "text_size", size))
         kart.add_widget(self.version_label)
+        return kart
+
+    def _build_reklam_test_karti(self) -> Kart:
+        kart = Kart(
+            orientation="horizontal",
+            size_hint_y=None,
+            height=dp(58),
+            padding=(dp(8), dp(8), dp(8), dp(8)),
+            spacing=dp(8),
+            bg=(0.08, 0.11, 0.16, 1),
+            border=(0.16, 0.22, 0.30, 1),
+            radius=14,
+        )
+
+        test_btn = Button(
+            text="Reklam Test",
+            size_hint=(0.5, 1),
+            background_normal="",
+            background_down="",
+            background_color=(0.16, 0.62, 0.34, 1),
+            color=(1, 1, 1, 1),
+        )
+        test_btn.bind(on_release=self._manuel_reklam_test)
+        kart.add_widget(test_btn)
+
+        gizle_btn = Button(
+            text="Reklam Gizle",
+            size_hint=(0.5, 1),
+            background_normal="",
+            background_down="",
+            background_color=(0.74, 0.20, 0.20, 1),
+            color=(1, 1, 1, 1),
+        )
+        gizle_btn.bind(on_release=self._manuel_reklam_gizle)
+        kart.add_widget(gizle_btn)
 
         return kart
 
-    # =========================================================
-    # UI
-    # =========================================================
     def _build_ui(self) -> None:
         self.scroll = ScrollView(
             size_hint=(1, 1),
@@ -197,6 +255,9 @@ class RootWidget(FloatLayout):
         )
         self.file_access_panel.size_hint_y = None
         self.main_column.add_widget(self.file_access_panel)
+
+        self.reklam_test_karti = self._build_reklam_test_karti()
+        self.main_column.add_widget(self.reklam_test_karti)
 
         self.dosya_secici = DosyaSecici(
             on_scan=self.scan_file,
@@ -273,9 +334,6 @@ class RootWidget(FloatLayout):
         root.add_widget(mesaj)
         return root
 
-    # =========================================================
-    # STATUS HELPERS
-    # =========================================================
     def _safe_set_status(self, text: str, icon_name: str = "") -> None:
         try:
             if self.status is not None:
@@ -339,9 +397,6 @@ class RootWidget(FloatLayout):
         except Exception:
             pass
 
-    # =========================================================
-    # HELPERS
-    # =========================================================
     def _clear_state(self) -> None:
         self.current_file_path = ""
         self.current_session = None
@@ -451,9 +506,6 @@ class RootWidget(FloatLayout):
 
         return None
 
-    # =========================================================
-    # DOSYA AKIŞI
-    # =========================================================
     def _scan_or_refresh(self, _ignored_file_path: str) -> None:
         selection = self._selection_from_ui()
         if selection is None:
@@ -519,9 +571,6 @@ class RootWidget(FloatLayout):
             self.set_status_error("Tarama hatası oluştu.")
             print(traceback.format_exc())
 
-    # =========================================================
-    # SEÇİM
-    # =========================================================
     def select_item(self, item) -> None:
         self.selected_item = item
 
@@ -544,9 +593,6 @@ class RootWidget(FloatLayout):
         except Exception:
             self.set_status_info("Fonksiyon seçildi.", "visibility_on.png")
 
-    # =========================================================
-    # ITEM HELPERS
-    # =========================================================
     def _find_refreshed_item(self, old_item):
         if old_item is None:
             return None
@@ -581,9 +627,6 @@ class RootWidget(FloatLayout):
 
         return None
 
-    # =========================================================
-    # GÜNCELLEME
-    # =========================================================
     def update_selected_function(self, item, new_code: str) -> None:
         try:
             if self.current_session is None:
@@ -663,9 +706,6 @@ class RootWidget(FloatLayout):
             self.set_status_error("Güncelleme hatası oluştu.")
             print(traceback.format_exc())
 
-    # =========================================================
-    # GERİ YÜKLEME
-    # =========================================================
     def geri_yukle_secili_belge(self) -> None:
         try:
             if self.current_session is None:
