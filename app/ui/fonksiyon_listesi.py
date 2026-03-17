@@ -20,7 +20,7 @@ API 34 UYUMLULUK NOTU:
 - Kivy tabanlı liste ve arama akışı platform bağımsızdır
 - Büyük liste / dar liste davranışı güvenli şekilde yönetilir
 
-SURUM: 9
+SURUM: 10
 TARIH: 2026-03-17
 IMZA: FY.
 """
@@ -37,7 +37,6 @@ from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.label import Label
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.textinput import TextInput
-from kivy.uix.widget import Widget
 
 from app.ui.icon_toolbar import IconToolbar
 from app.ui.iconlu_baslik import IconluBaslik
@@ -82,6 +81,11 @@ class FonksiyonSatiri(ButtonBehavior, BoxLayout):
 
     def _selected_bg(self):
         return (0.20, 0.34, 0.52, 1)
+
+    def _pressed_bg(self):
+        if self.is_selected:
+            return (0.24, 0.40, 0.60, 1)
+        return (0.24, 0.28, 0.36, 1)
 
     def _update_canvas(self, *_args):
         self._bg_rect.pos = self.pos
@@ -196,9 +200,16 @@ class FonksiyonSatiri(ButtonBehavior, BoxLayout):
         )
         self.add_widget(imza)
 
+    def set_selected_state(self, is_selected: bool) -> None:
+        self.is_selected = bool(is_selected)
+        try:
+            self._bg_color.rgba = self._selected_bg() if self.is_selected else self._normal_bg()
+        except Exception:
+            pass
+
     def on_press(self):
         try:
-            self._bg_color.rgba = (0.24, 0.40, 0.60, 1) if self.is_selected else (0.24, 0.28, 0.36, 1)
+            self._bg_color.rgba = self._pressed_bg()
         except Exception:
             pass
         return super().on_press()
@@ -747,7 +758,7 @@ class FonksiyonListesi(BoxLayout):
     def _toggle_list_visibility(self, *_args):
         self.is_list_expanded = not self.is_list_expanded
         self._sync_list_visibility()
-        self._render_items(self.filtered_items, keep_scroll=False)
+        Clock.schedule_once(self._scroll_top, 0)
 
     def _sync_list_visibility(self) -> None:
         if self.is_list_expanded:
