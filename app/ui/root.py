@@ -19,6 +19,7 @@ NOT:
 - Reklam servisi root katmanından çıkarılmıştır.
 - buildozer.spec ve android.yml yapısına dokunulmaz.
 - API 34 hedefi için açılış akışı daha güvenli hale getirilmiştir.
+- Ağır modüller lazy import ile yüklenir.
 
 SURUM: 30
 TARIH: 2026-03-17
@@ -37,34 +38,6 @@ from kivy.uix.floatlayout import FloatLayout
 from kivy.uix.label import Label
 from kivy.uix.scrollview import ScrollView
 from kivy.utils import platform
-
-from app.core.degistirici import find_item_by_identity
-from app.core.degistirici import update_function_in_code
-from app.core.tarayici import scan_functions_from_file
-from app.services.belge_geri_yukleme_servisi import (
-    BelgeGeriYuklemeServisiHatasi,
-    son_yedekten_geri_yukle,
-)
-from app.services.belge_oturumu_servisi import (
-    BelgeOturumuServisiHatasi,
-    calisma_dosyasi_yolu,
-    calisma_kopyasi_var_mi,
-    guncellenmis_icerigi_kaydet,
-    oturum_baslat,
-    oturum_display_name,
-    oturum_identifier,
-    son_yedek_yolu,
-)
-from app.services.dosya_servisi import read_text
-from app.services.gecici_bildirim_servisi import gecici_bildirim_servisi
-from app.ui.dosya_secici import DosyaSecici
-from app.ui.dosya_secici_paketi.models import DocumentSelection
-from app.ui.durum_cubugu import DurumCubugu
-from app.ui.editor_paneli import EditorPaneli
-from app.ui.fonksiyon_listesi import FonksiyonListesi
-from app.ui.gecici_bildirim import GeciciBildirimKatmani
-from app.ui.kart import Kart
-from app.ui.tum_dosya_erisim_paneli import TumDosyaErisimPaneli
 
 
 class RootWidget(FloatLayout):
@@ -116,6 +89,65 @@ class RootWidget(FloatLayout):
         except Exception:
             pass
 
+    # =========================================================
+    # LAZY IMPORT HELPERS
+    # =========================================================
+    def _get_core_helpers(self):
+        from app.core.degistirici import find_item_by_identity, update_function_in_code
+        from app.core.tarayici import scan_functions_from_file
+
+        return {
+            "find_item_by_identity": find_item_by_identity,
+            "update_function_in_code": update_function_in_code,
+            "scan_functions_from_file": scan_functions_from_file,
+        }
+
+    def _get_belge_geri_yukleme(self):
+        from app.services.belge_geri_yukleme_servisi import (
+            BelgeGeriYuklemeServisiHatasi,
+            son_yedekten_geri_yukle,
+        )
+
+        return {
+            "BelgeGeriYuklemeServisiHatasi": BelgeGeriYuklemeServisiHatasi,
+            "son_yedekten_geri_yukle": son_yedekten_geri_yukle,
+        }
+
+    def _get_belge_oturumu(self):
+        from app.services.belge_oturumu_servisi import (
+            BelgeOturumuServisiHatasi,
+            calisma_dosyasi_yolu,
+            calisma_kopyasi_var_mi,
+            guncellenmis_icerigi_kaydet,
+            oturum_baslat,
+            oturum_display_name,
+            oturum_identifier,
+            son_yedek_yolu,
+        )
+
+        return {
+            "BelgeOturumuServisiHatasi": BelgeOturumuServisiHatasi,
+            "calisma_dosyasi_yolu": calisma_dosyasi_yolu,
+            "calisma_kopyasi_var_mi": calisma_kopyasi_var_mi,
+            "guncellenmis_icerigi_kaydet": guncellenmis_icerigi_kaydet,
+            "oturum_baslat": oturum_baslat,
+            "oturum_display_name": oturum_display_name,
+            "oturum_identifier": oturum_identifier,
+            "son_yedek_yolu": son_yedek_yolu,
+        }
+
+    def _get_dosya_servisi(self):
+        from app.services.dosya_servisi import read_text
+        return {"read_text": read_text}
+
+    def _get_gecici_bildirim_servisi(self):
+        from app.services.gecici_bildirim_servisi import gecici_bildirim_servisi
+        return gecici_bildirim_servisi
+
+    def _get_document_selection_class(self):
+        from app.ui.dosya_secici_paketi.models import DocumentSelection
+        return DocumentSelection
+
     def _post_build_refresh(self, _dt) -> None:
         try:
             if self.file_access_panel is not None:
@@ -156,7 +188,9 @@ class RootWidget(FloatLayout):
 
         return "GELISTIRME"
 
-    def _build_version_card(self) -> Kart:
+    def _build_version_card(self):
+        from app.ui.kart import Kart
+
         kart = Kart(
             orientation="horizontal",
             size_hint_y=None,
@@ -188,6 +222,13 @@ class RootWidget(FloatLayout):
     # UI
     # =========================================================
     def _build_ui(self) -> None:
+        from app.ui.dosya_secici import DosyaSecici
+        from app.ui.durum_cubugu import DurumCubugu
+        from app.ui.editor_paneli import EditorPaneli
+        from app.ui.fonksiyon_listesi import FonksiyonListesi
+        from app.ui.gecici_bildirim import GeciciBildirimKatmani
+        from app.ui.tum_dosya_erisim_paneli import TumDosyaErisimPaneli
+
         self.scroll = ScrollView(
             size_hint=(1, 1),
             do_scroll_x=False,
@@ -256,7 +297,7 @@ class RootWidget(FloatLayout):
         self.add_widget(self.toast_layer)
 
         try:
-            gecici_bildirim_servisi.register_layer(self.toast_layer)
+            self._get_gecici_bildirim_servisi().register_layer(self.toast_layer)
         except Exception as exc:
             self._debug(f"toast layer register hatası: {exc}")
 
@@ -334,7 +375,7 @@ class RootWidget(FloatLayout):
 
     def show_toast(self, text: str, icon_name: str = "", duration: float = 2.4) -> None:
         try:
-            gecici_bildirim_servisi.show(
+            self._get_gecici_bildirim_servisi().show(
                 text=str(text or ""),
                 icon_name=str(icon_name or ""),
                 duration=float(duration or 2.4),
@@ -344,7 +385,7 @@ class RootWidget(FloatLayout):
 
     def hide_toast(self) -> None:
         try:
-            gecici_bildirim_servisi.hide_immediately()
+            self._get_gecici_bildirim_servisi().hide_immediately()
         except Exception:
             pass
 
@@ -419,7 +460,8 @@ class RootWidget(FloatLayout):
 
     def _safe_backup_text(self) -> str:
         try:
-            metin = str(son_yedek_yolu(self.current_session) or "").strip()
+            belge_oturumu = self._get_belge_oturumu()
+            metin = str(belge_oturumu["son_yedek_yolu"](self.current_session) or "").strip()
             if metin:
                 return metin
         except Exception:
@@ -436,7 +478,12 @@ class RootWidget(FloatLayout):
                 pass
             return
 
-        self.items = scan_functions_from_file(self.current_file_path)
+        try:
+            core = self._get_core_helpers()
+            self.items = core["scan_functions_from_file"](self.current_file_path)
+        except Exception:
+            self.items = []
+            raise
 
         try:
             if self.function_list is not None:
@@ -457,6 +504,7 @@ class RootWidget(FloatLayout):
             if self.dosya_secici is not None:
                 ham = str(self.dosya_secici.get_path() or "").strip()
                 if ham and Path(ham).exists() and Path(ham).is_file():
+                    DocumentSelection = self._get_document_selection_class()
                     return DocumentSelection(
                         source="filesystem",
                         uri="",
@@ -479,9 +527,11 @@ class RootWidget(FloatLayout):
             self.set_status_warning("Dosya seçilmedi.")
             return
 
+        belge_oturumu = self._get_belge_oturumu()
+
         try:
-            session = oturum_baslat(selection)
-        except BelgeOturumuServisiHatasi as exc:
+            session = belge_oturumu["oturum_baslat"](selection)
+        except belge_oturumu["BelgeOturumuServisiHatasi"] as exc:
             self._clear_state()
             self.set_status_error(f"Oturum başlatılamadı: {exc}")
             return
@@ -490,9 +540,9 @@ class RootWidget(FloatLayout):
             self.set_status_error(f"Oturum başlatılamadı: {exc}")
             return
 
-        working_path = str(calisma_dosyasi_yolu(session) or "").strip()
-        source_identifier = str(oturum_identifier(session) or "").strip()
-        display_name = str(oturum_display_name(session) or "").strip()
+        working_path = str(belge_oturumu["calisma_dosyasi_yolu"](session) or "").strip()
+        source_identifier = str(belge_oturumu["oturum_identifier"](session) or "").strip()
+        display_name = str(belge_oturumu["oturum_display_name"](session) or "").strip()
 
         if not working_path:
             self._clear_state()
@@ -502,7 +552,7 @@ class RootWidget(FloatLayout):
         self.current_session = session
         self.current_file_path = working_path
 
-        if not calisma_kopyasi_var_mi(session):
+        if not belge_oturumu["calisma_kopyasi_var_mi"](session):
             self.set_status_error("Çalışma dosyası bulunamadı.")
             return
 
@@ -573,7 +623,9 @@ class RootWidget(FloatLayout):
         if old_item is None:
             return None
 
-        refreshed = find_item_by_identity(
+        core = self._get_core_helpers()
+
+        refreshed = core["find_item_by_identity"](
             self.items,
             path=str(getattr(old_item, "path", "") or ""),
             name=str(getattr(old_item, "name", "") or ""),
@@ -607,15 +659,21 @@ class RootWidget(FloatLayout):
     # GÜNCELLEME
     # =========================================================
     def update_selected_function(self, item, new_code: str) -> None:
+        belge_oturumu = self._get_belge_oturumu()
+        dosya_servisi = self._get_dosya_servisi()
+        core = self._get_core_helpers()
+
         try:
             if self.current_session is None:
                 self.set_status_warning("Önce dosya seç.")
                 return
 
             if not self.current_file_path:
-                self.current_file_path = str(calisma_dosyasi_yolu(self.current_session) or "").strip()
+                self.current_file_path = str(
+                    belge_oturumu["calisma_dosyasi_yolu"](self.current_session) or ""
+                ).strip()
 
-            if not self.current_file_path or not calisma_kopyasi_var_mi(self.current_session):
+            if not self.current_file_path or not belge_oturumu["calisma_kopyasi_var_mi"](self.current_session):
                 self.set_status_error("Çalışma dosyası artık bulunamadı.")
                 return
 
@@ -630,14 +688,18 @@ class RootWidget(FloatLayout):
             try:
                 if self.function_list is not None:
                     self.function_list.set_new_preview(str(new_code or ""))
+            except Exception:
+                pass
+
+            try:
                 if self.editor is not None:
                     self.editor.set_new_code_text(str(new_code or ""))
             except Exception:
                 pass
 
-            old_source = read_text(self.current_file_path)
-            updated_source = update_function_in_code(old_source, item, new_code)
-            backup_path = guncellenmis_icerigi_kaydet(self.current_session, updated_source)
+            old_source = dosya_servisi["read_text"](self.current_file_path)
+            updated_source = core["update_function_in_code"](old_source, item, new_code)
+            backup_path = belge_oturumu["guncellenmis_icerigi_kaydet"](self.current_session, updated_source)
 
             self._reload_items_from_current_file()
 
@@ -671,7 +733,7 @@ class RootWidget(FloatLayout):
                     f"Güncellendi. Seçim yenilenemedi ama dosya yazıldı. Yedek: {backup_text}"
                 )
 
-        except BelgeOturumuServisiHatasi as exc:
+        except belge_oturumu["BelgeOturumuServisiHatasi"] as exc:
             self.set_status_error(str(exc))
         except ValueError as exc:
             self.set_status_error(str(exc))
@@ -685,6 +747,9 @@ class RootWidget(FloatLayout):
     # GERİ YÜKLEME
     # =========================================================
     def geri_yukle_secili_belge(self) -> None:
+        belge_geri = self._get_belge_geri_yukleme()
+        belge_oturumu = self._get_belge_oturumu()
+
         try:
             if self.current_session is None:
                 self.set_status_warning("Önce dosya seç.")
@@ -695,10 +760,12 @@ class RootWidget(FloatLayout):
                 self.set_status_warning("Geri yüklenecek yedek bulunamadı.")
                 return
 
-            geri_yuklenen = son_yedekten_geri_yukle(self.current_session)
+            geri_yuklenen = belge_geri["son_yedekten_geri_yukle"](self.current_session)
 
             try:
-                self.current_file_path = str(calisma_dosyasi_yolu(self.current_session) or "").strip()
+                self.current_file_path = str(
+                    belge_oturumu["calisma_dosyasi_yolu"](self.current_session) or ""
+                ).strip()
             except Exception:
                 pass
 
@@ -708,7 +775,7 @@ class RootWidget(FloatLayout):
 
             self.set_status_success(f"Geri yüklendi. Yedek: {geri_yuklenen}")
 
-        except BelgeGeriYuklemeServisiHatasi as exc:
+        except belge_geri["BelgeGeriYuklemeServisiHatasi"] as exc:
             self.set_status_error(str(exc))
         except Exception:
             self.set_status_error("Geri yükleme hatası oluştu.")
