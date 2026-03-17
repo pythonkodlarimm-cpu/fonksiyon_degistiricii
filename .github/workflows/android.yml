@@ -115,7 +115,6 @@ jobs:
           test -f app/assets/icons/presplash.png
           test -d android/src
           test -f android/src/org/fy/bridge/AdMobBridge.java
-          test -f android/src/org/fy/bridge/BillingBridge.java
           echo "---- buildozer.spec ----"
           sed -n '1,220p' buildozer.spec
           echo "---- icons ----"
@@ -194,10 +193,14 @@ jobs:
           P4A_RELEASE_KEYSTORE_PASSWD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           P4A_RELEASE_KEYALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           P4A_RELEASE_KEYALIAS_PASSWD: ${{ secrets.ANDROID_KEY_ALIAS_PASSWORD }}
+          ANDROIDNDK: /home/runner/.buildozer/android/platform/android-ndk-r25b
+          ANDROID_NDK_HOME: /home/runner/.buildozer/android/platform/android-ndk-r25b
+          ANDROID_NDK_ROOT: /home/runner/.buildozer/android/platform/android-ndk-r25b
         run: |
           set -euxo pipefail
           test -f "${{ github.workspace }}/release.keystore"
           ls -lh "${{ github.workspace }}/release.keystore"
+          test -d /home/runner/.buildozer/android/platform/android-ndk-r25b || true
           buildozer android release 2>&1 | tee build.log
 
       - name: İmzayı doğrula
@@ -300,12 +303,16 @@ jobs:
                       "RUNNER_OS",
                       "BUILD_NUMBER",
                       "APP_VERSION",
+                      "ANDROID_NDK",
+                      "ANDROID_NDK_HOME",
+                      "ANDROID_NDK_ROOT",
+                      "ANDROIDNDK",
                   ]):
                       secili.append(line)
               out.append("")
               out.append("## Ortam özeti")
               out.append("```text")
-              out.append("\n".join(secili[:140]))
+              out.append("\n".join(secili[:180]))
               out.append("```")
 
           Path("summary.md").write_text("\n".join(out), encoding="utf-8")
@@ -337,4 +344,3 @@ jobs:
           name: fonksiyon-degistirici-apk-${{ env.APP_VERSION }}
           path: bin/*.apk
           if-no-files-found: warn
-
