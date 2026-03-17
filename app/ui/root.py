@@ -18,8 +18,9 @@ NOT:
 - Bu sürüm geçici olarak reklamsız test sürümüdür.
 - Reklam servisi root katmanından çıkarılmıştır.
 - buildozer.spec ve android.yml yapısına dokunulmaz.
+- API 34 hedefi için açılış akışı daha güvenli hale getirilmiştir.
 
-SURUM: 28
+SURUM: 29
 TARIH: 2026-03-17
 IMZA: FY.
 """
@@ -29,6 +30,7 @@ from __future__ import annotations
 import traceback
 from pathlib import Path
 
+from kivy.clock import Clock
 from kivy.metrics import dp
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.floatlayout import FloatLayout
@@ -98,6 +100,7 @@ class RootWidget(FloatLayout):
         try:
             self._build_ui()
             self.set_status_info("Hazır.", "onaylandi.png")
+            Clock.schedule_once(self._post_build_refresh, 0)
         except Exception:
             hata = traceback.format_exc()
             print(hata)
@@ -110,6 +113,13 @@ class RootWidget(FloatLayout):
         except Exception:
             pass
 
+    def _post_build_refresh(self, _dt) -> None:
+        try:
+            if self.file_access_panel is not None:
+                self.file_access_panel.refresh_status()
+        except Exception as exc:
+            self._debug(f"post build refresh hatası: {exc}")
+
     # =========================================================
     # VERSION
     # =========================================================
@@ -120,13 +130,14 @@ class RootWidget(FloatLayout):
 
                 PythonActivity = autoclass("org.kivy.android.PythonActivity")
                 current_activity = cast("android.app.Activity", PythonActivity.mActivity)
-                package_info = current_activity.getPackageManager().getPackageInfo(
-                    current_activity.getPackageName(),
-                    0,
-                )
-                version_name = str(getattr(package_info, "versionName", "") or "").strip()
-                if version_name:
-                    return version_name
+                if current_activity is not None:
+                    package_info = current_activity.getPackageManager().getPackageInfo(
+                        current_activity.getPackageName(),
+                        0,
+                    )
+                    version_name = str(getattr(package_info, "versionName", "") or "").strip()
+                    if version_name:
+                        return version_name
             except Exception:
                 pass
 
@@ -237,7 +248,11 @@ class RootWidget(FloatLayout):
 
         self.toast_layer = GeciciBildirimKatmani()
         self.add_widget(self.toast_layer)
-        gecici_bildirim_servisi.register_layer(self.toast_layer)
+
+        try:
+            gecici_bildirim_servisi.register_layer(self.toast_layer)
+        except Exception as exc:
+            self._debug(f"toast layer register hatası: {exc}")
 
     def _build_fallback_error_ui(self, hata_metni: str) -> BoxLayout:
         root = BoxLayout(
@@ -353,6 +368,7 @@ class RootWidget(FloatLayout):
         try:
             if self.function_list is not None:
                 self.function_list.clear_all()
+            pass
         except Exception:
             pass
 
@@ -460,6 +476,10 @@ class RootWidget(FloatLayout):
         try:
             session = oturum_baslat(selection)
         except BelgeOturumuServisiHatasi as exc:
+            self._clear_state()
+            self.set_status_error(f"Oturum başlatılamadı: {exc}")
+            return
+        except Exception as exc:
             self._clear_state()
             self.set_status_error(f"Oturum başlatılamadı: {exc}")
             return
