@@ -7,7 +7,6 @@ ROL:
 - Dosya seçme, fonksiyon tarama, seçim, güncelleme ve geri yükleme akışını yönetir
 - UI katmanını çekirdek servislerle bağlar
 - Geçici bildirim overlay katmanını yönetir
-- Reklam test akışını manuel olarak yönetir
 
 MİMARİ:
 - Root çizim yapmaz
@@ -16,12 +15,11 @@ MİMARİ:
 - Ana içerik ve overlay katmanı ayrıdır
 
 NOT:
-- Bu sürümde reklam servisi geri eklenmiştir.
-- Reklam otomatik yüklenmez.
-- Reklam sadece manuel test butonu ile çağrılır.
+- Bu sürüm geçici olarak reklamsız test sürümüdür.
+- Reklam servisi root katmanından çıkarılmıştır.
 - buildozer.spec ve android.yml yapısına dokunulmaz.
 
-SURUM: 27
+SURUM: 28
 TARIH: 2026-03-17
 IMZA: FY.
 """
@@ -33,7 +31,6 @@ from pathlib import Path
 
 from kivy.metrics import dp
 from kivy.uix.boxlayout import BoxLayout
-from kivy.uix.button import Button
 from kivy.uix.floatlayout import FloatLayout
 from kivy.uix.label import Label
 from kivy.uix.scrollview import ScrollView
@@ -58,7 +55,6 @@ from app.services.belge_oturumu_servisi import (
 )
 from app.services.dosya_servisi import read_text
 from app.services.gecici_bildirim_servisi import gecici_bildirim_servisi
-from app.services.reklam_servisi import reklam_servisi
 from app.ui.dosya_secici import DosyaSecici
 from app.ui.dosya_secici_paketi.models import DocumentSelection
 from app.ui.durum_cubugu import DurumCubugu
@@ -89,7 +85,6 @@ class RootWidget(FloatLayout):
         self.scroll = None
         self.main_column = None
         self.file_access_panel = None
-        self.reklam_test_karti = None
         self.dosya_secici = None
         self.function_list = None
         self.editor = None
@@ -114,34 +109,6 @@ class RootWidget(FloatLayout):
             print("[ROOT]", str(message))
         except Exception:
             pass
-
-    # =========================================================
-    # REKLAM TEST
-    # =========================================================
-    def _manuel_reklam_test(self, _instance=None) -> None:
-        try:
-            if platform != "android":
-                self.set_status_warning("Reklam testi sadece Android'de çalışır.")
-                return
-
-            reklam_servisi.reklam_test_et()
-            self.set_status_info("Reklam test akışı başlatıldı.", "onaylandi.png")
-
-        except Exception as exc:
-            self.set_status_error(f"Reklam test hatası: {exc}")
-            self._debug(f"Reklam test hatası: {exc}")
-
-    def _manuel_reklam_gizle(self, _instance=None) -> None:
-        try:
-            if platform != "android":
-                self.set_status_warning("Reklam gizleme sadece Android'de çalışır.")
-                return
-
-            reklam_servisi.reklam_kapat()
-            self.set_status_info("Reklam gizleme çağrısı gönderildi.", "warning.png")
-        except Exception as exc:
-            self.set_status_error(f"Reklam gizleme hatası: {exc}")
-            self._debug(f"Reklam gizleme hatası: {exc}")
 
     # =========================================================
     # VERSION
@@ -201,42 +168,6 @@ class RootWidget(FloatLayout):
         kart.add_widget(self.version_label)
         return kart
 
-    def _build_reklam_test_karti(self) -> Kart:
-        kart = Kart(
-            orientation="horizontal",
-            size_hint_y=None,
-            height=dp(58),
-            padding=(dp(8), dp(8), dp(8), dp(8)),
-            spacing=dp(8),
-            bg=(0.08, 0.11, 0.16, 1),
-            border=(0.16, 0.22, 0.30, 1),
-            radius=14,
-        )
-
-        test_btn = Button(
-            text="Reklam Test",
-            size_hint=(0.5, 1),
-            background_normal="",
-            background_down="",
-            background_color=(0.16, 0.62, 0.34, 1),
-            color=(1, 1, 1, 1),
-        )
-        test_btn.bind(on_release=self._manuel_reklam_test)
-        kart.add_widget(test_btn)
-
-        gizle_btn = Button(
-            text="Reklam Gizle",
-            size_hint=(0.5, 1),
-            background_normal="",
-            background_down="",
-            background_color=(0.74, 0.20, 0.20, 1),
-            color=(1, 1, 1, 1),
-        )
-        gizle_btn.bind(on_release=self._manuel_reklam_gizle)
-        kart.add_widget(gizle_btn)
-
-        return kart
-
     # =========================================================
     # UI
     # =========================================================
@@ -262,9 +193,6 @@ class RootWidget(FloatLayout):
         )
         self.file_access_panel.size_hint_y = None
         self.main_column.add_widget(self.file_access_panel)
-
-        self.reklam_test_karti = self._build_reklam_test_karti()
-        self.main_column.add_widget(self.reklam_test_karti)
 
         self.dosya_secici = DosyaSecici(
             on_scan=self.scan_file,
