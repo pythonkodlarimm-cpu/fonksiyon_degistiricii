@@ -14,11 +14,10 @@ jobs:
     env:
       BUILD_NUMBER: ${{ github.run_number }}
       APP_VERSION: 0.1.${{ github.run_number }}
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
     steps:
       - name: Depoyu al
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
       - name: Python kur
         uses: actions/setup-python@v6
@@ -50,7 +49,7 @@ jobs:
 
           echo "ANDROID_HOME=/usr/local/lib/android/sdk" >> "$GITHUB_ENV"
           echo "ANDROID_SDK_ROOT=/usr/local/lib/android/sdk" >> "$GITHUB_ENV"
-          echo "ANDROIDAPI=34" >> "$GITHUB_ENV"
+          echo "ANDROIDAPI=31" >> "$GITHUB_ENV"
           echo "ANDROIDMINAPI=21" >> "$GITHUB_ENV"
 
           SDKMANAGER_BIN="$(find /usr/local/lib/android/sdk -type f -name sdkmanager | head -n 1 || true)"
@@ -94,17 +93,17 @@ jobs:
           set -euxo pipefail
           yes | /usr/local/lib/android/sdk/tools/bin/sdkmanager --licenses >/dev/null || true
           /usr/local/lib/android/sdk/tools/bin/sdkmanager "platform-tools"
-          /usr/local/lib/android/sdk/tools/bin/sdkmanager "platforms;android-34"
-          /usr/local/lib/android/sdk/tools/bin/sdkmanager "build-tools;34.0.0"
+          /usr/local/lib/android/sdk/tools/bin/sdkmanager "platforms;android-31"
+          /usr/local/lib/android/sdk/tools/bin/sdkmanager "build-tools;31.0.0"
 
       - name: Kurulu Android paketlerini doğrula
         shell: bash
         run: |
           set -euxo pipefail
           /usr/local/lib/android/sdk/tools/bin/sdkmanager --list | sed -n '/Installed packages:/,/Available Packages:/p' || true
-          test -f /usr/local/lib/android/sdk/platforms/android-34/android.jar
+          test -f /usr/local/lib/android/sdk/platforms/android-31/android.jar
           ls -la /usr/local/lib/android/sdk/platforms
-          ls -la /usr/local/lib/android/sdk/platforms/android-34
+          ls -la /usr/local/lib/android/sdk/platforms/android-31
           ls -la /usr/local/lib/android/sdk/build-tools || true
 
       - name: Repo dosyalarını kontrol et
@@ -114,14 +113,10 @@ jobs:
           test -f buildozer.spec
           test -f main.py
           test -f app/assets/icons/presplash.png
-          test -d android/src
-          test -f android/src/org/fy/bridge/AdMobBridge.java
           echo "---- buildozer.spec ----"
           sed -n '1,220p' buildozer.spec
           echo "---- icons ----"
           ls -la app/assets/icons || true
-          echo "---- android/src ----"
-          find android/src -maxdepth 6 -type f | sort
 
       - name: Python paketleri
         shell: bash
@@ -194,16 +189,10 @@ jobs:
           P4A_RELEASE_KEYSTORE_PASSWD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           P4A_RELEASE_KEYALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           P4A_RELEASE_KEYALIAS_PASSWD: ${{ secrets.ANDROID_KEY_ALIAS_PASSWORD }}
-          ANDROIDNDK: /home/runner/.buildozer/android/platform/android-ndk-r25b
-          ANDROID_NDK_HOME: /home/runner/.buildozer/android/platform/android-ndk-r25b
-          ANDROID_NDK_ROOT: /home/runner/.buildozer/android/platform/android-ndk-r25b
-          GRADLE_OPTS: -Xmx4g -Dfile.encoding=UTF-8
-          _JAVA_OPTIONS: -Xmx4g
         run: |
           set -euxo pipefail
           test -f "${{ github.workspace }}/release.keystore"
           ls -lh "${{ github.workspace }}/release.keystore"
-          test -d /home/runner/.buildozer/android/platform/android-ndk-r25b || true
           buildozer android release 2>&1 | tee build.log
 
       - name: İmzayı doğrula
@@ -214,7 +203,7 @@ jobs:
           APK_PATH="$(find bin -name '*.apk' ! -name '*unsigned*' | head -n 1)"
           test -n "$APK_PATH"
           echo "Kontrol edilen APK: $APK_PATH"
-          /usr/local/lib/android/sdk/build-tools/34.0.0/apksigner verify --verbose "$APK_PATH"
+          /usr/local/lib/android/sdk/build-tools/31.0.0/apksigner verify --verbose "$APK_PATH"
 
       - name: Hata özeti hazırla
         if: ${{ failure() }}
@@ -257,9 +246,6 @@ jobs:
               "unsigned",
               "p4a_release",
               "validatesigningrelease",
-              "heap space",
-              "outofmemoryerror",
-              "mergedexrelease",
           )
 
           parcali = []
@@ -277,7 +263,7 @@ jobs:
           out.append("")
 
           if parcali:
-              for idx, parca in enumerate(parcali[:10], 1):
+              for idx, parca in enumerate(parcali[:8], 1):
                   out.append(f"### Kritik parça {idx}")
                   out.append("```text")
                   out.append(parca)
@@ -309,19 +295,12 @@ jobs:
                       "RUNNER_OS",
                       "BUILD_NUMBER",
                       "APP_VERSION",
-                      "ANDROID_NDK",
-                      "ANDROID_NDK_HOME",
-                      "ANDROID_NDK_ROOT",
-                      "ANDROIDNDK",
-                      "GRADLE_OPTS",
-                      "_JAVA_OPTIONS",
-                      "FORCE_JAVASCRIPT_ACTIONS_TO_NODE24",
                   ]):
                       secili.append(line)
               out.append("")
               out.append("## Ortam özeti")
               out.append("```text")
-              out.append("\n".join(secili[:220]))
+              out.append("\n".join(secili[:140]))
               out.append("```")
 
           Path("summary.md").write_text("\n".join(out), encoding="utf-8")
