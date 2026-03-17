@@ -16,8 +16,13 @@ NOT:
 - Dış boş satırlar otomatik temizlenir
 - Başarılı doğrulamada yeşil bilgi kutusu + pulse icon gösterilir
 
-SURUM: 21
-TARIH: 2026-03-16
+API 34 UYUMLULUK NOTU:
+- Bu dosya doğrudan Android bridge çağrısı yapmaz
+- AST, popup ve editör akışı platform bağımsızdır
+- UI reset / scroll / popup kapanışları daha güvenli hale getirilmiştir
+
+SURUM: 22
+TARIH: 2026-03-17
 IMZA: FY.
 """
 
@@ -66,8 +71,8 @@ class KodEditoru(CodeInput):
         kwargs.setdefault("foreground_color", (0.96, 0.97, 1, 1))
         kwargs.setdefault("cursor_color", (1, 1, 1, 1))
         kwargs.setdefault("selection_color", (0.20, 0.35, 0.55, 0.45))
-        kwargs.setdefault("font_size", "15sp")
-        kwargs.setdefault("padding", (dp(10), dp(2), dp(10), dp(6)))
+        kwargs.setdefault("font_size", "16sp")
+        kwargs.setdefault("padding", (dp(12), dp(4), dp(12), dp(8)))
         kwargs.setdefault("write_tab", False)
         kwargs.setdefault("tab_width", 4)
         kwargs.setdefault("scroll_from_swipe", True)
@@ -170,13 +175,14 @@ class BilgiKutusu(BoxLayout):
         super().__init__(
             orientation="horizontal",
             size_hint_y=None,
-            height=dp(44),
+            height=dp(48),
             padding=(dp(12), dp(8)),
-            spacing=dp(8),
+            spacing=dp(10),
             **kwargs,
         )
 
         self._pulse_anim = None
+        self._pulse_stop_event = None
 
         self._bg_info = (0.10, 0.16, 0.22, 1)
         self._bg_success = (0.08, 0.24, 0.14, 1)
@@ -200,7 +206,7 @@ class BilgiKutusu(BoxLayout):
         self.status_icon = Image(
             source="app/assets/icons/onaylandi.png",
             size_hint=(None, None),
-            size=(dp(20), dp(20)),
+            size=(dp(22), dp(22)),
             opacity=0,
             allow_stretch=True,
             keep_ratio=True,
@@ -212,7 +218,7 @@ class BilgiKutusu(BoxLayout):
             halign="left",
             valign="middle",
             color=(0.88, 0.94, 1, 1),
-            font_size="12sp",
+            font_size="13sp",
             shorten=True,
             shorten_from="right",
         )
@@ -233,7 +239,16 @@ class BilgiKutusu(BoxLayout):
     def _sync_label_size(self, widget, size):
         widget.text_size = (size[0], None)
 
+    def _cancel_pulse_stop_event(self):
+        try:
+            if self._pulse_stop_event is not None:
+                self._pulse_stop_event.cancel()
+        except Exception:
+            pass
+        self._pulse_stop_event = None
+
     def _stop_pulse(self):
+        self._cancel_pulse_stop_event()
         try:
             if self._pulse_anim is not None:
                 self._pulse_anim.cancel(self.status_icon)
@@ -241,21 +256,27 @@ class BilgiKutusu(BoxLayout):
             pass
         self._pulse_anim = None
 
+        try:
+            self.status_icon.opacity = 1 if self.status_icon.source else 0
+            self.status_icon.size = (dp(22), dp(22))
+        except Exception:
+            pass
+
     def _start_pulse(self, seconds: float | None = None):
         self._stop_pulse()
         try:
             self.status_icon.opacity = 1
-            self.status_icon.size = (dp(20), dp(20))
+            self.status_icon.size = (dp(22), dp(22))
             anim = (
-                Animation(opacity=0.68, size=(dp(24), dp(24)), duration=0.45)
-                + Animation(opacity=1.0, size=(dp(20), dp(20)), duration=0.45)
+                Animation(opacity=0.68, size=(dp(26), dp(26)), duration=0.45)
+                + Animation(opacity=1.0, size=(dp(22), dp(22)), duration=0.45)
             )
             anim.repeat = seconds is None
             anim.start(self.status_icon)
             self._pulse_anim = anim
 
             if seconds is not None:
-                Clock.schedule_once(
+                self._pulse_stop_event = Clock.schedule_once(
                     lambda *_: self._stop_pulse(),
                     max(0.1, float(seconds)),
                 )
@@ -334,7 +355,7 @@ class SadeKodAlani(KodPaneli):
 # =========================================================
 class EditorPaneli(BoxLayout):
     def __init__(self, on_update=None, on_restore=None, **kwargs):
-        super().__init__(orientation="vertical", spacing=dp(8), **kwargs)
+        super().__init__(orientation="vertical", spacing=dp(10), **kwargs)
 
         self.on_update = on_update
         self.on_restore = on_restore
@@ -353,12 +374,12 @@ class EditorPaneli(BoxLayout):
         self.path_label = IconluBaslik(
             text="Seçili fonksiyon: -",
             icon_name="edit.png",
-            height_dp=36,
-            font_size="15sp",
+            height_dp=38,
+            font_size="16sp",
             color=TEXT_PRIMARY,
         )
         self.path_label.size_hint_y = None
-        self.path_label.height = dp(36)
+        self.path_label.height = dp(38)
         self.add_widget(self.path_label)
 
         self.error_box = BilgiKutusu()
@@ -407,22 +428,22 @@ class EditorPaneli(BoxLayout):
         wrap = BoxLayout(
             orientation="vertical",
             size_hint_y=None,
-            height=dp(74),
-            spacing=dp(2),
+            height=dp(78),
+            spacing=dp(4),
         )
 
         row = BoxLayout(
             orientation="horizontal",
             size_hint_y=None,
-            height=dp(36),
+            height=dp(38),
             spacing=dp(8),
         )
         row.add_widget(
             IconluBaslik(
                 text=title,
                 icon_name=icon_name,
-                height_dp=32,
-                font_size="14sp",
+                height_dp=34,
+                font_size="15sp",
                 color=(0.80, 0.89, 1, 1),
                 size_hint_x=1,
             )
@@ -431,13 +452,13 @@ class EditorPaneli(BoxLayout):
 
         toolbar = IconToolbar(spacing_dp=12, padding_dp=0)
         toolbar.size_hint_y = None
-        toolbar.height = dp(34)
+        toolbar.height = dp(36)
         toolbar.add_tool(
             icon_name=action_icon,
             text=action_text,
             on_release=callback,
-            icon_size_dp=32,
-            text_size="10sp",
+            icon_size_dp=34,
+            text_size="11sp",
             color=TEXT_MUTED,
             icon_bg=None,
         )
@@ -445,16 +466,16 @@ class EditorPaneli(BoxLayout):
         return wrap
 
     def _build_action_toolbar(self) -> None:
-        self.action_toolbar = IconToolbar(spacing_dp=20, padding_dp=6)
+        self.action_toolbar = IconToolbar(spacing_dp=22, padding_dp=6)
         self.action_toolbar.size_hint_y = None
-        self.action_toolbar.height = dp(78)
+        self.action_toolbar.height = dp(84)
 
         self.action_toolbar.add_tool(
             icon_name="clear.png",
             text="Temizle",
             on_release=self._clear_new_code,
-            icon_size_dp=38,
-            text_size="11sp",
+            icon_size_dp=42,
+            text_size="12sp",
             color=TEXT_MUTED,
             icon_bg=None,
         )
@@ -463,8 +484,8 @@ class EditorPaneli(BoxLayout):
             icon_name="upload.png",
             text="Güncelle",
             on_release=self._handle_update,
-            icon_size_dp=38,
-            text_size="11sp",
+            icon_size_dp=42,
+            text_size="12sp",
             color=TEXT_MUTED,
             icon_bg=None,
         )
@@ -473,8 +494,8 @@ class EditorPaneli(BoxLayout):
             icon_name="code_check.png",
             text="Kontrol Et",
             on_release=self._check_new_code,
-            icon_size_dp=38,
-            text_size="10sp",
+            icon_size_dp=42,
+            text_size="11sp",
             color=TEXT_MUTED,
             icon_bg=None,
         )
@@ -483,8 +504,8 @@ class EditorPaneli(BoxLayout):
             icon_name="file_copy.png",
             text="Kopyala",
             on_release=self._copy_current_to_new,
-            icon_size_dp=38,
-            text_size="11sp",
+            icon_size_dp=42,
+            text_size="12sp",
             color=TEXT_MUTED,
             icon_bg=None,
         )
@@ -493,8 +514,8 @@ class EditorPaneli(BoxLayout):
             icon_name="geri_yukle.png",
             text="Geri Yükle",
             on_release=self._handle_restore,
-            icon_size_dp=38,
-            text_size="10sp",
+            icon_size_dp=42,
+            text_size="11sp",
             color=TEXT_MUTED,
             icon_bg=None,
         )
@@ -757,9 +778,9 @@ class EditorPaneli(BoxLayout):
     # POPUPS
     # ---------------------------------------------------------
     def _build_popup_toolbar(self, actions):
-        toolbar = IconToolbar(spacing_dp=18, padding_dp=4)
+        toolbar = IconToolbar(spacing_dp=20, padding_dp=4)
         toolbar.size_hint_y = None
-        toolbar.height = dp(82)
+        toolbar.height = dp(86)
 
         refs = {}
         for key, icon, text, callback in actions:
@@ -767,8 +788,8 @@ class EditorPaneli(BoxLayout):
                 icon_name=icon,
                 text=text,
                 on_release=callback,
-                icon_size_dp=40,
-                text_size="10sp" if len(text) > 7 else "11sp",
+                icon_size_dp=42,
+                text_size="11sp" if len(text) > 7 else "12sp",
                 color=TEXT_MUTED,
                 icon_bg=None,
             )
@@ -830,11 +851,11 @@ class EditorPaneli(BoxLayout):
         popup_error = Label(
             text="Hazır.",
             size_hint_y=None,
-            height=dp(24),
+            height=dp(26),
             halign="left",
             valign="middle",
             color=(0.88, 0.94, 1, 1),
-            font_size="12sp",
+            font_size="13sp",
             shorten=True,
             shorten_from="right",
         )
