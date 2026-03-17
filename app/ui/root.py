@@ -21,7 +21,7 @@ NOT:
 - Reklam sadece manuel test butonu ile çağrılır.
 - buildozer.spec ve android.yml yapısına dokunulmaz.
 
-SURUM: 24
+SURUM: 25
 TARIH: 2026-03-17
 IMZA: FY.
 """
@@ -31,6 +31,7 @@ from __future__ import annotations
 import traceback
 from pathlib import Path
 
+from kivy.clock import Clock
 from kivy.metrics import dp
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button
@@ -125,8 +126,10 @@ class RootWidget(FloatLayout):
                 return
 
             reklam_servisi.reklam_yukle()
-            reklam_servisi.reklam_goster()
-            self.set_status_success("Reklam test çağrısı gönderildi.")
+            self.set_status_info("Reklam yükleme başlatıldı.", "onaylandi.png")
+
+            Clock.schedule_once(lambda dt: reklam_servisi.reklam_goster(), 1.0)
+
         except Exception as exc:
             self.set_status_error(f"Reklam test hatası: {exc}")
             self._debug(f"Reklam test hatası: {exc}")
@@ -143,6 +146,9 @@ class RootWidget(FloatLayout):
             self.set_status_error(f"Reklam gizleme hatası: {exc}")
             self._debug(f"Reklam gizleme hatası: {exc}")
 
+    # =========================================================
+    # VERSION
+    # =========================================================
     def _resolve_app_version(self) -> str:
         if platform == "android":
             try:
@@ -162,6 +168,7 @@ class RootWidget(FloatLayout):
 
         try:
             from app import __version__ as app_version  # type: ignore
+
             temiz = str(app_version or "").strip()
             if temiz:
                 return temiz
@@ -233,6 +240,9 @@ class RootWidget(FloatLayout):
 
         return kart
 
+    # =========================================================
+    # UI
+    # =========================================================
     def _build_ui(self) -> None:
         self.scroll = ScrollView(
             size_hint=(1, 1),
@@ -334,6 +344,9 @@ class RootWidget(FloatLayout):
         root.add_widget(mesaj)
         return root
 
+    # =========================================================
+    # STATUS HELPERS
+    # =========================================================
     def _safe_set_status(self, text: str, icon_name: str = "") -> None:
         try:
             if self.status is not None:
@@ -397,6 +410,9 @@ class RootWidget(FloatLayout):
         except Exception:
             pass
 
+    # =========================================================
+    # HELPERS
+    # =========================================================
     def _clear_state(self) -> None:
         self.current_file_path = ""
         self.current_session = None
@@ -506,6 +522,9 @@ class RootWidget(FloatLayout):
 
         return None
 
+    # =========================================================
+    # DOSYA AKIŞI
+    # =========================================================
     def _scan_or_refresh(self, _ignored_file_path: str) -> None:
         selection = self._selection_from_ui()
         if selection is None:
@@ -571,6 +590,9 @@ class RootWidget(FloatLayout):
             self.set_status_error("Tarama hatası oluştu.")
             print(traceback.format_exc())
 
+    # =========================================================
+    # SEÇİM
+    # =========================================================
     def select_item(self, item) -> None:
         self.selected_item = item
 
@@ -593,6 +615,9 @@ class RootWidget(FloatLayout):
         except Exception:
             self.set_status_info("Fonksiyon seçildi.", "visibility_on.png")
 
+    # =========================================================
+    # ITEM HELPERS
+    # =========================================================
     def _find_refreshed_item(self, old_item):
         if old_item is None:
             return None
@@ -627,6 +652,9 @@ class RootWidget(FloatLayout):
 
         return None
 
+    # =========================================================
+    # GÜNCELLEME
+    # =========================================================
     def update_selected_function(self, item, new_code: str) -> None:
         try:
             if self.current_session is None:
@@ -706,6 +734,9 @@ class RootWidget(FloatLayout):
             self.set_status_error("Güncelleme hatası oluştu.")
             print(traceback.format_exc())
 
+    # =========================================================
+    # GERİ YÜKLEME
+    # =========================================================
     def geri_yukle_secili_belge(self) -> None:
         try:
             if self.current_session is None:
