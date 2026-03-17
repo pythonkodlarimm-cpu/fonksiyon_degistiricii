@@ -21,7 +21,7 @@ NOT:
 - API 34 hedefi için açılış akışı daha güvenli hale getirilmiştir.
 - Ağır modüller lazy import ile yüklenir.
 
-SURUM: 30
+SURUM: 31
 TARIH: 2026-03-17
 IMZA: FY.
 """
@@ -148,6 +148,9 @@ class RootWidget(FloatLayout):
         from app.ui.dosya_secici_paketi.models import DocumentSelection
         return DocumentSelection
 
+    # =========================================================
+    # POST BUILD
+    # =========================================================
     def _post_build_refresh(self, _dt) -> None:
         try:
             if self.file_access_panel is not None:
@@ -446,6 +449,7 @@ class RootWidget(FloatLayout):
 
         try:
             if self.function_list is not None:
+                self.function_list.selected_item = None
                 self.function_list.clear_selection()
                 self.function_list.clear_new_preview()
         except Exception:
@@ -559,6 +563,8 @@ class RootWidget(FloatLayout):
         try:
             if self.dosya_secici is not None:
                 self.dosya_secici.set_path(source_identifier or working_path)
+            if self.dosya_secici is not None:
+                self.dosya_secici.set_selection(selection)
         except Exception:
             pass
 
@@ -598,16 +604,17 @@ class RootWidget(FloatLayout):
         self.selected_item = item
 
         try:
-            if self.editor is not None:
-                self.editor.set_item(item)
-                self.editor.set_new_code_text("")
+            if self.function_list is not None:
+                self.function_list.selected_item = item
+                self.function_list.set_selected_preview(str(getattr(item, "source", "") or ""))
+                self.function_list.clear_new_preview()
         except Exception:
             pass
 
         try:
-            if self.function_list is not None:
-                self.function_list.set_selected_preview(str(getattr(item, "source", "") or ""))
-                self.function_list.clear_new_preview()
+            if self.editor is not None:
+                self.editor.set_item(item)
+                self.editor.set_new_code_text("")
         except Exception:
             pass
 
