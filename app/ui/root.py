@@ -21,7 +21,7 @@ NOT:
 - Reklam sadece manuel test butonu ile çağrılır.
 - buildozer.spec ve android.yml yapısına dokunulmaz.
 
-SURUM: 25
+SURUM: 27
 TARIH: 2026-03-17
 IMZA: FY.
 """
@@ -31,7 +31,6 @@ from __future__ import annotations
 import traceback
 from pathlib import Path
 
-from kivy.clock import Clock
 from kivy.metrics import dp
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button
@@ -125,10 +124,8 @@ class RootWidget(FloatLayout):
                 self.set_status_warning("Reklam testi sadece Android'de çalışır.")
                 return
 
-            reklam_servisi.reklam_yukle()
-            self.set_status_info("Reklam yükleme başlatıldı.", "onaylandi.png")
-
-            Clock.schedule_once(lambda dt: reklam_servisi.reklam_goster(), 1.0)
+            reklam_servisi.reklam_test_et()
+            self.set_status_info("Reklam test akışı başlatıldı.", "onaylandi.png")
 
         except Exception as exc:
             self.set_status_error(f"Reklam test hatası: {exc}")
