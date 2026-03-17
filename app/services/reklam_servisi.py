@@ -5,12 +5,13 @@ DOSYA: app/services/reklam_servisi.py
 ROL:
 - AdMob reklamlarının yüklenmesini ve yönetilmesini sağlar
 - Android bridge üzerinden AdMob SDK çağrısı yapar
+- Reklam durumunu ekranda kısa bildirim olarak gösterir
 
 NOT:
 - Şu anda TEST reklam kullanılmaktadır.
 - Google Play'e yüklemeden önce gerçek reklam birimi ile değiştirilmelidir.
 - Bu sürüm manuel test moduna uyumludur.
-- Reklam çağrısı artık açılışta zorunlu değildir; UI içinden butonla tetiklenebilir.
+- Reklam çağrısı açılışta zorunlu değildir; UI içinden butonla tetiklenebilir.
 
 TEST BANNER ID:
 ca-app-pub-3940256099942544/6300978111
@@ -23,6 +24,8 @@ from __future__ import annotations
 
 from jnius import autoclass
 from kivy.utils import platform
+
+from app.services.gecici_bildirim_servisi import gecici_bildirim_servisi
 
 
 class ReklamServisi:
@@ -80,12 +83,27 @@ class ReklamServisi:
 
             if use_real_ad:
                 print("[REKLAM] Gerçek banner yüklendi")
+                gecici_bildirim_servisi.show(
+                    text="Gerçek reklam yükleme başlatıldı.",
+                    icon_name="onaylandi.png",
+                    duration=2.5,
+                )
             else:
                 print("[REKLAM] Test banner yüklendi")
+                gecici_bildirim_servisi.show(
+                    text="Test reklam yükleme başlatıldı.",
+                    icon_name="onaylandi.png",
+                    duration=2.5,
+                )
 
         except Exception as exc:
             self._banner_yuklendi = False
             print("[REKLAM] yükleme hatası:", exc)
+            gecici_bildirim_servisi.show(
+                text=f"Reklam yükleme hatası: {exc}",
+                icon_name="warning.png",
+                duration=3.0,
+            )
 
     # =========================================================
     # REKLAM GÖSTER
@@ -102,15 +120,30 @@ class ReklamServisi:
         try:
             if not self._banner_yuklendi:
                 print("[REKLAM] Banner henüz yüklenmedi, önce reklam_yukle çağrılmalı")
+                gecici_bildirim_servisi.show(
+                    text="Önce reklam yüklenmeli.",
+                    icon_name="warning.png",
+                    duration=2.5,
+                )
                 return
 
             activity, AdMobBridge = self._android_bridge()
             AdMobBridge.showBanner(activity)
 
             print("[REKLAM] Banner gösterildi")
+            gecici_bildirim_servisi.show(
+                text="Reklam göster komutu gönderildi.",
+                icon_name="onaylandi.png",
+                duration=2.5,
+            )
 
         except Exception as exc:
             print("[REKLAM] gösterme hatası:", exc)
+            gecici_bildirim_servisi.show(
+                text=f"Reklam gösterme hatası: {exc}",
+                icon_name="warning.png",
+                duration=3.0,
+            )
 
     # =========================================================
     # REKLAM KAPAT
@@ -129,9 +162,19 @@ class ReklamServisi:
             AdMobBridge.hideBanner(activity)
 
             print("[REKLAM] Banner gizlendi")
+            gecici_bildirim_servisi.show(
+                text="Reklam gizleme komutu gönderildi.",
+                icon_name="warning.png",
+                duration=2.5,
+            )
 
         except Exception as exc:
             print("[REKLAM] kapatma hatası:", exc)
+            gecici_bildirim_servisi.show(
+                text=f"Reklam gizleme hatası: {exc}",
+                icon_name="warning.png",
+                duration=3.0,
+            )
 
     # =========================================================
     # REKLAM YOK ET
@@ -153,9 +196,19 @@ class ReklamServisi:
             self._banner_yuklendi = False
 
             print("[REKLAM] Banner yok edildi")
+            gecici_bildirim_servisi.show(
+                text="Reklam tamamen kaldırıldı.",
+                icon_name="warning.png",
+                duration=2.5,
+            )
 
         except Exception as exc:
             print("[REKLAM] yok etme hatası:", exc)
+            gecici_bildirim_servisi.show(
+                text=f"Reklam yok etme hatası: {exc}",
+                icon_name="warning.png",
+                duration=3.0,
+            )
 
     # =========================================================
     # DURUM
