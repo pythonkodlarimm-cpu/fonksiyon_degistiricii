@@ -4,7 +4,7 @@ DOSYA: app/ui/dosya_secici.py
 
 ROL:
 - Dosya seçici UI organizatörü
-- Dosya Seç / Fonksiyonları Göster aksiyonlarını yönetir
+- Dosya Seç aksiyonunu yönetir
 - Platforma göre uygun picker'ı çağırır
 - Seçilen belgeyi üst katmana bildirir
 
@@ -16,10 +16,9 @@ MİMARİ:
 - Ağır modüller uygulama açılışında yüklenmez
 
 DAVRANIŞ:
-- Uygulama açılışında iki ikon da görünür
+- Uygulama açılışında büyük Dosya Seç ikonu görünür
 - Dosya Seç ile picker açılır
 - Dosya seçildikten sonra otomatik tarama tetiklenir
-- Fonksiyonları Göster butonu seçili dosyayı tekrar tarar
 - Ham URI ekranda ana metin olarak gösterilmez
 - Dosya adı ve kısa durum bilgisi öne çıkarılır
 
@@ -28,7 +27,7 @@ API 34 UYUMLULUK NOTU:
 - Dosya seçimi sonrası identifier ve display name güvenli şekilde normalize edilir
 - Paket içindeki DocumentSelection / picker yapısıyla uyumludur
 
-SURUM: 30
+SURUM: 31
 TARIH: 2026-03-17
 IMZA: FY.
 """
@@ -52,8 +51,8 @@ class DosyaSecici(Kart):
         super().__init__(
             orientation="vertical",
             size_hint_y=None,
-            height=dp(196),
-            spacing=dp(10),
+            height=dp(210),
+            spacing=dp(12),
             padding=(dp(14), dp(12), dp(14), dp(14)),
             bg=(0.08, 0.11, 0.16, 1),
             border=(0.18, 0.21, 0.27, 1),
@@ -77,9 +76,6 @@ class DosyaSecici(Kart):
         self.status_hint_label = None
         self.toolbar = None
         self.select_tool = None
-        self.show_functions_tool = None
-
-        self._tool_visible_width = dp(132)
 
         self._build_ui()
         self._refresh_summary()
@@ -138,18 +134,18 @@ class DosyaSecici(Kart):
         self.header = IconluBaslik(
             text="Belge / Kod Dosyası",
             icon_name="schema.png",
-            height_dp=32,
+            height_dp=30,
             font_size="15sp",
             color=TEXT_PRIMARY,
         )
         self.header.size_hint_y = None
-        self.header.height = dp(32)
+        self.header.height = dp(30)
         self.add_widget(self.header)
 
         summary_wrap = BoxLayout(
             orientation="vertical",
             size_hint_y=None,
-            height=dp(64),
+            height=dp(62),
             spacing=dp(4),
         )
 
@@ -158,7 +154,7 @@ class DosyaSecici(Kart):
             color=TEXT_PRIMARY,
             font_size="17sp",
             bold=True,
-            halign="left",
+            halign="center",
             valign="middle",
             size_hint_y=None,
             height=dp(26),
@@ -171,13 +167,13 @@ class DosyaSecici(Kart):
         summary_wrap.add_widget(self.file_name_label)
 
         self.file_detail_label = Label(
-            text="Seçilen belge kimliği burada kısa biçimde görünür.",
+            text="Seçilen belge bilgisi burada görünür.",
             color=TEXT_MUTED,
-            font_size="12sp",
-            halign="left",
+            font_size="11sp",
+            halign="center",
             valign="middle",
             size_hint_y=None,
-            height=dp(18),
+            height=dp(16),
             shorten=True,
             shorten_from="right",
         )
@@ -189,11 +185,11 @@ class DosyaSecici(Kart):
         self.status_hint_label = Label(
             text="Belge seçmeniz bekleniyor.",
             color=(0.76, 0.82, 0.92, 1),
-            font_size="12sp",
-            halign="left",
+            font_size="11sp",
+            halign="center",
             valign="middle",
             size_hint_y=None,
-            height=dp(18),
+            height=dp(16),
             shorten=True,
             shorten_from="right",
         )
@@ -204,41 +200,40 @@ class DosyaSecici(Kart):
 
         self.add_widget(summary_wrap)
 
-        self.toolbar = IconToolbar(
-            spacing_dp=30,
-            padding_dp=8,
+        toolbar_wrap = BoxLayout(
+            orientation="horizontal",
+            size_hint_y=None,
+            height=dp(86),
         )
+        toolbar_wrap.add_widget(Label(size_hint_x=1))
+
+        self.toolbar = IconToolbar(
+            spacing_dp=0,
+            padding_dp=0,
+        )
+        self.toolbar.size_hint = (None, None)
+        self.toolbar.size = (dp(170), dp(86))
 
         self.select_tool = self.toolbar.add_tool(
             icon_name="dosya_sec.png",
             text="Dosya Seç",
             on_release=self._handle_select_pressed,
-            icon_size_dp=54,
-            text_size="13sp",
-            color=TEXT_MUTED,
-            icon_bg=None,
-        )
-
-        self.show_functions_tool = self.toolbar.add_tool(
-            icon_name="fonksiyon_listesinde_goster.png",
-            text="Fonksiyonları Göster",
-            on_release=self._handle_show_functions,
-            icon_size_dp=48,
-            text_size="11sp",
-            color=TEXT_MUTED,
+            icon_size_dp=68,
+            text_size="14sp",
+            color=TEXT_PRIMARY,
             icon_bg=None,
         )
 
         try:
             self.select_tool.size_hint_x = None
-            self.select_tool.width = self._tool_visible_width
-
-            self.show_functions_tool.size_hint_x = None
-            self.show_functions_tool.width = self._tool_visible_width
+            self.select_tool.width = dp(170)
         except Exception:
             pass
 
-        self.add_widget(self.toolbar)
+        toolbar_wrap.add_widget(self.toolbar)
+        toolbar_wrap.add_widget(Label(size_hint_x=1))
+
+        self.add_widget(toolbar_wrap)
 
     # =========================================================
     # STATE HELPERS
@@ -288,7 +283,7 @@ class DosyaSecici(Kart):
 
         return ""
 
-    def _short_identifier(self, value: str, limit: int = 60) -> str:
+    def _short_identifier(self, value: str, limit: int = 52) -> str:
         metin = str(value or "").strip()
         if len(metin) <= limit:
             return metin
@@ -300,9 +295,8 @@ class DosyaSecici(Kart):
         return f"{metin[:sol]}...{metin[-sag:]}"
 
     def _has_selection(self) -> bool:
-        if self._selection is not None:
-            if self._selection_identifier(self._selection):
-                return True
+        if self._selection is not None and self._selection_identifier(self._selection):
+            return True
 
         if str(self._last_identifier or "").strip():
             return True
@@ -312,7 +306,7 @@ class DosyaSecici(Kart):
     def _refresh_summary(self) -> None:
         if not self._has_selection():
             self.file_name_label.text = "Dosya seçilmedi"
-            self.file_detail_label.text = "Seçilen belge kimliği burada kısa biçimde görünür."
+            self.file_detail_label.text = "Seçilen belge bilgisi burada görünür."
             self.status_hint_label.text = "Belge seçmeniz bekleniyor."
             self.status_hint_label.color = (0.76, 0.82, 0.92, 1)
             return
@@ -324,7 +318,7 @@ class DosyaSecici(Kart):
         self.file_detail_label.text = (
             self._short_identifier(identifier) if identifier else "Belge kimliği yok"
         )
-        self.status_hint_label.text = "Belge hazır • Fonksiyonları gösterebilir veya yeniden tarayabilirsiniz."
+        self.status_hint_label.text = "Belge seçildi • Tarama otomatik başlatılır."
         self.status_hint_label.color = (0.72, 0.94, 0.78, 1)
 
     # =========================================================
@@ -379,22 +373,6 @@ class DosyaSecici(Kart):
     # =========================================================
     def _handle_select_pressed(self, *_args):
         self._open_selector()
-
-    def _handle_show_functions(self, *_args):
-        identifier = self.get_path()
-        self._debug(f"Fonksiyonları göster tetiklendi: {identifier}")
-
-        if not self._selection and not identifier:
-            self._show_info_popup(
-                "Fonksiyon Listesi",
-                "Önce bir belge seçmelisiniz.",
-            )
-            return
-
-        if self.on_refresh:
-            self.on_refresh(identifier)
-        elif self.on_scan:
-            self.on_scan(identifier)
 
     def _open_selector(self, *_args):
         self._debug("Dosya seçici açılıyor")
