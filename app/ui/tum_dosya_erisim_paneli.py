@@ -9,8 +9,13 @@ ROL:
 - Kapalı durumda sürekli pulse ile dikkat çekmek
 - Açık durumda kısa süre pulse gösterip sonra sakinleştirmek
 
-SURUM: 5
-TARIH: 2026-03-16
+API 34 UYUMLULUK NOTU:
+- Ayar ekranından geri dönüldüğünde izin durumu otomatik yeniden kontrol edilir
+- İzin durumu okunamazsa kontrollü hata görünümü uygulanır
+- Görünüm korunmuş, sadece davranış güvenli hale getirilmiştir
+
+SURUM: 7
+TARIH: 2026-03-17
 IMZA: FY.
 """
 
@@ -61,6 +66,10 @@ class TumDosyaErisimPaneli(Kart):
         self._last_status = None
         self._action_icon_visible_width = dp(70)
 
+        self._settings_watch_event = None
+        self._settings_watch_remaining = 0
+        self._watch_seconds_default = 12
+
         self._build_ui()
         self.refresh_status()
 
@@ -70,6 +79,9 @@ class TumDosyaErisimPaneli(Kart):
         except Exception:
             pass
 
+    # =========================================================
+    # UI
+    # =========================================================
     def _build_ui(self) -> None:
         ust = BoxLayout(
             orientation="horizontal",
@@ -180,6 +192,53 @@ class TumDosyaErisimPaneli(Kart):
         alt.add_widget(self._action_close_wrap)
         self.add_widget(alt)
 
+    # =========================================================
+    # WATCH / SETTINGS DÖNÜŞ TAKİBİ
+    # =========================================================
+    def _stop_settings_watch(self) -> None:
+        try:
+            if self._settings_watch_event is not None:
+                self._settings_watch_event.cancel()
+        except Exception:
+            pass
+        self._settings_watch_event = None
+        self._settings_watch_remaining = 0
+
+    def _start_settings_watch(self, seconds: int | float | None = None) -> None:
+        self._stop_settings_watch()
+
+        try:
+            toplam = int(seconds if seconds is not None else self._watch_seconds_default)
+        except Exception:
+            toplam = self._watch_seconds_default
+
+        self._settings_watch_remaining = max(3, toplam)
+
+        def _poll(_dt):
+            try:
+                onceki = self._last_status
+                self.refresh_status()
+
+                self._settings_watch_remaining -= 1
+
+                if self._last_status != onceki:
+                    self._debug("Ayar dönüşünde izin durumu değişti, izleme durduruldu.")
+                    self._stop_settings_watch()
+                    return
+
+                if self._settings_watch_remaining <= 0:
+                    self._debug("Ayar dönüşü izleme süresi doldu.")
+                    self._stop_settings_watch()
+                    return
+            except Exception as exc:
+                self._debug(f"Ayar dönüşü izleme hatası: {exc}")
+                self._stop_settings_watch()
+
+        self._settings_watch_event = Clock.schedule_interval(_poll, 1.0)
+
+    # =========================================================
+    # ANİMASYON
+    # =========================================================
     def _cancel_stop_event(self):
         try:
             if self._stop_pulse_event is not None:
@@ -191,14 +250,15 @@ class TumDosyaErisimPaneli(Kart):
     def _stop_pulse(self):
         self._cancel_stop_event()
         try:
-            if self._pulse_anim is not None:
+            if self._pulse_anim is not None and self.status_icon is not None:
                 self._pulse_anim.cancel(self.status_icon)
         except Exception:
             pass
         self._pulse_anim = None
         try:
-            self.status_icon.opacity = 1
-            self.status_icon.size = (dp(50), dp(50))
+            if self.status_icon is not None:
+                self.status_icon.opacity = 1
+                self.status_icon.size = (dp(50), dp(50))
         except Exception:
             pass
 
@@ -225,10 +285,16 @@ class TumDosyaErisimPaneli(Kart):
             anim.repeat = True
             anim.start(self.status_icon)
             self._pulse_anim = anim
-            self._stop_pulse_event = Clock.schedule_once(lambda *_: self._stop_pulse(), max(0.1, float(seconds)))
+            self._stop_pulse_event = Clock.schedule_once(
+                lambda *_: self._stop_pulse(),
+                max(0.1, float(seconds)),
+            )
         except Exception:
             pass
 
+    # =========================================================
+    # ACTION GÖRÜNÜRLÜĞÜ
+    # =========================================================
     def _set_wrap_visible(self, wrap, visible: bool) -> None:
         if wrap is None:
             return
@@ -246,42 +312,89 @@ class TumDosyaErisimPaneli(Kart):
         self._set_wrap_visible(self._action_open_wrap, False)
         self._set_wrap_visible(self._action_close_wrap, True)
 
+    # =========================================================
+    # STATE UYGULAMA
+    # =========================================================
     def _apply_closed_state(self):
         try:
-            self.status_icon.source = "app/assets/icons/erisim_kapali.png"
+            if self.status_icon is not None:
+                self.status_icon.source = "app/assets/icons/erisim_kapali.png"
         except Exception:
             pass
+
         self.set_bg_rgba((0.16, 0.09, 0.10, 1))
         self.set_border_rgba((0.30, 0.14, 0.16, 1))
+
         self.info_label.text = "Tüm dosya erişimi kapalı"
         self.info_label.color = (1.0, 0.82, 0.82, 1)
+
         self.detail_label.text = "Öneri: erişimi açıp sonra dosya seç."
         self.detail_label.color = (0.96, 0.72, 0.72, 1)
+
         self._show_open_action()
         self._start_pulse_forever()
 
     def _apply_open_state(self):
         try:
-            self.status_icon.source = "app/assets/icons/erisim_acik.png"
+            if self.status_icon is not None:
+                self.status_icon.source = "app/assets/icons/erisim_acik.png"
         except Exception:
             pass
+
         self.set_bg_rgba((0.08, 0.18, 0.12, 1))
         self.set_border_rgba((0.14, 0.30, 0.20, 1))
+
         self.info_label.text = "Tüm dosya erişimi açık"
         self.info_label.color = (0.82, 1.0, 0.86, 1)
+
         self.detail_label.text = "Belge seçimi ve tarama için hazır."
         self.detail_label.color = (0.72, 0.94, 0.78, 1)
+
         self._show_close_action()
         self._start_pulse_for_seconds(10.0)
 
     def _apply_non_android_state(self):
+        try:
+            if self.status_icon is not None:
+                self.status_icon.source = "app/assets/icons/erisim_kapali.png"
+        except Exception:
+            pass
+
+        self.set_bg_rgba((0.08, 0.11, 0.16, 1))
+        self.set_border_rgba((0.18, 0.21, 0.27, 1))
+
         self.info_label.text = "Android ortamı değil"
         self.info_label.color = TEXT_PRIMARY
+
         self.detail_label.text = "Bu panel Android üzerinde etkin çalışır."
         self.detail_label.color = TEXT_MUTED
+
         self._show_open_action()
         self._stop_pulse()
 
+    def _apply_unknown_state(self, detail_text: str):
+        try:
+            if self.status_icon is not None:
+                self.status_icon.source = "app/assets/icons/erisim_kapali.png"
+        except Exception:
+            pass
+
+        self.set_bg_rgba((0.14, 0.11, 0.08, 1))
+        self.set_border_rgba((0.28, 0.22, 0.12, 1))
+
+        self.info_label.text = "İzin durumu doğrulanamadı"
+        self.info_label.color = (1.0, 0.92, 0.78, 1)
+
+        detay = str(detail_text or "").strip()
+        self.detail_label.text = detay or "Durum tekrar kontrol edilmeli."
+        self.detail_label.color = (0.95, 0.82, 0.62, 1)
+
+        self._show_open_action()
+        self._stop_pulse()
+
+    # =========================================================
+    # İZİN AKIŞI
+    # =========================================================
     def _open_settings(self) -> None:
         if platform != "android":
             self._apply_non_android_state()
@@ -289,21 +402,32 @@ class TumDosyaErisimPaneli(Kart):
 
         try:
             from app.services.android_ozel_izin_servisi import tum_dosya_erisim_ayarlari_ac
+
             tum_dosya_erisim_ayarlari_ac()
             self.detail_label.text = "Ayar ekranı açıldı. Geri dönünce durum yenilenir."
+            self._start_settings_watch()
         except Exception as exc:
-            self.detail_label.text = f"Ayar ekranı açılamadı: {exc}"
+            self._apply_unknown_state(f"Ayar ekranı açılamadı: {exc}")
             self._debug(f"Ayar ekranı açılamadı: {exc}")
 
     def refresh_status(self) -> None:
         if platform != "android":
+            onceki = self._last_status
             self._last_status = False
             self._apply_non_android_state()
+
+            try:
+                if self.on_status_changed and onceki != self._last_status:
+                    self.on_status_changed(False)
+            except Exception:
+                pass
             return
 
         try:
             from app.services.android_ozel_izin_servisi import tum_dosya_erisim_izni_var_mi
+
             durum = bool(tum_dosya_erisim_izni_var_mi())
+            onceki = self._last_status
             self._last_status = durum
 
             if durum:
@@ -311,16 +435,29 @@ class TumDosyaErisimPaneli(Kart):
             else:
                 self._apply_closed_state()
 
-            if self.on_status_changed:
-                self.on_status_changed(durum)
+            try:
+                if self.on_status_changed and onceki != durum:
+                    self.on_status_changed(durum)
+            except Exception:
+                pass
 
             self._debug(f"Tüm dosya erişimi durumu: {durum}")
         except Exception as exc:
-            self._last_status = False
-            self._apply_closed_state()
-            self.detail_label.text = f"İzin durumu okunamadı: {exc}"
+            onceki = self._last_status
+            self._last_status = None
+            self._apply_unknown_state(f"İzin durumu okunamadı: {exc}")
+
+            try:
+                if self.on_status_changed and onceki is not None:
+                    self.on_status_changed(False)
+            except Exception:
+                pass
+
             self._debug(f"İzin durumu okunamadı: {exc}")
 
+    # =========================================================
+    # EVENTLER
+    # =========================================================
     def _handle_status_icon_click(self, *_args) -> None:
         self._open_settings()
 
