@@ -20,7 +20,7 @@ NOT:
 - buildozer.spec ve android.yml yapısına dokunulmaz.
 - API 34 hedefi için açılış akışı daha güvenli hale getirilmiştir.
 
-SURUM: 29
+SURUM: 30
 TARIH: 2026-03-17
 IMZA: FY.
 """
@@ -100,13 +100,16 @@ class RootWidget(FloatLayout):
         try:
             self._build_ui()
             self.set_status_info("Hazır.", "onaylandi.png")
-            Clock.schedule_once(self._post_build_refresh, 0)
+            Clock.schedule_once(self._post_build_refresh, 0.08)
         except Exception:
             hata = traceback.format_exc()
             print(hata)
             self.clear_widgets()
             self.add_widget(self._build_fallback_error_ui(hata))
 
+    # =========================================================
+    # DEBUG
+    # =========================================================
     def _debug(self, message: str) -> None:
         try:
             print("[ROOT]", str(message))
@@ -130,6 +133,7 @@ class RootWidget(FloatLayout):
 
                 PythonActivity = autoclass("org.kivy.android.PythonActivity")
                 current_activity = cast("android.app.Activity", PythonActivity.mActivity)
+
                 if current_activity is not None:
                     package_info = current_activity.getPackageManager().getPackageInfo(
                         current_activity.getPackageName(),
@@ -169,7 +173,7 @@ class RootWidget(FloatLayout):
         self.version_label = Label(
             text=f"Sürüm: {self.app_version_text}",
             size_hint_x=None,
-            width=dp(120),
+            width=dp(132),
             font_size="11sp",
             color=(0.72, 0.72, 0.76, 1),
             halign="right",
@@ -177,6 +181,7 @@ class RootWidget(FloatLayout):
         )
         self.version_label.bind(size=lambda inst, size: setattr(inst, "text_size", size))
         kart.add_widget(self.version_label)
+
         return kart
 
     # =========================================================
@@ -216,6 +221,7 @@ class RootWidget(FloatLayout):
             on_select=self.select_item,
         )
         self.function_list.size_hint_y = None
+        self.function_list.height = dp(760)
         self.main_column.add_widget(self.function_list)
 
         self.editor = EditorPaneli(
@@ -223,7 +229,7 @@ class RootWidget(FloatLayout):
             on_restore=self.geri_yukle_secili_belge,
         )
         self.editor.size_hint_y = None
-        self.editor.height = dp(820)
+        self.editor.height = dp(900)
         self.main_column.add_widget(self.editor)
 
         self.scroll.add_widget(self.main_column)
@@ -282,6 +288,7 @@ class RootWidget(FloatLayout):
         )
         mesaj.bind(size=lambda inst, size: setattr(inst, "text_size", (size[0], None)))
         root.add_widget(mesaj)
+
         return root
 
     # =========================================================
@@ -368,7 +375,6 @@ class RootWidget(FloatLayout):
         try:
             if self.function_list is not None:
                 self.function_list.clear_all()
-            pass
         except Exception:
             pass
 
@@ -624,10 +630,6 @@ class RootWidget(FloatLayout):
             try:
                 if self.function_list is not None:
                     self.function_list.set_new_preview(str(new_code or ""))
-            except Exception:
-                pass
-
-            try:
                 if self.editor is not None:
                     self.editor.set_new_code_text(str(new_code or ""))
             except Exception:
