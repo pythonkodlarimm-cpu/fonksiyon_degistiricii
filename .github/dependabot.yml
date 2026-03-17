@@ -1,25 +1,22 @@
 version: 2
 
 updates:
-  # 🔹 Python bağımlılıkları (requirements.txt vs.)
   - package-ecosystem: "pip"
-    directory: "/" 
+    directory: "/"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
-    reviewers:
-      - "YOUR_USERNAME"
     commit-message:
-      prefix: "pip"
+      prefix: "deps"
     labels:
       - "dependencies"
       - "python"
 
-  # 🔹 GitHub Actions (android.yml dahil)
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
+    open-pull-requests-limit: 2
     commit-message:
       prefix: "ci"
     labels:
