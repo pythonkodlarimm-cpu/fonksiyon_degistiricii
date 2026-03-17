@@ -20,7 +20,7 @@ API 34 UYUMLULUK NOTU:
 - Kivy tabanlı liste ve arama akışı platform bağımsızdır
 - Büyük liste / dar liste davranışı güvenli şekilde yönetilir
 
-SURUM: 8
+SURUM: 9
 TARIH: 2026-03-17
 IMZA: FY.
 """
@@ -30,13 +30,14 @@ from __future__ import annotations
 from typing import Iterable
 
 from kivy.clock import Clock
+from kivy.graphics import Color, RoundedRectangle
 from kivy.metrics import dp
+from kivy.uix.behaviors import ButtonBehavior
 from kivy.uix.boxlayout import BoxLayout
-from kivy.uix.button import Button
-from kivy.uix.gridlayout import GridLayout
 from kivy.uix.label import Label
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.textinput import TextInput
+from kivy.uix.widget import Widget
 
 from app.ui.icon_toolbar import IconToolbar
 from app.ui.iconlu_baslik import IconluBaslik
@@ -50,6 +51,171 @@ from app.ui.tema import (
     TEXT_MUTED,
     TEXT_PRIMARY,
 )
+
+
+class FonksiyonSatiri(ButtonBehavior, BoxLayout):
+    def __init__(self, item, on_press_row, is_selected=False, **kwargs):
+        super().__init__(
+            orientation="horizontal",
+            size_hint_y=None,
+            height=dp(78),
+            padding=(dp(12), dp(10)),
+            spacing=dp(10),
+            **kwargs,
+        )
+
+        self.item = item
+        self.on_press_row = on_press_row
+        self.is_selected = bool(is_selected)
+
+        with self.canvas.before:
+            self._bg_color = Color(*(self._selected_bg() if self.is_selected else self._normal_bg()))
+            self._bg_rect = RoundedRectangle(radius=[dp(RADIUS_MD)])
+
+        self.bind(pos=self._update_canvas, size=self._update_canvas)
+        self._update_canvas()
+
+        self._build_ui()
+
+    def _normal_bg(self):
+        return CARD_BG
+
+    def _selected_bg(self):
+        return (0.20, 0.34, 0.52, 1)
+
+    def _update_canvas(self, *_args):
+        self._bg_rect.pos = self.pos
+        self._bg_rect.size = self.size
+
+    def _bind_label_size(self, label: Label):
+        label.bind(size=lambda inst, size: setattr(inst, "text_size", size))
+        return label
+
+    def _safe_text(self, value, default="-") -> str:
+        metin = str(value or "").strip()
+        return metin if metin else default
+
+    def _short_text(self, value: str, limit: int) -> str:
+        metin = self._safe_text(value, "-")
+        if len(metin) <= limit:
+            return metin
+        if limit <= 3:
+            return metin[:limit]
+        return metin[: limit - 3] + "..."
+
+    def _display_name(self) -> str:
+        qualified_name = str(getattr(self.item, "qualified_name", "") or "").strip()
+        if qualified_name:
+            return qualified_name
+        return str(getattr(self.item, "name", "") or "-")
+
+    def _kind_text(self) -> str:
+        kind = str(getattr(self.item, "kind", "") or "").strip()
+        if not kind:
+            return "-"
+        if kind == "function":
+            return "func"
+        return kind
+
+    def _line_text(self) -> str:
+        start = int(getattr(self.item, "lineno", 0) or 0)
+        end = int(getattr(self.item, "end_lineno", 0) or 0)
+        if start > 0 and end > 0:
+            return f"{start}-{end}"
+        if start > 0:
+            return str(start)
+        return "-"
+
+    def _signature_text(self) -> str:
+        signature = str(getattr(self.item, "signature", "") or "").strip()
+        if signature:
+            return self._short_text(signature, 22)
+
+        name = str(getattr(self.item, "name", "") or "").strip()
+        if name:
+            return self._short_text(f"def {name}(...) ", 22).strip()
+
+        return "-"
+
+    def _build_ui(self):
+        ad = self._bind_label_size(
+            Label(
+                text=self._short_text(self._display_name(), 22),
+                size_hint_x=0.46,
+                color=TEXT_PRIMARY,
+                font_size="14sp",
+                halign="left",
+                valign="middle",
+                shorten=True,
+                shorten_from="right",
+                max_lines=2,
+            )
+        )
+        self.add_widget(ad)
+
+        tur = self._bind_label_size(
+            Label(
+                text=self._kind_text(),
+                size_hint_x=0.14,
+                color=(0.84, 0.88, 0.96, 1),
+                font_size="13sp",
+                halign="center",
+                valign="middle",
+                shorten=True,
+                shorten_from="right",
+                max_lines=1,
+            )
+        )
+        self.add_widget(tur)
+
+        satir = self._bind_label_size(
+            Label(
+                text=self._line_text(),
+                size_hint_x=0.16,
+                color=(0.88, 0.92, 1, 1),
+                font_size="13sp",
+                halign="center",
+                valign="middle",
+                max_lines=1,
+            )
+        )
+        self.add_widget(satir)
+
+        imza = self._bind_label_size(
+            Label(
+                text=self._signature_text(),
+                size_hint_x=0.24,
+                color=TEXT_MUTED,
+                font_size="12sp",
+                halign="left",
+                valign="middle",
+                shorten=True,
+                shorten_from="right",
+                max_lines=2,
+            )
+        )
+        self.add_widget(imza)
+
+    def on_press(self):
+        try:
+            self._bg_color.rgba = (0.24, 0.40, 0.60, 1) if self.is_selected else (0.24, 0.28, 0.36, 1)
+        except Exception:
+            pass
+        return super().on_press()
+
+    def on_release(self):
+        try:
+            self._bg_color.rgba = self._selected_bg() if self.is_selected else self._normal_bg()
+        except Exception:
+            pass
+
+        try:
+            if self.on_press_row:
+                self.on_press_row(self.item)
+        except Exception:
+            pass
+
+        return super().on_release()
 
 
 class FonksiyonListesi(BoxLayout):
@@ -66,15 +232,13 @@ class FonksiyonListesi(BoxLayout):
         self.all_items = []
         self.filtered_items = []
         self.selected_item = None
-
-        # False değil; dar mod bile liste gösterir.
         self.is_list_expanded = True
 
         self._selected_preview_text = ""
         self._new_preview_text = ""
 
         self._expanded_list_height = dp(360)
-        self._compact_list_height = dp(188)
+        self._compact_list_height = dp(212)
 
         self._build_ui()
 
@@ -169,6 +333,19 @@ class FonksiyonListesi(BoxLayout):
         self.search_wrap.add_widget(self.search_input)
         self.add_widget(self.search_wrap)
 
+    def _build_table_header_label(self, text: str, size_hint_x: float) -> Label:
+        lbl = Label(
+            text=text,
+            size_hint_x=size_hint_x,
+            color=(0.82, 0.88, 0.98, 1),
+            font_size="12sp",
+            halign="left",
+            valign="middle",
+            bold=True,
+        )
+        lbl.bind(size=lambda inst, size: setattr(inst, "text_size", size))
+        return lbl
+
     def _build_list_box(self) -> None:
         self.list_wrap = Kart(
             orientation="vertical",
@@ -182,9 +359,9 @@ class FonksiyonListesi(BoxLayout):
         )
 
         self.list_info_label = Label(
-            text="Tüm fonksiyonlar aşağıda listelenir ve aranabilir.",
+            text="Tüm fonksiyonları görüntüleyebilir ve arayabilirsiniz.",
             size_hint_y=None,
-            height=dp(18),
+            height=dp(22),
             color=TEXT_MUTED,
             font_size="12sp",
             halign="left",
@@ -200,14 +377,15 @@ class FonksiyonListesi(BoxLayout):
         self.table_header = BoxLayout(
             orientation="horizontal",
             size_hint_y=None,
-            height=dp(26),
-            spacing=dp(8),
+            height=dp(30),
+            spacing=dp(10),
+            padding=(dp(12), 0, dp(12), 0),
         )
 
-        self.table_header.add_widget(self._build_table_header_label("Fonksiyon", 0.54))
+        self.table_header.add_widget(self._build_table_header_label("Fonksiyon", 0.46))
         self.table_header.add_widget(self._build_table_header_label("Tür", 0.14))
         self.table_header.add_widget(self._build_table_header_label("Satır", 0.16))
-        self.table_header.add_widget(self._build_table_header_label("İmza", 0.16))
+        self.table_header.add_widget(self._build_table_header_label("İmza", 0.24))
 
         self.list_wrap.add_widget(self.table_header)
 
@@ -220,10 +398,9 @@ class FonksiyonListesi(BoxLayout):
             effect_cls="ScrollEffect",
         )
 
-        self.container = GridLayout(
-            cols=1,
+        self.container = BoxLayout(
+            orientation="vertical",
             spacing=dp(8),
-            padding=(0, dp(2), 0, dp(2)),
             size_hint_y=None,
         )
         self.container.bind(minimum_height=self.container.setter("height"))
@@ -231,19 +408,6 @@ class FonksiyonListesi(BoxLayout):
         self.scroll.add_widget(self.container)
         self.list_wrap.add_widget(self.scroll)
         self.add_widget(self.list_wrap)
-
-    def _build_table_header_label(self, text: str, size_hint_x: float) -> Label:
-        lbl = Label(
-            text=text,
-            size_hint_x=size_hint_x,
-            color=(0.76, 0.84, 0.96, 1),
-            font_size="11sp",
-            halign="left",
-            valign="middle",
-            bold=True,
-        )
-        lbl.bind(size=lambda inst, size: setattr(inst, "text_size", size))
-        return lbl
 
     def _build_preview_boxes(self) -> None:
         self.selected_preview_card = self._build_preview_card(
@@ -479,105 +643,6 @@ class FonksiyonListesi(BoxLayout):
     # =========================================================
     # RENDER
     # =========================================================
-    def _display_name(self, item) -> str:
-        qualified_name = str(getattr(item, "qualified_name", "") or "").strip()
-        if qualified_name:
-            return qualified_name
-        return str(getattr(item, "name", "") or "-")
-
-    def _signature_short(self, item, limit: int = 26) -> str:
-        signature = str(getattr(item, "signature", "") or "").strip()
-        if not signature:
-            return "-"
-        if len(signature) <= limit:
-            return signature
-        return signature[: limit - 3] + "..."
-
-    def _row_bg(self, is_selected: bool):
-        if is_selected:
-            return (0.20, 0.34, 0.52, 1)
-        return CARD_BG
-
-    def _build_item_row(self, item, is_selected: bool):
-        row = Kart(
-            orientation="horizontal",
-            size_hint_y=None,
-            height=dp(70),
-            padding=(dp(10), dp(8)),
-            spacing=dp(8),
-            bg=self._row_bg(is_selected),
-            border=(0.18, 0.22, 0.28, 1),
-            radius=RADIUS_MD,
-        )
-
-        btn = Button(
-            text="",
-            background_normal="",
-            background_down="",
-            background_color=(0, 0, 0, 0),
-            size_hint=(1, 1),
-        )
-        btn.bind(on_release=lambda _btn, current=item: self._select(current))
-
-        content = BoxLayout(
-            orientation="horizontal",
-            spacing=dp(8),
-        )
-
-        ad = Label(
-            text=self._display_name(item),
-            size_hint_x=0.54,
-            color=TEXT_PRIMARY,
-            font_size="13sp",
-            halign="left",
-            valign="middle",
-            shorten=True,
-            shorten_from="right",
-        )
-        ad.bind(size=lambda inst, size: setattr(inst, "text_size", size))
-        content.add_widget(ad)
-
-        tur = Label(
-            text=str(getattr(item, "kind", "") or "-"),
-            size_hint_x=0.14,
-            color=(0.84, 0.88, 0.96, 1),
-            font_size="12sp",
-            halign="left",
-            valign="middle",
-            shorten=True,
-            shorten_from="right",
-        )
-        tur.bind(size=lambda inst, size: setattr(inst, "text_size", size))
-        content.add_widget(tur)
-
-        satir = Label(
-            text=f"{int(getattr(item, 'lineno', 0) or 0)}-{int(getattr(item, 'end_lineno', 0) or 0)}",
-            size_hint_x=0.16,
-            color=(0.80, 0.88, 0.94, 1),
-            font_size="12sp",
-            halign="left",
-            valign="middle",
-        )
-        satir.bind(size=lambda inst, size: setattr(inst, "text_size", size))
-        content.add_widget(satir)
-
-        imza = Label(
-            text=self._signature_short(item),
-            size_hint_x=0.16,
-            color=TEXT_MUTED,
-            font_size="11sp",
-            halign="left",
-            valign="middle",
-            shorten=True,
-            shorten_from="right",
-        )
-        imza.bind(size=lambda inst, size: setattr(inst, "text_size", size))
-        content.add_widget(imza)
-
-        row.add_widget(content)
-        row.add_widget(btn)
-        return row
-
     def _make_empty_label(self) -> Label:
         bos = Label(
             text="Gösterilecek fonksiyon yok.",
@@ -588,7 +653,7 @@ class FonksiyonListesi(BoxLayout):
             color=TEXT_MUTED,
             font_size="13sp",
         )
-        bos.bind(size=self._sync_label_size)
+        bos.bind(size=lambda inst, size: setattr(inst, "text_size", (size[0] - dp(8), size[1])))
         return bos
 
     def _render_items(self, items, keep_scroll: bool = False) -> None:
@@ -601,7 +666,13 @@ class FonksiyonListesi(BoxLayout):
                 self.selected_item is not None
                 and self._item_key(item) == self._item_key(self.selected_item)
             )
-            self.container.add_widget(self._build_item_row(item, is_selected))
+
+            row = FonksiyonSatiri(
+                item=item,
+                on_press_row=self._select,
+                is_selected=is_selected,
+            )
+            self.container.add_widget(row)
 
         if count == 0:
             self.container.add_widget(self._make_empty_label())
@@ -613,12 +684,6 @@ class FonksiyonListesi(BoxLayout):
             Clock.schedule_once(self._selected_itemi_gorunur_tut, 0)
         else:
             Clock.schedule_once(self._scroll_top, 0)
-
-    def _sync_label_size(self, widget, size):
-        try:
-            widget.text_size = (size[0] - dp(8), size[1])
-        except Exception:
-            pass
 
     def _scroll_top(self, *_args):
         try:
@@ -669,6 +734,7 @@ class FonksiyonListesi(BoxLayout):
                 "visibility_off.png",
                 icon_name,
             )
+            self.toggle_button.icon.reload()
         except Exception:
             pass
 
@@ -686,10 +752,10 @@ class FonksiyonListesi(BoxLayout):
     def _sync_list_visibility(self) -> None:
         if self.is_list_expanded:
             self.list_wrap.height = self._expanded_list_height
-            self.list_info_label.text = "Tüm fonksiyonlar geniş listede görüntülenir ve aranabilir."
+            self.list_info_label.text = "Tüm fonksiyonlar geniş listede görüntülenebilir ve aranabilir."
         else:
             self.list_wrap.height = self._compact_list_height
-            self.list_info_label.text = "Dar görünüm açık. Yine kaydırarak 3-4 fonksiyon görebilirsiniz."
+            self.list_info_label.text = "Dar görünüm açık. Yine kaydırarak birkaç fonksiyon görebilirsiniz."
 
         self.scroll.disabled = False
         self.scroll.opacity = 1
@@ -710,8 +776,11 @@ class FonksiyonListesi(BoxLayout):
         except Exception:
             pass
 
-        if self.on_select:
-            self.on_select(item)
+        try:
+            if self.on_select:
+                self.on_select(item)
+        except Exception:
+            pass
 
     def _on_search_text(self, _instance, value: str) -> None:
         self.filtered_items = self._apply_filter(value)
