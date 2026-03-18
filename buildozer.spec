@@ -31,7 +31,7 @@ android.ant_path = /usr/share/ant
 android.accept_sdk_license = True
 android.enable_androidx = True
 android.allow_backup = True
-android.release_artifact = aab
+android.release_artifact = apk
 
 log_level = 2
 
