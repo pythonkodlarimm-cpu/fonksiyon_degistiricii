@@ -1,26 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-DOSYA: app/services/yedek_listeleme_servisi.py
+DOSYA: app/services/yedek_silme_servisi.py
 
 ROL:
-- Yedeklenen dosyaları listelemek
-- Yedek klasörünü hazırlamak
-- Dosyaları tarih sırasına göre sıralamak
-- Hata ayıklama için güvenli log üretmek
-
-MİMARİ:
-- Ortak backup klasörü kullanılır
-- Yalnızca dosyalar listelenir
-- En yeni yedek en üstte olacak şekilde sıralanır
-- Hatalı/bozuk kayıtlar listelemeyi komple düşürmez
-
-HEDEF KLASÖR:
-- /storage/emulated/0/FonksiyonDegistirici/backups
-
-API UYUMLULUK:
-- API 30+ uyumlu
-- API 34 test senaryosuna uygun
-- Path tabanlı görünür yedek klasörü kullanır
+- Tek .bak dosyasını silmek
+- Birden fazla .bak dosyasını toplu silmek
+- Tüm listelenebilir yedekleri silmek
 
 SURUM: 2
 TARIH: 2026-03-18
@@ -31,96 +16,98 @@ from __future__ import annotations
 
 from pathlib import Path
 
-
-class YedekListelemeServisiHatasi(ValueError):
-    """Yedek listeleme sırasında oluşan kontrollü hata."""
+from app.services.yedek_listeleme_servisi import yedekleri_listele
 
 
-def _debug(message: str) -> None:
-    try:
-        print("[YEDEK_LISTELEME]", str(message))
-    except Exception:
-        pass
+class YedekSilmeServisiHatasi(ValueError):
+    """Yedek silme işlemleri sırasında oluşan kontrollü hata."""
 
 
-def _backup_root() -> Path:
+def _normalize_backup_path(backup_path: str | Path) -> Path:
     """
-    Yedek klasörünü döndürür.
-
-    Yoksa oluşturur.
+    Verilen yolu doğrular ve geçerli bir .bak dosyasına dönüştürür.
     """
     try:
-        root = Path("/storage/emulated/0/FonksiyonDegistirici/backups")
-        root.mkdir(parents=True, exist_ok=True)
-        _debug(f"backup root hazır: {root}")
-        return root
+        path_obj = Path(str(backup_path or "").strip())
     except Exception as exc:
-        raise YedekListelemeServisiHatasi(
-            f"Yedek klasörü hazırlanamadı: {exc}"
+        raise YedekSilmeServisiHatasi(
+            f"Geçersiz yedek yolu: {exc}"
+        ) from exc
+
+    if not str(path_obj).strip():
+        raise YedekSilmeServisiHatasi("Yedek yolu boş.")
+
+    if not path_obj.exists() or not path_obj.is_file():
+        raise YedekSilmeServisiHatasi("Silinecek yedek dosyası bulunamadı.")
+
+    if not path_obj.name.lower().endswith(".bak"):
+        raise YedekSilmeServisiHatasi("Yalnızca .bak uzantılı dosyalar silinebilir.")
+
+    return path_obj
+
+
+def yedegi_sil(backup_path: str | Path) -> str:
+    """
+    Tek bir .bak dosyasını siler.
+
+    Geri dönüş:
+    - silinen dosya yolu
+    """
+    path_obj = _normalize_backup_path(backup_path)
+
+    try:
+        silinen = str(path_obj)
+        path_obj.unlink()
+        return silinen
+    except Exception as exc:
+        raise YedekSilmeServisiHatasi(
+            f"Yedek silinemedi: {exc}"
         ) from exc
 
 
-def _guvenli_stat_mtime(path_obj: Path) -> float:
+def coklu_yedek_sil(paths: list[str | Path]) -> int:
     """
-    Dosya mtime bilgisini güvenli biçimde döndürür.
+    Verilen yedek yollarını toplu siler.
 
-    Hata olursa 0 döner, böylece sıralama tamamen çökmez.
+    Geri dönüş:
+    - başarıyla silinen dosya sayısı
     """
-    try:
-        return float(path_obj.stat().st_mtime)
-    except Exception:
-        return 0.0
+    if not paths:
+        return 0
 
+    silinen_sayi = 0
+    hatalar: list[str] = []
 
-def yedekleri_listele() -> list[Path]:
-    """
-    Yedek dosyalarını listeler.
+    for p in paths:
+        try:
+            yedegi_sil(p)
+            silinen_sayi += 1
+        except Exception as exc:
+            hatalar.append(str(exc))
 
-    Dönüş:
-    - Path listesi (en yeni en üstte)
-
-    API NOTU:
-    - Sadece dosyalar listelenir
-    - mtime ile sıralanır
-    - Bozuk kayıtlar yüzünden tüm listeleme çökmez
-    """
-    root = _backup_root()
-
-    try:
-        dosyalar: list[Path] = []
-
-        for p in root.iterdir():
-            try:
-                if p.is_file():
-                    dosyalar.append(p)
-            except Exception as exc:
-                _debug(f"öğe atlandı: {p} | hata: {exc}")
-
-        dosyalar.sort(
-            key=_guvenli_stat_mtime,
-            reverse=True,
+    if silinen_sayi <= 0 and hatalar:
+        raise YedekSilmeServisiHatasi(
+            "Toplu silme başarısız: " + " | ".join(hatalar)
         )
 
-        _debug(f"toplam yedek sayısı: {len(dosyalar)}")
-        for item in dosyalar[:10]:
-            _debug(f"yedek: {item.name}")
-
-        return dosyalar
-
-    except Exception as exc:
-        raise YedekListelemeServisiHatasi(
-            f"Yedekler listelenemedi: {exc}"
-        ) from exc
+    return silinen_sayi
 
 
-def yedek_sayisi() -> int:
+def tum_yedekleri_sil() -> int:
     """
-    Toplam yedek sayısını döndürür.
+    Listeleme servisinin gördüğü tüm .bak dosyalarını siler.
+
+    Geri dönüş:
+    - silinen toplam dosya sayısı
     """
     try:
-        sayi = len(yedekleri_listele())
-        _debug(f"yedek sayısı: {sayi}")
-        return sayi
+        yedekler = yedekleri_listele()
     except Exception as exc:
-        _debug(f"yedek sayısı alınamadı: {exc}")
+        raise YedekSilmeServisiHatasi(
+            f"Yedekler alınamadı: {exc}"
+        ) from exc
+
+    if not yedekler:
         return 0
+
+    return coklu_yedek_sil(yedekler)
