@@ -2,7 +2,14 @@
 """
 DOSYA: app/services/dosya_servisi.py
 
-SURUM: 7
+ROL:
+- Path tabanlı dosya okuma / yazma / varlık kontrolü
+- Uygulama çalışma ve yedek köklerini üretme
+- Yerel dosya sistemi işlemlerini güvenli ve doğrulanabilir şekilde yürütme
+
+SURUM: 9
+TARIH: 2026-03-18
+IMZA: FY.
 """
 
 from __future__ import annotations
@@ -13,9 +20,11 @@ import shutil
 from datetime import datetime
 from pathlib import Path
 
+from kivy.utils import platform
+
 
 class DosyaServisiHatasi(ValueError):
-    pass
+    """Dosya servisi işlemleri sırasında oluşan kontrollü hata."""
 
 
 # =========================================================
@@ -56,6 +65,34 @@ def _path_is_dir(p: Path) -> bool:
         return False
 
 
+def _ensure_dir(path_obj: Path) -> Path:
+    try:
+        path_obj.mkdir(parents=True, exist_ok=True)
+        return path_obj
+    except Exception as exc:
+        raise DosyaServisiHatasi(
+            f"Klasör oluşturulamadı: {path_obj}"
+        ) from exc
+
+
+def _assert_dir_writable(path_obj: Path) -> Path:
+    """
+    Klasörün yazılabilir olduğunu test eder.
+    """
+    try:
+        _ensure_dir(path_obj)
+
+        test_file = path_obj / f".write_test_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}.tmp"
+        test_file.write_text("ok", encoding="utf-8")
+        test_file.unlink(missing_ok=True)
+
+        return path_obj
+    except Exception as exc:
+        raise DosyaServisiHatasi(
+            f"Klasör yazılabilir değil: {path_obj}"
+        ) from exc
+
+
 # =========================================================
 # HASH
 # =========================================================
@@ -63,34 +100,90 @@ def _hash_text(text: str) -> str:
     return hashlib.sha256(str(text or "").encode("utf-8")).hexdigest()
 
 
+def _hash_path(path_obj: Path) -> str:
+    return hashlib.sha1(str(path_obj).encode("utf-8")).hexdigest()[:10]
+
+
 # =========================================================
 # ROOT
 # =========================================================
-def _uygulama_veri_koku() -> Path:
+def _candidate_data_roots() -> list[Path]:
+    """
+    Uygulama veri kökü için olası adayları öncelik sırasıyla üretir.
+    """
     adaylar: list[Path] = []
 
-    try:
-        adaylar.append(Path.cwd())
-    except Exception:
-        pass
+    if platform == "android":
+        try:
+            android_private = str(os.environ.get("ANDROID_PRIVATE", "") or "").strip()
+            if android_private:
+                adaylar.append(Path(android_private))
+        except Exception:
+            pass
+
+        try:
+            android_arg = str(os.environ.get("APP_STORAGE_PATH", "") or "").strip()
+            if android_arg:
+                adaylar.append(Path(android_arg))
+        except Exception:
+            pass
 
     try:
         adaylar.append(Path.home())
     except Exception:
         pass
 
-    for aday in adaylar:
-        try:
-            if _path_exists(aday) and _path_is_dir(aday):
-                root = aday / "fonksiyon_degistirici_veri"
-                root.mkdir(parents=True, exist_ok=True)
-                return root
-        except Exception:
-            pass
+    try:
+        adaylar.append(Path.cwd())
+    except Exception:
+        pass
 
-    root = Path("fonksiyon_degistirici_veri")
-    root.mkdir(parents=True, exist_ok=True)
-    return root
+    uniq: list[Path] = []
+    seen: set[str] = set()
+
+    for aday in adaylar:
+        key = str(aday)
+        if key not in seen and key.strip():
+            uniq.append(aday)
+            seen.add(key)
+
+    return uniq
+
+
+def _uygulama_veri_koku() -> Path:
+    """
+    Yazılabilir ilk uygulama veri kökünü döndürür.
+
+    Öncelik:
+    1) Android private app alanı
+    2) home
+    3) cwd
+    """
+    hatalar: list[str] = []
+
+    for aday in _candidate_data_roots():
+        try:
+            if not _path_exists(aday):
+                aday.mkdir(parents=True, exist_ok=True)
+
+            if not _path_is_dir(aday):
+                raise ValueError("Dizin değil")
+
+            root = aday / "fonksiyon_degistirici_veri"
+            _assert_dir_writable(root)
+            return root
+        except Exception as exc:
+            hatalar.append(f"{aday} -> {exc}")
+
+    try:
+        root = Path("fonksiyon_degistirici_veri")
+        _assert_dir_writable(root)
+        return root
+    except Exception as exc:
+        raise DosyaServisiHatasi(
+            "Uygulama veri kökü hazırlanamadı. Denenen yollar:\n"
+            + "\n".join(hatalar + [f"relative: {exc}"])
+        ) from exc
 
 
 # =========================================================
@@ -105,20 +198,28 @@ def read_text(file_path: str | Path, encoding: str = "utf-8") -> str:
     if not _path_is_file(path_obj):
         raise DosyaServisiHatasi(f"Geçerli bir dosya değil: {path_obj}")
 
-    try:
-        return path_obj.read_text(encoding=encoding)
-    except UnicodeDecodeError:
-        # fallback (çok önemli Android için)
+    denenecek_encodingler: list[str] = []
+    for enc in [encoding, "utf-8", "utf-8-sig", "latin-1"]:
+        enc = str(enc or "").strip()
+        if enc and enc not in denenecek_encodingler:
+            denenecek_encodingler.append(enc)
+
+    son_hata: Exception | None = None
+
+    for enc in denenecek_encodingler:
         try:
-            return path_obj.read_text(encoding="latin-1")
+            return path_obj.read_text(encoding=enc)
+        except UnicodeDecodeError as exc:
+            son_hata = exc
+            continue
         except Exception as exc:
             raise DosyaServisiHatasi(
-                f"Dosya okunamadı (encoding): {path_obj}"
+                f"Dosya okunamadı: {path_obj}"
             ) from exc
-    except Exception as exc:
-        raise DosyaServisiHatasi(
-            f"Dosya okunamadı: {path_obj}"
-        ) from exc
+
+    raise DosyaServisiHatasi(
+        f"Dosya okunamadı (encoding): {path_obj}"
+    ) from son_hata
 
 
 # =========================================================
@@ -131,10 +232,16 @@ def write_text(file_path: str | Path, content: str, encoding: str = "utf-8") -> 
         raise DosyaServisiHatasi(f"Geçerli dosya değil: {path_obj}")
 
     parent = path_obj.parent
-    if not _path_exists(parent):
-        parent.mkdir(parents=True, exist_ok=True)
+    try:
+        _assert_dir_writable(parent)
+    except DosyaServisiHatasi:
+        raise
+    except Exception as exc:
+        raise DosyaServisiHatasi(
+            f"Hedef klasör hazırlanamadı: {parent}"
+        ) from exc
 
-    temp_path = path_obj.with_name(
+    temp_path = parent / (
         f".{path_obj.name}.{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}.tmp"
     )
 
@@ -152,8 +259,7 @@ def write_text(file_path: str | Path, content: str, encoding: str = "utf-8") -> 
 
         os.replace(temp_path, path_obj)
 
-        # doğrulama
-        okunan = read_text(path_obj)
+        okunan = read_text(path_obj, encoding=encoding)
         if _hash_text(okunan) != hedef_hash:
             raise DosyaServisiHatasi("Yazma doğrulaması başarısız.")
 
@@ -164,6 +270,9 @@ def write_text(file_path: str | Path, content: str, encoding: str = "utf-8") -> 
         except Exception:
             pass
 
+        if isinstance(exc, DosyaServisiHatasi):
+            raise
+
         raise DosyaServisiHatasi(
             f"Dosya yazılamadı: {path_obj}"
         ) from exc
@@ -173,6 +282,9 @@ def write_text(file_path: str | Path, content: str, encoding: str = "utf-8") -> 
 # BACKUP
 # =========================================================
 def backup_file(file_path: str | Path) -> str:
+    """
+    Verilen yerel dosyanın yedeğini uygulama içi güvenli yedek klasörüne alır.
+    """
     path_obj = _normalize_path(file_path)
 
     if not _path_exists(path_obj):
@@ -181,8 +293,18 @@ def backup_file(file_path: str | Path) -> str:
     if not _path_is_file(path_obj):
         raise DosyaServisiHatasi(f"Geçerli dosya değil: {path_obj}")
 
+    try:
+        backup_root = get_app_backups_root()
+    except Exception as exc:
+        raise DosyaServisiHatasi(
+            f"Yedek klasörü hazırlanamadı: {exc}"
+        ) from exc
+
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    backup_path = path_obj.with_name(f"{path_obj.name}.{ts}.bak")
+    yol_hash = _hash_path(path_obj)
+    guvenli_ad = path_obj.name.replace("/", "_").replace("\\", "_")
+    backup_name = f"{guvenli_ad}.{yol_hash}.{ts}.bak"
+    backup_path = backup_root / backup_name
 
     try:
         shutil.copy2(path_obj, backup_path)
@@ -216,12 +338,26 @@ def get_display_name(file_path: str | Path) -> str:
 # ROOT HELPERS
 # =========================================================
 def get_app_working_root() -> Path:
-    root = _uygulama_veri_koku() / "app_working_imports"
-    root.mkdir(parents=True, exist_ok=True)
-    return root
+    """
+    Uygulama içi çalışma kopyalarının tutulacağı kökü döndürür.
+    """
+    try:
+        root = _uygulama_veri_koku() / "app_working_imports"
+        return _assert_dir_writable(root)
+    except Exception as exc:
+        raise DosyaServisiHatasi(
+            f"Çalışma kökü hazırlanamadı: {exc}"
+        ) from exc
 
 
 def get_app_backups_root() -> Path:
-    root = _uygulama_veri_koku() / "app_document_backups"
-    root.mkdir(parents=True, exist_ok=True)
-    return root
+    """
+    Uygulama içi yedeklerin tutulacağı kökü döndürür.
+    """
+    try:
+        root = _uygulama_veri_koku() / "app_document_backups"
+        return _assert_dir_writable(root)
+    except Exception as exc:
+        raise DosyaServisiHatasi(
+            f"Yedek kökü hazırlanamadı: {exc}"
+        ) from exc
