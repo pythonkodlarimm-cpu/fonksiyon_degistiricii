@@ -1,0 +1,933 @@
+# -*- coding: utf-8 -*-
+"""
+DOSYA: app/ui/root.py
+
+ROL:
+- Uygulamanın ana root widget'ı
+- Dosya seçme, fonksiyon tarama, seçim, güncelleme ve geri yükleme akışını yönetir
+- UI katmanını çekirdek servislerle bağlar
+- Geçici bildirim overlay katmanını yönetir
+- Fonksiyon güncellemede replace stratejisi karar akışını yönetir
+
+MİMARİ:
+- Root çizim yapmaz
+- Root sadece yerleşim + state + akış yönetir
+- Görsel çizim alt bileşenlerin kendi içinde kalır
+- Ana içerik ve overlay katmanı ayrıdır
+- Ağır modüller lazy import ile yüklenir
+
+NOT:
+- Bu sürüm geçici olarak reklamsız test sürümüdür.
+- Reklam servisi root katmanından çıkarılmıştır.
+- buildozer.spec ve android.yml yapısına dokunulmaz.
+- API 34 hedefi için açılış akışı daha güvenli hale getirilmiştir.
+
+SURUM: 35
+TARIH: 2026-03-18
+IMZA: FY.
+"""
+
+from __future__ import annotations
+
+import traceback
+from pathlib import Path
+
+from kivy.clock import Clock
+from kivy.metrics import dp
+from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.floatlayout import FloatLayout
+from kivy.uix.label import Label
+from kivy.uix.scrollview import ScrollView
+from kivy.utils import platform
+
+
+class RootWidget(FloatLayout):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+        self.main_root = BoxLayout(
+            orientation="vertical",
+            spacing=dp(8),
+            padding=dp(8),
+            size_hint=(1, 1),
+        )
+        self.add_widget(self.main_root)
+
+        self.current_file_path = ""
+        self.current_session = None
+        self.items = []
+        self.selected_item = None
+
+        self.scroll = None
+        self.main_column = None
+        self.file_access_panel = None
+        self.dosya_secici = None
+        self.function_list = None
+        self.editor = None
+        self.status = None
+        self.version_wrap = None
+        self.version_label = None
+        self.bottom_bar = None
+        self.toast_layer = None
+        self.app_version_text = self._resolve_app_version()
+
+        self._pending_update_payload = None
+        self._replace_karar_servisi = None
+
+        try:
+            self._build_ui()
+            self.set_status_info("Hazır.", "onaylandi.png")
+            Clock.schedule_once(self._post_build_refresh, 0.08)
+        except Exception:
+            hata = traceback.format_exc()
+            print(hata)
+            self.clear_widgets()
+            self.add_widget(self._build_fallback_error_ui(hata))
+
+    # =========================================================
+    # DEBUG
+    # =========================================================
+    def _debug(self, message: str) -> None:
+        try:
+            print("[ROOT]", str(message))
+        except Exception:
+            pass
+
+    # =========================================================
+    # LAZY IMPORT HELPERS
+    # =========================================================
+    def _get_core_helpers(self):
+        from app.core.degistirici import find_item_by_identity, update_function_in_code
+        from app.core.tarayici import scan_functions_from_file
+
+        return {
+            "find_item_by_identity": find_item_by_identity,
+            "update_function_in_code": update_function_in_code,
+            "scan_functions_from_file": scan_functions_from_file,
+        }
+
+    def _get_belge_geri_yukleme(self):
+        from app.services.belge_geri_yukleme_servisi import (
+            BelgeGeriYuklemeServisiHatasi,
+            son_yedekten_geri_yukle,
+        )
+
+        return {
+            "BelgeGeriYuklemeServisiHatasi": BelgeGeriYuklemeServisiHatasi,
+            "son_yedekten_geri_yukle": son_yedekten_geri_yukle,
+        }
+
+    def _get_belge_oturumu(self):
+        from app.services.belge_oturumu_servisi import (
+            BelgeOturumuServisiHatasi,
+            calisma_dosyasi_yolu,
+            calisma_kopyasi_var_mi,
+            guncellenmis_icerigi_kaydet,
+            oturum_baslat,
+            oturum_display_name,
+            oturum_identifier,
+            son_yedek_yolu,
+        )
+
+        return {
+            "BelgeOturumuServisiHatasi": BelgeOturumuServisiHatasi,
+            "calisma_dosyasi_yolu": calisma_dosyasi_yolu,
+            "calisma_kopyasi_var_mi": calisma_kopyasi_var_mi,
+            "guncellenmis_icerigi_kaydet": guncellenmis_icerigi_kaydet,
+            "oturum_baslat": oturum_baslat,
+            "oturum_display_name": oturum_display_name,
+            "oturum_identifier": oturum_identifier,
+            "son_yedek_yolu": son_yedek_yolu,
+        }
+
+    def _get_dosya_servisi(self):
+        from app.services.dosya_servisi import read_text
+        return {"read_text": read_text}
+
+    def _get_gecici_bildirim_servisi(self):
+        from app.services.gecici_bildirim_servisi import gecici_bildirim_servisi
+        return gecici_bildirim_servisi
+
+    def _get_document_selection_class(self):
+        from app.ui.dosya_secici_paketi.models import DocumentSelection
+        return DocumentSelection
+
+    def _get_replace_karar_servisi_class(self):
+        from app.services.replace_karar_servisi import ReplaceKararServisi
+        return ReplaceKararServisi
+
+    def _get_replace_karar_popup_class(self):
+        from app.ui.replace_karar_popup import ReplaceKararPopup
+        return ReplaceKararPopup
+
+    # =========================================================
+    # POST BUILD
+    # =========================================================
+    def _post_build_refresh(self, _dt) -> None:
+        try:
+            if self.file_access_panel is not None:
+                self.file_access_panel.refresh_status()
+        except Exception as exc:
+            self._debug(f"post build refresh hatası: {exc}")
+
+    # =========================================================
+    # VERSION
+    # =========================================================
+    def _resolve_app_version(self) -> str:
+        if platform == "android":
+            try:
+                from jnius import autoclass, cast  # type: ignore
+
+                PythonActivity = autoclass("org.kivy.android.PythonActivity")
+                current_activity = cast("android.app.Activity", PythonActivity.mActivity)
+
+                if current_activity is not None:
+                    package_info = current_activity.getPackageManager().getPackageInfo(
+                        current_activity.getPackageName(),
+                        0,
+                    )
+                    version_name = str(getattr(package_info, "versionName", "") or "").strip()
+                    if version_name:
+                        return version_name
+            except Exception:
+                pass
+
+        try:
+            from app import __version__ as app_version  # type: ignore
+            temiz = str(app_version or "").strip()
+            if temiz:
+                return temiz
+        except Exception:
+            pass
+
+        return "GELISTIRME"
+
+    def _build_version_card(self):
+        from app.ui.kart import Kart
+
+        kart = Kart(
+            orientation="horizontal",
+            size_hint_y=None,
+            height=dp(28),
+            padding=(dp(10), dp(4), dp(10), dp(4)),
+            bg=(0.07, 0.09, 0.13, 1),
+            border=(0.16, 0.19, 0.25, 1),
+            radius=12,
+        )
+
+        kart.add_widget(Label(size_hint_x=1))
+
+        self.version_label = Label(
+            text=f"Sürüm: {self.app_version_text}",
+            size_hint_x=None,
+            width=dp(132),
+            font_size="11sp",
+            color=(0.72, 0.72, 0.76, 1),
+            halign="right",
+            valign="middle",
+        )
+        self.version_label.bind(size=lambda inst, size: setattr(inst, "text_size", size))
+        kart.add_widget(self.version_label)
+
+        return kart
+
+    # =========================================================
+    # UI
+    # =========================================================
+    def _build_ui(self) -> None:
+        from app.ui.dosya_secici import DosyaSecici
+        from app.ui.durum_cubugu import DurumCubugu
+        from app.ui.editor_paneli import EditorPaneli
+        from app.ui.fonksiyon_listesi import FonksiyonListesi
+        from app.ui.gecici_bildirim import GeciciBildirimKatmani
+        from app.ui.tum_dosya_erisim_paneli import TumDosyaErisimPaneli
+
+        self.scroll = ScrollView(
+            size_hint=(1, 1),
+            do_scroll_x=False,
+            do_scroll_y=True,
+            bar_width=dp(8),
+            scroll_type=["bars", "content"],
+        )
+
+        self.main_column = BoxLayout(
+            orientation="vertical",
+            spacing=dp(10),
+            size_hint_y=None,
+            padding=(0, 0, 0, dp(8)),
+        )
+        self.main_column.bind(minimum_height=self.main_column.setter("height"))
+
+        self.file_access_panel = TumDosyaErisimPaneli(
+            on_status_changed=self._on_file_access_status_changed,
+        )
+        self.file_access_panel.size_hint_y = None
+        self.main_column.add_widget(self.file_access_panel)
+
+        self.dosya_secici = DosyaSecici(
+            on_scan=self.scan_file,
+            on_refresh=self.refresh_file,
+        )
+        self.dosya_secici.size_hint_y = None
+        self.main_column.add_widget(self.dosya_secici)
+
+        self.function_list = FonksiyonListesi(
+            on_select=self.select_item,
+        )
+        self.function_list.size_hint_y = None
+        self.function_list.height = dp(760)
+        self.main_column.add_widget(self.function_list)
+
+        self.editor = EditorPaneli(
+            on_update=self.update_selected_function,
+            on_restore=self.geri_yukle_secili_belge,
+        )
+        self.editor.size_hint_y = None
+        self.editor.height = dp(900)
+        self.main_column.add_widget(self.editor)
+
+        self.scroll.add_widget(self.main_column)
+        self.main_root.add_widget(self.scroll)
+
+        self.bottom_bar = BoxLayout(
+            orientation="vertical",
+            size_hint_y=None,
+            spacing=dp(4),
+            padding=(0, dp(2), 0, 0),
+        )
+
+        self.status = DurumCubugu()
+        self.status.size_hint_y = None
+        self.bottom_bar.add_widget(self.status)
+
+        self.version_wrap = self._build_version_card()
+        self.bottom_bar.add_widget(self.version_wrap)
+
+        self.bottom_bar.height = int(self.status.height) + int(self.version_wrap.height) + int(dp(4))
+        self.main_root.add_widget(self.bottom_bar)
+
+        self.toast_layer = GeciciBildirimKatmani()
+        self.add_widget(self.toast_layer)
+
+        try:
+            self._get_gecici_bildirim_servisi().register_layer(self.toast_layer)
+        except Exception as exc:
+            self._debug(f"toast layer register hatası: {exc}")
+
+    def _build_fallback_error_ui(self, hata_metni: str) -> BoxLayout:
+        root = BoxLayout(
+            orientation="vertical",
+            spacing=dp(10),
+            padding=dp(12),
+            size_hint=(1, 1),
+        )
+
+        baslik = Label(
+            text="RootWidget başlatılamadı",
+            size_hint_y=None,
+            height=dp(42),
+            bold=True,
+            halign="center",
+            valign="middle",
+            color=(1, 0.9, 0.9, 1),
+        )
+        baslik.bind(size=lambda inst, size: setattr(inst, "text_size", size))
+        root.add_widget(baslik)
+
+        mesaj = Label(
+            text=hata_metni,
+            halign="left",
+            valign="top",
+            color=(1, 0.85, 0.85, 1),
+        )
+        mesaj.bind(size=lambda inst, size: setattr(inst, "text_size", (size[0], None)))
+        root.add_widget(mesaj)
+
+        return root
+
+    # =========================================================
+    # STATUS HELPERS
+    # =========================================================
+    def _safe_set_status(self, text: str, icon_name: str = "") -> None:
+        try:
+            if self.status is not None:
+                self.status.set_status(text, icon_name=icon_name)
+        except Exception:
+            pass
+
+    def set_status(self, text: str, icon_name: str = "") -> None:
+        self._safe_set_status(text, icon_name)
+
+    def set_status_info(self, text: str, icon_name: str = "") -> None:
+        try:
+            if self.status is not None:
+                self.status.set_status(text, icon_name=icon_name)
+        except Exception:
+            pass
+
+    def set_status_success(self, text: str) -> None:
+        try:
+            if self.status is not None:
+                self.status.set_success(text)
+        except Exception:
+            pass
+
+    def set_status_warning(self, text: str) -> None:
+        try:
+            if self.status is not None:
+                self.status.set_warning(text)
+        except Exception:
+            pass
+
+    def set_status_error(self, text: str) -> None:
+        try:
+            if self.status is not None:
+                self.status.set_error(text)
+        except Exception:
+            pass
+
+    def show_toast(self, text: str, icon_name: str = "", duration: float = 2.4) -> None:
+        try:
+            self._get_gecici_bildirim_servisi().show(
+                text=str(text or ""),
+                icon_name=str(icon_name or ""),
+                duration=float(duration or 2.4),
+            )
+        except Exception:
+            pass
+
+    def hide_toast(self) -> None:
+        try:
+            self._get_gecici_bildirim_servisi().hide_immediately()
+        except Exception:
+            pass
+
+    def _on_file_access_status_changed(self, durum: bool) -> None:
+        try:
+            if durum:
+                self.set_status_success("Tüm dosya erişimi açık.")
+            else:
+                self.set_status_warning("Tüm dosya erişimi kapalı.")
+        except Exception:
+            pass
+
+    # =========================================================
+    # HELPERS
+    # =========================================================
+    def _clear_state(self) -> None:
+        self.current_file_path = ""
+        self.current_session = None
+        self.items = []
+        self.selected_item = None
+
+        try:
+            if self.dosya_secici is not None:
+                self.dosya_secici.clear_selection()
+        except Exception:
+            pass
+
+        try:
+            if self.function_list is not None:
+                self.function_list.clear_all()
+        except Exception:
+            pass
+
+        try:
+            if self.editor is not None:
+                self.editor.clear_all()
+        except Exception:
+            pass
+
+    def _clear_view_only(self) -> None:
+        self.items = []
+        self.selected_item = None
+
+        try:
+            if self.function_list is not None:
+                self.function_list.clear_all()
+        except Exception:
+            pass
+
+        try:
+            if self.editor is not None:
+                self.editor.clear_all()
+        except Exception:
+            pass
+
+    def _reset_selection_only(self) -> None:
+        self.selected_item = None
+
+        try:
+            if self.function_list is not None:
+                self.function_list.selected_item = None
+                self.function_list.clear_selection()
+                self.function_list.clear_new_preview()
+        except Exception:
+            pass
+
+        try:
+            if self.editor is not None:
+                self.editor.clear_selection()
+                self.editor.set_new_code_text("")
+        except Exception:
+            pass
+
+    def _safe_backup_text(self) -> str:
+        try:
+            belge_oturumu = self._get_belge_oturumu()
+            metin = str(belge_oturumu["son_yedek_yolu"](self.current_session) or "").strip()
+            if metin:
+                return metin
+        except Exception:
+            pass
+        return "yedek_bilinmiyor"
+
+    def _reload_items_from_current_file(self) -> None:
+        if not self.current_file_path:
+            self.items = []
+            try:
+                if self.function_list is not None:
+                    self.function_list.clear_all()
+            except Exception:
+                pass
+            return
+
+        try:
+            core = self._get_core_helpers()
+            self.items = core["scan_functions_from_file"](self.current_file_path)
+        except Exception:
+            self.items = []
+            raise
+
+        try:
+            if self.function_list is not None:
+                self.function_list.set_items(self.items)
+        except Exception:
+            pass
+
+    def _selection_from_ui(self):
+        try:
+            if self.dosya_secici is not None:
+                secim = self.dosya_secici.get_selection()
+                if secim is not None:
+                    return secim
+        except Exception:
+            pass
+
+        try:
+            if self.dosya_secici is not None:
+                ham = str(self.dosya_secici.get_path() or "").strip()
+                if ham and Path(ham).exists() and Path(ham).is_file():
+                    DocumentSelection = self._get_document_selection_class()
+                    return DocumentSelection(
+                        source="filesystem",
+                        uri="",
+                        local_path=ham,
+                        display_name=Path(ham).name,
+                        mime_type="",
+                    )
+        except Exception:
+            pass
+
+        return None
+
+    def _count_child_functions(self, item) -> int:
+        try:
+            item_path = str(getattr(item, "path", "") or "").strip()
+            if not item_path:
+                return 0
+
+            prefix = item_path + "."
+            count = 0
+
+            for current in self.items:
+                current_path = str(getattr(current, "path", "") or "").strip()
+                if current_path.startswith(prefix):
+                    count += 1
+
+            return count
+        except Exception:
+            return 0
+
+    def _child_function_names(self, item) -> list[str]:
+        try:
+            item_path = str(getattr(item, "path", "") or "").strip()
+            if not item_path:
+                return []
+
+            prefix = item_path + "."
+            out: list[str] = []
+
+            for current in self.items:
+                current_path = str(getattr(current, "path", "") or "").strip()
+                if current_path.startswith(prefix):
+                    out.append(current_path)
+
+            out.sort()
+            return out
+        except Exception:
+            return []
+
+    def _item_has_child_functions(self, item) -> bool:
+        return self._count_child_functions(item) > 0
+
+    # =========================================================
+    # REPLACE DECISION FLOW
+    # =========================================================
+    def _start_replace_decision_flow(self, item, new_code: str) -> None:
+        self._pending_update_payload = {
+            "item": item,
+            "new_code": str(new_code or ""),
+        }
+
+        child_count = self._count_child_functions(item)
+        child_names = self._child_function_names(item)
+
+        if child_count <= 0:
+            self._continue_update_with_mode("full")
+            return
+
+        try:
+            ReplaceKararServisi = self._get_replace_karar_servisi_class()
+            ReplaceKararPopup = self._get_replace_karar_popup_class()
+
+            self._replace_karar_servisi = ReplaceKararServisi()
+
+            def _on_result(mode: str) -> None:
+                self._continue_update_with_mode(mode)
+
+            self._replace_karar_servisi.karar_sor(_on_result)
+
+            popup = ReplaceKararPopup(
+                self._replace_karar_servisi,
+                function_name=str(getattr(item, "name", "") or ""),
+                function_path=str(getattr(item, "path", "") or ""),
+                child_count=child_count,
+                child_names=child_names,
+            )
+            popup.open()
+
+            self.set_status_warning(
+                "Bu fonksiyonun içinde alt fonksiyonlar var. Güncelleme modu seçin."
+            )
+        except Exception as exc:
+            self._debug(f"replace karar akışı açılamadı: {exc}")
+            self._continue_update_with_mode("full")
+
+    def _continue_update_with_mode(self, replace_mode: str) -> None:
+        payload = dict(self._pending_update_payload or {})
+        self._pending_update_payload = None
+
+        mode = str(replace_mode or "").strip().lower()
+        if mode == "cancel":
+            self.set_status_info("Fonksiyon güncelleme iptal edildi.")
+            return
+
+        if mode not in {"full", "preserve_children"}:
+            mode = "full"
+
+        item = payload.get("item")
+        new_code = str(payload.get("new_code", "") or "")
+
+        self._apply_selected_function_update(
+            item=item,
+            new_code=new_code,
+            replace_mode=mode,
+        )
+
+    def _apply_selected_function_update(self, item, new_code: str, replace_mode: str) -> None:
+        belge_oturumu = self._get_belge_oturumu()
+        dosya_servisi = self._get_dosya_servisi()
+        core = self._get_core_helpers()
+
+        try:
+            if self.current_session is None:
+                self.set_status_warning("Önce dosya seç.")
+                return
+
+            if not self.current_file_path:
+                self.current_file_path = str(
+                    belge_oturumu["calisma_dosyasi_yolu"](self.current_session) or ""
+                ).strip()
+
+            if not self.current_file_path or not belge_oturumu["calisma_kopyasi_var_mi"](self.current_session):
+                self.set_status_error("Çalışma dosyası artık bulunamadı.")
+                return
+
+            if item is None:
+                self.set_status_warning("Önce bir fonksiyon seç.")
+                return
+
+            if not str(new_code or "").strip():
+                self.set_status_warning("Yeni fonksiyon kodu boş olamaz.")
+                return
+
+            try:
+                if self.function_list is not None:
+                    self.function_list.set_new_preview(str(new_code or ""))
+                if self.editor is not None:
+                    self.editor.set_new_code_text(str(new_code or ""))
+            except Exception:
+                pass
+
+            old_source = dosya_servisi["read_text"](self.current_file_path)
+            updated_source = core["update_function_in_code"](
+                old_source,
+                item,
+                new_code,
+                replace_mode=replace_mode,
+            )
+
+            backup_path = belge_oturumu["guncellenmis_icerigi_kaydet"](
+                self.current_session,
+                updated_source,
+            )
+
+            self._reload_items_from_current_file()
+
+            refreshed = self._find_refreshed_item(item)
+            self.selected_item = refreshed
+
+            try:
+                if self.function_list is not None:
+                    self.function_list.set_items(self.items)
+                    self.function_list.selected_item = refreshed
+                    self.function_list.set_selected_preview(str(getattr(refreshed, "source", "") or ""))
+                    self.function_list.set_new_preview(str(new_code or ""))
+            except Exception:
+                pass
+
+            try:
+                if self.editor is not None:
+                    self.editor.set_item(refreshed)
+                    self.editor.set_new_code_text(str(new_code or ""))
+            except Exception:
+                pass
+
+            backup_text = str(backup_path or "").strip() or self._safe_backup_text()
+            mode_text = (
+                "alt fonksiyonlar korunarak"
+                if replace_mode == "preserve_children"
+                else "komple değişim"
+            )
+
+            if refreshed is not None:
+                self.set_status_success(
+                    f"Güncellendi ({mode_text}): {refreshed.path} | Yedek: {backup_text}"
+                )
+            else:
+                self.set_status_success(
+                    f"Güncellendi ({mode_text}). Seçim yenilenemedi ama dosya yazıldı. "
+                    f"Yedek: {backup_text}"
+                )
+
+        except belge_oturumu["BelgeOturumuServisiHatasi"] as exc:
+            self.set_status_error(str(exc))
+        except ValueError as exc:
+            self.set_status_error(str(exc))
+        except SyntaxError as exc:
+            self.set_status_error(f"Sözdizimi hatası: {exc}")
+        except Exception:
+            self.set_status_error("Güncelleme hatası oluştu.")
+            print(traceback.format_exc())
+
+    # =========================================================
+    # DOSYA AKIŞI
+    # =========================================================
+    def _scan_or_refresh(self, _ignored_file_path: str) -> None:
+        selection = self._selection_from_ui()
+        if selection is None:
+            self._clear_state()
+            self.set_status_warning("Dosya seçilmedi.")
+            return
+
+        belge_oturumu = self._get_belge_oturumu()
+
+        try:
+            session = belge_oturumu["oturum_baslat"](selection)
+        except belge_oturumu["BelgeOturumuServisiHatasi"] as exc:
+            self._clear_state()
+            self.set_status_error(f"Oturum başlatılamadı: {exc}")
+            return
+        except Exception as exc:
+            self._clear_state()
+            self.set_status_error(f"Oturum başlatılamadı: {exc}")
+            return
+
+        working_path = str(belge_oturumu["calisma_dosyasi_yolu"](session) or "").strip()
+        source_identifier = str(belge_oturumu["oturum_identifier"](session) or "").strip()
+        display_name = str(belge_oturumu["oturum_display_name"](session) or "").strip()
+
+        if not working_path:
+            self._clear_state()
+            self.set_status_error("Çalışma dosyası oluşturulamadı.")
+            return
+
+        self.current_session = session
+        self.current_file_path = working_path
+
+        if not belge_oturumu["calisma_kopyasi_var_mi"](session):
+            self.set_status_error("Çalışma dosyası bulunamadı.")
+            return
+
+        try:
+            if self.dosya_secici is not None:
+                self.dosya_secici.set_path(source_identifier or working_path)
+                self.dosya_secici.set_selection(selection)
+        except Exception:
+            pass
+
+        self._clear_view_only()
+        self._reload_items_from_current_file()
+        self._reset_selection_only()
+
+        if display_name:
+            self.set_status_success(
+                f"Tarama tamamlandı. {len(self.items)} fonksiyon bulundu. Belge: {display_name}"
+            )
+        else:
+            self.set_status_success(
+                f"Tarama tamamlandı. {len(self.items)} fonksiyon bulundu."
+            )
+
+    def refresh_file(self, file_path: str) -> None:
+        try:
+            self._scan_or_refresh(file_path)
+        except Exception:
+            self._clear_state()
+            self.set_status_error("Yenileme hatası oluştu.")
+            print(traceback.format_exc())
+
+    def scan_file(self, file_path: str) -> None:
+        try:
+            self._scan_or_refresh(file_path)
+        except Exception:
+            self._clear_state()
+            self.set_status_error("Tarama hatası oluştu.")
+            print(traceback.format_exc())
+
+    # =========================================================
+    # SEÇİM
+    # =========================================================
+    def select_item(self, item) -> None:
+        self.selected_item = item
+
+        try:
+            if self.function_list is not None:
+                self.function_list.selected_item = item
+                self.function_list.set_selected_preview(str(getattr(item, "source", "") or ""))
+                self.function_list.clear_new_preview()
+        except Exception:
+            pass
+
+        try:
+            if self.editor is not None:
+                self.editor.set_item(item)
+                self.editor.set_new_code_text("")
+        except Exception:
+            pass
+
+        try:
+            self.set_status_info(f"Seçildi: {item.path}", "visibility_on.png")
+        except Exception:
+            self.set_status_info("Fonksiyon seçildi.", "visibility_on.png")
+
+    # =========================================================
+    # ITEM HELPERS
+    # =========================================================
+    def _find_refreshed_item(self, old_item):
+        if old_item is None:
+            return None
+
+        core = self._get_core_helpers()
+
+        refreshed = core["find_item_by_identity"](
+            self.items,
+            path=str(getattr(old_item, "path", "") or ""),
+            name=str(getattr(old_item, "name", "") or ""),
+            lineno=int(getattr(old_item, "lineno", 0) or 0),
+            kind=str(getattr(old_item, "kind", "") or ""),
+        )
+        if refreshed is not None:
+            return refreshed
+
+        old_path = str(getattr(old_item, "path", "") or "")
+        old_end_lineno = int(getattr(old_item, "end_lineno", 0) or 0)
+        old_signature = str(getattr(old_item, "signature", "") or "").strip()
+
+        for current in self.items:
+            if (
+                str(getattr(current, "path", "") or "") == old_path
+                and int(getattr(current, "end_lineno", 0) or 0) == old_end_lineno
+            ):
+                return current
+
+        for current in self.items:
+            if (
+                str(getattr(current, "path", "") or "") == old_path
+                and str(getattr(current, "signature", "") or "").strip() == old_signature
+            ):
+                return current
+
+        return None
+
+    # =========================================================
+    # GÜNCELLEME
+    # =========================================================
+    def update_selected_function(self, item, new_code: str) -> None:
+        try:
+            if self.current_session is None:
+                self.set_status_warning("Önce dosya seç.")
+                return
+
+            if item is None:
+                self.set_status_warning("Önce bir fonksiyon seç.")
+                return
+
+            if not str(new_code or "").strip():
+                self.set_status_warning("Yeni fonksiyon kodu boş olamaz.")
+                return
+
+            self._start_replace_decision_flow(item, new_code)
+
+        except Exception:
+            self.set_status_error("Güncelleme hazırlık hatası oluştu.")
+            print(traceback.format_exc())
+
+    # =========================================================
+    # GERİ YÜKLEME
+    # =========================================================
+    def geri_yukle_secili_belge(self) -> None:
+        belge_geri = self._get_belge_geri_yukleme()
+        belge_oturumu = self._get_belge_oturumu()
+
+        try:
+            if self.current_session is None:
+                self.set_status_warning("Önce dosya seç.")
+                return
+
+            backup_path = str(getattr(self.current_session, "last_backup_path", "") or "").strip()
+            if not backup_path:
+                self.set_status_warning("Geri yüklenecek yedek bulunamadı.")
+                return
+
+            geri_yuklenen = belge_geri["son_yedekten_geri_yukle"](self.current_session)
+
+            try:
+                self.current_file_path = str(
+                    belge_oturumu["calisma_dosyasi_yolu"](self.current_session) or ""
+                ).strip()
+            except Exception:
+                pass
+
+            self._clear_view_only()
+            self._reload_items_from_current_file()
+            self._reset_selection_only()
+
+            self.set_status_success(f"Geri yüklendi. Yedek: {geri_yuklenen}")
+
+        except belge_geri["BelgeGeriYuklemeServisiHatasi"] as exc:
+            self.set_status_error(str(exc))
+        except Exception:
+            self.set_status_error("Geri yükleme hatası oluştu.")
+            print(traceback.format_exc())
