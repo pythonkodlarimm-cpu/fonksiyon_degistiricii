@@ -21,9 +21,10 @@ GÜÇLENDİRME:
 - yedek çakışırsa zaman damgalı yedek üretme
 - dosya yazma öncesi daha güvenli kontroller
 - Android / APK ortamında daha güvenli yazma akışı
+- full replace davranışını bozmadan preserve_children modu eklendi
 
-SURUM: 2
-TARIH: 2026-03-14
+SURUM: 3
+TARIH: 2026-03-18
 IMZA: FY.
 """
 
@@ -51,6 +52,11 @@ _ALLOWED_KINDS = {
     "async_method",
     "nested",
     "async_nested",
+}
+
+_ALLOWED_REPLACE_MODES = {
+    "full",
+    "preserve_children",
 }
 
 
@@ -110,6 +116,16 @@ def _validate_target_item(target_item: FunctionItem) -> None:
         raise FunctionReplaceError(f"Geçersiz hedef bitiş satırı: {end_lineno}")
     if col_offset < 0:
         raise FunctionReplaceError(f"Geçersiz hedef girintisi: {col_offset}")
+
+
+def _validate_replace_mode(replace_mode: str) -> str:
+    mode = str(replace_mode or "full").strip().lower()
+    if mode not in _ALLOWED_REPLACE_MODES:
+        raise FunctionReplaceError(
+            f"Geçersiz replace_mode: {replace_mode!r}. "
+            f"Desteklenen modlar: {sorted(_ALLOWED_REPLACE_MODES)}"
+        )
+    return mode
 
 
 def _parse_single_function_module(code: str) -> ast.Module:
@@ -186,25 +202,6 @@ def _indent_code_block(code: str, indent_spaces: int) -> str:
             out.append(line)
 
     return "".join(out)
-
-
-def _prepare_replacement_code(target_item: FunctionItem, new_code: str) -> str:
-    _validate_target_item(target_item)
-
-    normalized = _normalize_text(new_code)
-    dedented = _dedent_user_code(normalized)
-
-    if not dedented.lstrip().startswith(("def ", "async def ")):
-        raise FunctionReplaceError("Yeni kod 'def' veya 'async def' ile başlamalıdır.")
-
-    module = _parse_single_function_module(dedented)
-    parsed_node = _get_single_function_node(module)
-
-    _validate_kind_compatibility(target_item, parsed_node)
-    _validate_name_compatibility(target_item, parsed_node)
-
-    indented = _indent_code_block(dedented, int(getattr(target_item, "col_offset", 0) or 0))
-    return _ensure_trailing_newline(indented)
 
 
 def _validate_line_range(source_code: str, target_item: FunctionItem) -> tuple[int, int, list[str]]:
@@ -313,10 +310,6 @@ def _find_nearby_matching_range(
     target_item: FunctionItem,
     window: int = 20,
 ) -> Optional[tuple[int, int]]:
-    """
-    Satır kaymışsa yakın çevrede aynı isimli ve aynı girintide fonksiyon başlığını arar.
-    Dönüş: (new_start_index, new_end_index_exclusive)
-    """
     lines = _normalize_text(source_code).splitlines(keepends=True)
     if not lines:
         return None
@@ -352,15 +345,6 @@ def _find_by_full_source_scan(
     source_code: str,
     target_item: FunctionItem,
 ) -> Optional[tuple[int, int]]:
-    """
-    Yakın pencere dışında da aynı path/name/kind ile eşleşen hedefi bulmaya çalışır.
-    Bu, dosya ciddi kaydıysa işe yarar.
-    """
-    try:
-        import ast
-    except Exception:
-        return None
-
     normalized = _normalize_text(source_code)
 
     try:
@@ -463,6 +447,119 @@ def _validate_target_header(source_code: str, target_item: FunctionItem) -> tupl
     )
 
 
+def _extract_direct_child_function_nodes(
+    fn_node: ast.FunctionDef | ast.AsyncFunctionDef,
+) -> list[ast.FunctionDef | ast.AsyncFunctionDef]:
+    children: list[ast.FunctionDef | ast.AsyncFunctionDef] = []
+
+    for stmt in fn_node.body:
+        if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            children.append(stmt)
+
+    return children
+
+
+def _has_direct_child_functions(
+    fn_node: ast.FunctionDef | ast.AsyncFunctionDef,
+) -> bool:
+    return len(_extract_direct_child_function_nodes(fn_node)) > 0
+
+
+def _unparse_node(node: ast.AST) -> str:
+    try:
+        return ast.unparse(node)
+    except Exception as exc:
+        raise FunctionReplaceError(f"AST düğümü metne çevrilemedi: {exc}") from exc
+
+
+def _merge_preserve_children_code(
+    target_item: FunctionItem,
+    old_block_text: str,
+    new_code: str,
+) -> str:
+    dedented_old = _dedent_user_code(old_block_text)
+    dedented_new = _dedent_user_code(new_code)
+
+    old_module = _parse_single_function_module(dedented_old)
+    new_module = _parse_single_function_module(dedented_new)
+
+    old_node = _get_single_function_node(old_module)
+    new_node = _get_single_function_node(new_module)
+
+    _validate_kind_compatibility(target_item, new_node)
+    _validate_name_compatibility(target_item, new_node)
+
+    old_children = _extract_direct_child_function_nodes(old_node)
+    if not old_children:
+        return dedented_new
+
+    new_has_children = _has_direct_child_functions(new_node)
+    if new_has_children:
+        # Kullanıcı yeni child function’ları zaten vermişse dokunma.
+        return dedented_new
+
+    merged_body = list(new_node.body)
+    for child in old_children:
+        merged_body.append(child)
+
+    if isinstance(new_node, ast.FunctionDef):
+        merged_node = ast.FunctionDef(
+            name=new_node.name,
+            args=new_node.args,
+            body=merged_body,
+            decorator_list=new_node.decorator_list,
+            returns=new_node.returns,
+            type_comment=new_node.type_comment,
+        )
+    else:
+        merged_node = ast.AsyncFunctionDef(
+            name=new_node.name,
+            args=new_node.args,
+            body=merged_body,
+            decorator_list=new_node.decorator_list,
+            returns=new_node.returns,
+            type_comment=new_node.type_comment,
+        )
+
+    ast.fix_missing_locations(merged_node)
+    merged_code = _unparse_node(merged_node)
+    return _ensure_trailing_newline(merged_code)
+
+
+def _prepare_replacement_code(
+    source_code: str,
+    target_item: FunctionItem,
+    new_code: str,
+    replace_mode: str = "full",
+) -> str:
+    _validate_target_item(target_item)
+    mode = _validate_replace_mode(replace_mode)
+
+    normalized = _normalize_text(new_code)
+    dedented = _dedent_user_code(normalized)
+
+    if not dedented.lstrip().startswith(("def ", "async def ")):
+        raise FunctionReplaceError("Yeni kod 'def' veya 'async def' ile başlamalıdır.")
+
+    old_block_text = _extract_text_by_item_range(source_code, target_item)
+
+    if mode == "preserve_children":
+        dedented = _merge_preserve_children_code(
+            target_item=target_item,
+            old_block_text=old_block_text,
+            new_code=dedented,
+        )
+
+    module = _parse_single_function_module(dedented)
+    parsed_node = _get_single_function_node(module)
+
+    _validate_kind_compatibility(target_item, parsed_node)
+    _validate_name_compatibility(target_item, parsed_node)
+
+    indented = _indent_code_block(dedented, int(getattr(target_item, "col_offset", 0) or 0))
+    return _ensure_trailing_newline(indented)
+
+
 def _replace_line_range(
     source_code: str,
     target_item: FunctionItem,
@@ -488,21 +585,30 @@ def update_function_in_code(
     source_code: str,
     target_item: FunctionItem,
     new_code: str,
+    *,
+    replace_mode: str = "full",
 ) -> str:
     """
     Kaynak koddaki seçilen fonksiyonu yeni kod ile değiştirir.
 
-    Özellikler:
-    - nested function desteği
-    - method desteği
-    - method içi nested function desteği
-    - async / normal function tür kontrolü
-    - hedef girintisine göre otomatik reindent
-    - güncelleme sonrası AST parse kontrolü
-    - hedef satırın gerçekten seçilen fonksiyona ait olduğunu doğrular
-    - satır kaymışsa yakın blok araması yapar
+    replace_mode:
+    - full:
+        Mevcut davranış. Seçilen fonksiyonun tüm gövdesi yeni kod ile değişir.
+        Alt nested function’lar yeni kodda yoksa kaldırılmış olur.
+    - preserve_children:
+        Seçilen fonksiyonun direkt child nested function’ları, yeni kodda child yoksa
+        eski bloktan korunarak yeni kodun sonuna eklenir.
+
+    Not:
+    - preserve_children deneysel ama kontrollü bir moddur.
+    - Varsayılan davranış full olarak bırakılmıştır; mevcut akış bozulmaz.
     """
-    prepared_code = _prepare_replacement_code(target_item, new_code)
+    prepared_code = _prepare_replacement_code(
+        source_code=source_code,
+        target_item=target_item,
+        new_code=new_code,
+        replace_mode=replace_mode,
+    )
     updated_code = _replace_line_range(source_code, target_item, prepared_code)
     _sanity_check_after_replace(updated_code)
     return updated_code
@@ -531,10 +637,6 @@ def _safe_remove_file(path_obj: Path) -> None:
 
 
 def _atomic_write_text(path_obj: Path, text: str, encoding: str = "utf-8") -> None:
-    """
-    Android / Linux tarafında yarım yazma riskini azaltmak için
-    geçici dosyaya yazıp ardından replace yapar.
-    """
     temp_path = _build_temp_write_path(path_obj)
 
     try:
@@ -554,8 +656,10 @@ def update_function_in_file(
     *,
     encoding: str = "utf-8",
     make_backup: bool = True,
+    replace_mode: str = "full",
 ) -> str:
     _validate_target_item(target_item)
+    _validate_replace_mode(replace_mode)
 
     raw_path = str(file_path or "").strip()
     if not raw_path:
@@ -579,7 +683,12 @@ def update_function_in_file(
     except OSError as exc:
         raise FunctionReplaceError(f"Dosya okunamadı: {path_obj}") from exc
 
-    updated_code = update_function_in_code(source_code, target_item, new_code)
+    updated_code = update_function_in_code(
+        source_code=source_code,
+        target_item=target_item,
+        new_code=new_code,
+        replace_mode=replace_mode,
+    )
 
     if make_backup:
         backup_path = _build_backup_path(path_obj)
