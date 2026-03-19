@@ -353,7 +353,7 @@ jobs:
 
       - name: Build log ve teşhis dosyalarını yükle
         if: ${{ always() }}
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v4
         with:
           name: build-diagnostics-${{ env.APP_VERSION }}
           path: |
@@ -366,7 +366,7 @@ jobs:
 
       - name: APK yükle
         if: ${{ success() }}
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v4
         with:
           name: fonksiyon-degistirici-apk-${{ env.APP_VERSION }}
           path: bin/*.apk
