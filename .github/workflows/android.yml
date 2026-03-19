@@ -134,6 +134,23 @@ jobs:
           python -m pip show buildozer || true
           python -m pip show cython || true
 
+      - name: Gradle bellek ayarı
+        shell: bash
+        run: |
+          echo "GRADLE_OPTS=-Xmx4g -Dfile.encoding=UTF-8" >> "$GITHUB_ENV"
+          echo "JAVA_TOOL_OPTIONS=-Xmx4g -Dfile.encoding=UTF-8" >> "$GITHUB_ENV"
+
+      - name: gradle.properties bellek ayarı
+        shell: bash
+        run: |
+          mkdir -p ~/.gradle
+          {
+            echo "org.gradle.jvmargs=-Xmx4g -Dfile.encoding=UTF-8"
+            echo "android.useAndroidX=true"
+            echo "android.suppressUnsupportedCompileSdk=35"
+          } >> ~/.gradle/gradle.properties
+          cat ~/.gradle/gradle.properties
+
       - name: buildozer.spec sürümünü otomatik artır
         shell: bash
         run: |
@@ -188,7 +205,7 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
-          env | sort | grep -E "ANDROID|JAVA_HOME|pythonLocation|RUNNER_OS|BUILD_NUMBER|APP_VERSION" > env_dump.txt
+          env | sort | grep -E "ANDROID|JAVA_HOME|pythonLocation|RUNNER_OS|BUILD_NUMBER|APP_VERSION|GRADLE_OPTS|JAVA_TOOL_OPTIONS" > env_dump.txt
           /usr/local/lib/android/sdk/tools/bin/sdkmanager --list > sdk_list.txt || true
 
       - name: buildozer.spec artifact tipini güncelle
@@ -352,6 +369,8 @@ jobs:
               "android api",
               "ndk",
               "gradle",
+              "outofmemoryerror",
+              "java.lang.outofmemoryerror",
               "no such file",
               "sdk path",
               "does not exist",
@@ -413,12 +432,14 @@ jobs:
                       "RUNNER_OS",
                       "BUILD_NUMBER",
                       "APP_VERSION",
+                      "GRADLE_OPTS",
+                      "JAVA_TOOL_OPTIONS",
                   ]):
                       secili.append(line)
               out.append("")
               out.append("## Ortam özeti")
               out.append("```text")
-              out.append("\n".join(secili[:140]))
+              out.append("\n".join(secili[:160]))
               out.append("```")
 
           Path("summary.md").write_text("\n".join(out), encoding="utf-8")
