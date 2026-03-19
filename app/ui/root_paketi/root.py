@@ -10,9 +10,10 @@ ROL:
 - Global overlay toast kullanımını opsiyonel tutar
 - Tarama sonrası kullanıcıyı fonksiyon listesine yönlendirir
 - Fonksiyon seçimi sonrası kullanıcıyı editör alanına yönlendirir
+- Android tarafında AdMob banner başlatma akışını güvenli biçimde tetikler
 
-SURUM: 39
-TARIH: 2026-03-18
+SURUM: 40
+TARIH: 2026-03-19
 IMZA: FY.
 """
 
@@ -25,6 +26,7 @@ from kivy.metrics import dp
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.floatlayout import FloatLayout
 from kivy.uix.scrollview import ScrollView
+from kivy.utils import platform
 
 from app.ui.root_paketi.root_dosya_akisi import RootDosyaAkisiMixin
 from app.ui.root_paketi.root_geri_yukleme_akisi import RootGeriYuklemeAkisiMixin
@@ -80,11 +82,13 @@ class RootWidget(
         self._replace_karar_servisi = None
 
         self._use_global_toast_overlay = False
+        self._banner_started = False
 
         try:
             self._build_ui()
             self.set_status_info("Hazır.", "onaylandi.png")
             Clock.schedule_once(self._post_build_refresh, 0.08)
+            Clock.schedule_once(self._try_start_banner, 0.35)
         except Exception:
             hata = traceback.format_exc()
             print(hata)
@@ -165,3 +169,19 @@ class RootWidget(
         self.main_root.add_widget(self.bottom_bar)
 
         self._setup_optional_toast_layer()
+
+    def _try_start_banner(self, *_args) -> None:
+        if self._banner_started:
+            return
+
+        if platform != "android":
+            return
+
+        try:
+            from app.services.admob_banner import show_banner
+
+            show_banner()
+            self._banner_started = True
+            print("[ROOT] AdMob banner başlatıldı.")
+        except Exception as exc:
+            print(f"[ROOT] AdMob banner başlatılamadı: {exc}")
