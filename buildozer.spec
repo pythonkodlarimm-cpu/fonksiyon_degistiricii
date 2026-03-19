@@ -14,7 +14,7 @@ version = 0.1.1
 
 requirements = python3,kivy,pygments,pyjnius
 
-orientation = all
+orientation = portrait,landscape
 fullscreen = 0
 
 icon.filename = app/assets/icons/app_icon.png
