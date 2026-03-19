@@ -23,7 +23,7 @@ presplash.filename = app/assets/icons/presplash.png
 android.permissions = READ_EXTERNAL_STORAGE,(name=android.permission.WRITE_EXTERNAL_STORAGE;maxSdkVersion=28),INTERNET,ACCESS_NETWORK_STATE
 
 android.api = 35
-android.minapi = 21
+android.minapi = 23
 
 android.sdk_path = /usr/local/lib/android/sdk
 android.ant_path = /usr/share/ant
@@ -32,6 +32,9 @@ android.accept_sdk_license = True
 android.enable_androidx = True
 android.allow_backup = True
 android.release_artifact = apk
+
+android.gradle_dependencies = com.google.android.gms:play-services-ads:22.6.0
+android.meta_data = com.google.android.gms.ads.APPLICATION_ID=ca-app-pub-5522917995813710~6900495663
 
 log_level = 2
 
