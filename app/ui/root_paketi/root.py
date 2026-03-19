@@ -11,8 +11,9 @@ ROL:
 - Tarama sonrası kullanıcıyı fonksiyon listesine yönlendirir
 - Fonksiyon seçimi sonrası kullanıcıyı editör alanına yönlendirir
 - Android tarafında AdMob banner başlatma akışını güvenli biçimde tetikler
+- Büyük ekranlı cihazlarda adaptif yerleşim uygular
 
-SURUM: 40
+SURUM: 41
 TARIH: 2026-03-19
 IMZA: FY.
 """
@@ -22,6 +23,7 @@ from __future__ import annotations
 import traceback
 
 from kivy.clock import Clock
+from kivy.core.window import Window
 from kivy.metrics import dp
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.floatlayout import FloatLayout
@@ -78,6 +80,8 @@ class RootWidget(
         self.toast_layer = None
         self.app_version_text = self._resolve_app_version()
 
+        self.content_wrap = None
+        self._responsive_trigger = None
         self._pending_update_payload = None
         self._replace_karar_servisi = None
 
@@ -89,6 +93,10 @@ class RootWidget(
             self.set_status_info("Hazır.", "onaylandi.png")
             Clock.schedule_once(self._post_build_refresh, 0.08)
             Clock.schedule_once(self._try_start_banner, 0.35)
+            Clock.schedule_once(self._apply_responsive_layout, 0.05)
+
+            self.bind(size=self._schedule_responsive_layout)
+            Window.bind(size=self._schedule_responsive_layout)
         except Exception:
             hata = traceback.format_exc()
             print(hata)
@@ -131,20 +139,26 @@ class RootWidget(
         self.dosya_secici.size_hint_y = None
         self.main_column.add_widget(self.dosya_secici)
 
+        self.content_wrap = BoxLayout(
+            orientation="vertical",
+            spacing=dp(10),
+            size_hint_y=None,
+        )
+        self.content_wrap.bind(minimum_height=self.content_wrap.setter("height"))
+
         self.function_list = FonksiyonListesi(
             on_select=self.select_item,
         )
-        self.function_list.size_hint_y = None
-        self.function_list.height = dp(760)
-        self.main_column.add_widget(self.function_list)
 
         self.editor = EditorPaneli(
             on_update=self.update_selected_function,
             on_restore=self.geri_yukle_secili_belge,
         )
-        self.editor.size_hint_y = None
-        self.editor.height = dp(900)
-        self.main_column.add_widget(self.editor)
+
+        self.content_wrap.add_widget(self.function_list)
+        self.content_wrap.add_widget(self.editor)
+
+        self.main_column.add_widget(self.content_wrap)
 
         self.scroll.add_widget(self.main_column)
         self.main_root.add_widget(self.scroll)
@@ -169,6 +183,89 @@ class RootWidget(
         self.main_root.add_widget(self.bottom_bar)
 
         self._setup_optional_toast_layer()
+
+    def _window_width(self) -> float:
+        try:
+            return float(Window.width or 0)
+        except Exception:
+            return 0.0
+
+    def _window_height(self) -> float:
+        try:
+            return float(Window.height or 0)
+        except Exception:
+            return 0.0
+
+    def _is_large_screen(self) -> bool:
+        try:
+            return self._window_width() >= dp(900)
+        except Exception:
+            return False
+
+    def _schedule_responsive_layout(self, *_args) -> None:
+        try:
+            if self._responsive_trigger is not None:
+                self._responsive_trigger.cancel()
+        except Exception:
+            pass
+
+        self._responsive_trigger = Clock.schedule_once(self._apply_responsive_layout, 0)
+
+    def _apply_responsive_layout(self, *_args) -> None:
+        if self.content_wrap is None or self.function_list is None or self.editor is None:
+            return
+
+        buyuk_ekran = self._is_large_screen()
+
+        try:
+            pencere_h = max(dp(720), self._window_height())
+        except Exception:
+            pencere_h = dp(720)
+
+        alt_bar_h = 0
+        try:
+            if self.bottom_bar is not None:
+                alt_bar_h = float(self.bottom_bar.height or 0)
+        except Exception:
+            alt_bar_h = 0
+
+        if buyuk_ekran:
+            ortak_yukseklik = max(
+                dp(760),
+                pencere_h - alt_bar_h - dp(170),
+            )
+
+            self.content_wrap.orientation = "horizontal"
+            self.content_wrap.spacing = dp(10)
+            self.content_wrap.size_hint_y = None
+            self.content_wrap.height = ortak_yukseklik
+
+            self.function_list.size_hint_x = 0.42
+            self.function_list.size_hint_y = 1
+            self.function_list.height = ortak_yukseklik
+
+            self.editor.size_hint_x = 0.58
+            self.editor.size_hint_y = 1
+            self.editor.height = ortak_yukseklik
+        else:
+            self.content_wrap.orientation = "vertical"
+            self.content_wrap.spacing = dp(10)
+            self.content_wrap.size_hint_y = None
+
+            self.function_list.size_hint_x = 1
+            self.function_list.size_hint_y = None
+            self.function_list.height = dp(760)
+
+            self.editor.size_hint_x = 1
+            self.editor.size_hint_y = None
+            self.editor.height = dp(900)
+
+            self.content_wrap.height = self.function_list.height + self.editor.height + dp(10)
+
+        try:
+            self.main_column.height = self.main_column.minimum_height
+        except Exception:
+            pass
 
     def _try_start_banner(self, *_args) -> None:
         if self._banner_started:
