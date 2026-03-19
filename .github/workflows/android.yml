@@ -1,4 +1,4 @@
-name: Android APK
+name: Android Build
 
 on:
   workflow_dispatch:
@@ -195,6 +195,8 @@ jobs:
           set -euxo pipefail
           rm -rf .buildozer
           rm -rf bin
+          rm -rf dist_output
+          mkdir -p dist_output
           rm -f build.log
           rm -f summary.md
           rm -f env_dump.txt
@@ -206,6 +208,30 @@ jobs:
           set -euxo pipefail
           env | sort > env_dump.txt
           /usr/local/lib/android/sdk/tools/bin/sdkmanager --list > sdk_list.txt || true
+
+      - name: buildozer.spec artifact tipini APK yap
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          spec_path = Path("buildozer.spec")
+          text = spec_path.read_text(encoding="utf-8")
+          pattern = r"(?m)^android\.release_artifact\s*=\s*.*$"
+          replacement = "android.release_artifact = apk"
+
+          if re.search(pattern, text):
+              text = re.sub(pattern, replacement, text, count=1)
+          else:
+              if not text.endswith("\n"):
+                  text += "\n"
+              text += replacement + "\n"
+
+          spec_path.write_text(text, encoding="utf-8")
+          print(replacement)
+          PY
 
       - name: APK derle
         shell: bash
@@ -219,26 +245,86 @@ jobs:
           test -f "${{ github.workspace }}/release.keystore"
           ls -lh "${{ github.workspace }}/release.keystore"
           buildozer android release 2>&1 | tee build.log
+          find bin -type f -name "*.apk" -print
+          APK_PATH="$(find bin -type f -name '*.apk' ! -name '*unsigned*' | head -n 1)"
+          test -n "$APK_PATH"
+          cp "$APK_PATH" "dist_output/$(basename "$APK_PATH")"
 
-      - name: İmzayı doğrula
+      - name: APK imzasını doğrula
         if: ${{ success() }}
         shell: bash
         run: |
           set -euxo pipefail
-          APK_PATH="$(find bin -name '*.apk' ! -name '*unsigned*' | head -n 1)"
+          APK_PATH="$(find dist_output -type f -name '*.apk' ! -name '*unsigned*' | head -n 1)"
           test -n "$APK_PATH"
           echo "Kontrol edilen APK: $APK_PATH"
           /usr/local/lib/android/sdk/build-tools/35.0.0/apksigner verify --verbose "$APK_PATH"
 
-      - name: 16 KB page size uyumluluğunu kontrol et
+      - name: APK 16 KB page size uyumluluğunu kontrol et
         if: ${{ success() }}
         shell: bash
         run: |
           set -euxo pipefail
-          APK_PATH="$(find bin -name '*.apk' ! -name '*unsigned*' | head -n 1)"
+          APK_PATH="$(find dist_output -type f -name '*.apk' ! -name '*unsigned*' | head -n 1)"
           test -n "$APK_PATH"
           echo "16 KB kontrol edilen APK: $APK_PATH"
           /usr/local/lib/android/sdk/build-tools/35.0.0/zipalign -c -P 16 -v 4 "$APK_PATH"
+
+      - name: AAB için temiz build hazırlığı
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rm -rf .buildozer
+          rm -rf bin
+
+      - name: buildozer.spec artifact tipini AAB yap
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          spec_path = Path("buildozer.spec")
+          text = spec_path.read_text(encoding="utf-8")
+          pattern = r"(?m)^android\.release_artifact\s*=\s*.*$"
+          replacement = "android.release_artifact = aab"
+
+          if re.search(pattern, text):
+              text = re.sub(pattern, replacement, text, count=1)
+          else:
+              if not text.endswith("\n"):
+                  text += "\n"
+              text += replacement + "\n"
+
+          spec_path.write_text(text, encoding="utf-8")
+          print(replacement)
+          PY
+
+      - name: AAB derle
+        shell: bash
+        env:
+          P4A_RELEASE_KEYSTORE: ${{ github.workspace }}/release.keystore
+          P4A_RELEASE_KEYSTORE_PASSWD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          P4A_RELEASE_KEYALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          P4A_RELEASE_KEYALIAS_PASSWD: ${{ secrets.ANDROID_KEY_ALIAS_PASSWORD }}
+        run: |
+          set -euxo pipefail
+          buildozer android release 2>&1 | tee -a build.log
+          find bin -type f -name "*.aab" -print
+          AAB_PATH="$(find bin -type f -name '*.aab' | head -n 1)"
+          test -n "$AAB_PATH"
+          cp "$AAB_PATH" "dist_output/$(basename "$AAB_PATH")"
+
+      - name: AAB dosyasını doğrula
+        if: ${{ success() }}
+        shell: bash
+        run: |
+          set -euxo pipefail
+          AAB_PATH="$(find dist_output -type f -name '*.aab' | head -n 1)"
+          test -n "$AAB_PATH"
+          echo "Kontrol edilen AAB: $AAB_PATH"
+          unzip -t "$AAB_PATH" >/dev/null
 
       - name: Hata özeti hazırla
         if: ${{ failure() }}
@@ -271,6 +357,8 @@ jobs:
               "android api",
               "ndk",
               "gradle",
+              "outofmemoryerror",
+              "java.lang.outofmemoryerror",
               "no such file",
               "sdk path",
               "does not exist",
@@ -283,6 +371,8 @@ jobs:
               "unsigned",
               "p4a_release",
               "validatesigningrelease",
+              "signreleasebundle",
+              "bundlerelease",
           )
 
           parcali = []
@@ -369,5 +459,13 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: fonksiyon-degistirici-apk-${{ env.APP_VERSION }}
-          path: bin/*.apk
+          path: dist_output/*.apk
+          if-no-files-found: warn
+
+      - name: AAB yükle
+        if: ${{ success() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: fonksiyon-degistirici-aab-${{ env.APP_VERSION }}
+          path: dist_output/*.aab
           if-no-files-found: warn
