@@ -56,7 +56,7 @@ jobs:
             libncurses5-dev libncursesw5-dev libtinfo6 cmake \
             libffi-dev libssl-dev build-essential ccache \
             libltdl-dev libsqlite3-dev sqlite3 bzip2 libbz2-dev \
-            libreadline-dev liblzma-dev gettext file wget
+            libreadline-dev liblzma-dev gettext file wget curl
 
       - name: Android SDK ortamını ayarla
         shell: bash
@@ -242,7 +242,7 @@ jobs:
           rm -rf adid_check
           rm -f build_apk.log build_aab.log build.log
           rm -f summary.md env_dump.txt sdk_list.txt ndk_p4a_summary.md
-          rm -f bundletool.jar bundletool_version.txt
+          rm -f bundletool.jar bundletool_version.txt bundletool_url.txt
           mkdir -p dist_artifacts
 
       - name: Ortam dump al
@@ -377,10 +377,31 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
-          wget -O bundletool.jar https://github.com/google/bundletool/releases/latest/download/bundletool-all.jar
-          test -f bundletool.jar
-          java -jar bundletool.jar version | tee bundletool_version.txt
+          rm -f bundletool.jar bundletool_version.txt bundletool_url.txt
+
+          curl -fsSL https://api.github.com/repos/google/bundletool/releases/latest -o bundletool_release.json
+          python - <<'PY' > bundletool_url.txt
+import json
+from pathlib import Path
+
+data = json.loads(Path("bundletool_release.json").read_text(encoding="utf-8"))
+for asset in data.get("assets", []):
+    name = asset.get("name", "")
+    if name.startswith("bundletool-all-") and name.endswith(".jar"):
+        print(asset["browser_download_url"])
+        break
+else:
+    raise SystemExit("bundletool jar asset bulunamadı")
+PY
+
+          BUNDLETOOL_URL="$(cat bundletool_url.txt)"
+          echo "bundletool url: $BUNDLETOOL_URL"
+
+          curl -fL "$BUNDLETOOL_URL" -o bundletool.jar
+          test -s bundletool.jar
           ls -lh bundletool.jar
+
+          java -jar bundletool.jar version | tee bundletool_version.txt
 
       - name: AAB içinden universal APK üret
         shell: bash
@@ -488,6 +509,10 @@ jobs:
 
           bolumler = []
 
+          bundletool_url = oku("bundletool_url.txt").strip()
+          if bundletool_url:
+              bolumler.append("## Bundletool URL\n\n```text\n" + bundletool_url + "\n```")
+
           bundletool_version = oku("bundletool_version.txt").strip()
           if bundletool_version:
               bolumler.append("## Bundletool sürümü\n\n```text\n" + bundletool_version + "\n```")
@@ -569,6 +594,10 @@ jobs:
               out.append("\n".join(lines[-300:]))
               out.append("```")
 
+          bundletool_url = oku("bundletool_url.txt")
+          if bundletool_url:
+              out.extend(["", "## Bundletool URL", "```text", bundletool_url[:4000], "```"])
+
           bundletool_version = oku("bundletool_version.txt")
           if bundletool_version:
               out.extend(["", "## Bundletool sürümü", "```text", bundletool_version[:4000], "```"])
@@ -628,6 +657,7 @@ jobs:
             .android/AndroidManifest.xml
             bundletool.jar
             bundletool_version.txt
+            bundletool_url.txt
             adid_check/**
             dist_artifacts/mapping/**
           if-no-files-found: warn
