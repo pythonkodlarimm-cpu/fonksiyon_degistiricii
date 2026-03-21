@@ -19,6 +19,8 @@ jobs:
       ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
       ANDROIDAPI: "35"
       ANDROIDMINAPI: "23"
+      FORCED_NDK_VERSION: "28.2.13676358"
+      FORCED_NDK_PATH: "/usr/local/lib/android/sdk/ndk/28.2.13676358"
 
     steps:
       - name: Depoyu al
@@ -73,6 +75,9 @@ jobs:
           sudo mkdir -p "$ANDROID_SDK_ROOT/tools/bin"
           sudo ln -sf "$SDKMANAGER_BIN" "$ANDROID_SDK_ROOT/tools/bin/sdkmanager"
 
+          echo "ANDROIDNDK=$FORCED_NDK_PATH" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_HOME=$FORCED_NDK_PATH" >> "$GITHUB_ENV"
+
       - name: Ortam kontrolü
         shell: bash
         run: |
@@ -85,6 +90,10 @@ jobs:
           echo "BUILD_NUMBER=$BUILD_NUMBER"
           echo "APP_VERSION=$APP_VERSION"
           echo "APP_VERSION_CODE=$APP_VERSION_CODE"
+          echo "FORCED_NDK_VERSION=$FORCED_NDK_VERSION"
+          echo "FORCED_NDK_PATH=$FORCED_NDK_PATH"
+          echo "ANDROIDNDK=$ANDROIDNDK"
+          echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME"
           which python
           python --version
           which java
@@ -102,6 +111,7 @@ jobs:
           "$ANDROID_SDK_ROOT/tools/bin/sdkmanager" "platform-tools"
           "$ANDROID_SDK_ROOT/tools/bin/sdkmanager" "platforms;android-35"
           "$ANDROID_SDK_ROOT/tools/bin/sdkmanager" "build-tools;35.0.0"
+          "$ANDROID_SDK_ROOT/tools/bin/sdkmanager" "ndk;28.2.13676358"
 
       - name: Kurulu Android paketlerini doğrula
         shell: bash
@@ -109,9 +119,11 @@ jobs:
           set -euxo pipefail
           "$ANDROID_SDK_ROOT/tools/bin/sdkmanager" --list | sed -n '/Installed packages:/,/Available Packages:/p' || true
           test -f "$ANDROID_SDK_ROOT/platforms/android-35/android.jar"
+          test -d "$FORCED_NDK_PATH"
           ls -la "$ANDROID_SDK_ROOT/platforms"
           ls -la "$ANDROID_SDK_ROOT/platforms/android-35"
           ls -la "$ANDROID_SDK_ROOT/build-tools/35.0.0"
+          ls -la "$FORCED_NDK_PATH"
 
       - name: Repo dosyalarını kontrol et
         shell: bash
@@ -264,8 +276,13 @@ jobs:
           P4A_RELEASE_KEYSTORE_PASSWD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           P4A_RELEASE_KEYALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           P4A_RELEASE_KEYALIAS_PASSWD: ${{ secrets.ANDROID_KEY_ALIAS_PASSWORD }}
+          ANDROIDNDK: /usr/local/lib/android/sdk/ndk/28.2.13676358
+          ANDROID_NDK_HOME: /usr/local/lib/android/sdk/ndk/28.2.13676358
         run: |
           set -euxo pipefail
+          echo "ANDROIDNDK=$ANDROIDNDK"
+          echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME"
+          ls -la "$ANDROIDNDK"
           buildozer android release 2>&1 | tee build_apk.log
 
       - name: APK dosyasını ayır
@@ -331,8 +348,13 @@ jobs:
           P4A_RELEASE_KEYSTORE_PASSWD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           P4A_RELEASE_KEYALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           P4A_RELEASE_KEYALIAS_PASSWD: ${{ secrets.ANDROID_KEY_ALIAS_PASSWORD }}
+          ANDROIDNDK: /usr/local/lib/android/sdk/ndk/28.2.13676358
+          ANDROID_NDK_HOME: /usr/local/lib/android/sdk/ndk/28.2.13676358
         run: |
           set -euxo pipefail
+          echo "ANDROIDNDK=$ANDROIDNDK"
+          echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME"
+          ls -la "$ANDROIDNDK"
           buildozer android release 2>&1 | tee build_aab.log
 
       - name: AAB dosyasını ayır
@@ -520,12 +542,16 @@ jobs:
                       "APP_VERSION_CODE",
                       "GRADLE_OPTS",
                       "JAVA_TOOL_OPTIONS",
+                      "ANDROIDNDK",
+                      "ANDROID_NDK_HOME",
+                      "FORCED_NDK_VERSION",
+                      "FORCED_NDK_PATH",
                   ]):
                       secili.append(line)
               out.append("")
               out.append("## Ortam özeti")
               out.append("```text")
-              out.append("\n".join(secili[:160]))
+              out.append("\n".join(secili[:200]))
               out.append("```")
 
           Path("summary.md").write_text("\n".join(out), encoding="utf-8")
