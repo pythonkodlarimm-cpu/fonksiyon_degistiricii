@@ -92,6 +92,10 @@ jobs:
           echo "$(dirname "$SDKMANAGER_BIN")" >> "$GITHUB_PATH"
           echo "$ANDROID_SDK_ROOT/platform-tools" >> "$GITHUB_PATH"
 
+          sudo mkdir -p "$ANDROID_SDK_ROOT/tools/bin"
+          sudo ln -sf "$SDKMANAGER_BIN" "$ANDROID_SDK_ROOT/tools/bin/sdkmanager"
+          test -x "$ANDROID_SDK_ROOT/tools/bin/sdkmanager"
+
           echo "ANDROIDNDK=$FORCED_NDK_PATH" >> "$GITHUB_ENV"
           echo "ANDROID_NDK_HOME=$FORCED_NDK_PATH" >> "$GITHUB_ENV"
           echo "ANDROIDSDK=$ANDROID_SDK_ROOT" >> "$GITHUB_ENV"
@@ -122,24 +126,24 @@ jobs:
           java -version
           which javac
           javac -version
-          which sdkmanager
-          sdkmanager --version
+          which sdkmanager || true
+          "$ANDROID_SDK_ROOT/tools/bin/sdkmanager" --version
 
       - name: Android platformlarını kur
         shell: bash
         run: |
           set -euxo pipefail
-          yes | sdkmanager --licenses > /dev/null || true
-          sdkmanager "platform-tools"
-          sdkmanager "platforms;android-35"
-          sdkmanager "build-tools;35.0.0"
-          sdkmanager "ndk;25.2.9519653"
+          yes | "$ANDROID_SDK_ROOT/tools/bin/sdkmanager" --licenses > /dev/null || true
+          "$ANDROID_SDK_ROOT/tools/bin/sdkmanager" "platform-tools"
+          "$ANDROID_SDK_ROOT/tools/bin/sdkmanager" "platforms;android-35"
+          "$ANDROID_SDK_ROOT/tools/bin/sdkmanager" "build-tools;35.0.0"
+          "$ANDROID_SDK_ROOT/tools/bin/sdkmanager" "ndk;25.2.9519653"
 
       - name: Kurulu Android paketlerini doğrula
         shell: bash
         run: |
           set -euxo pipefail
-          sdkmanager --list | sed -n '/Installed packages:/,/Available Packages:/p' || true
+          "$ANDROID_SDK_ROOT/tools/bin/sdkmanager" --list | sed -n '/Installed packages:/,/Available Packages:/p' || true
           test -f "$ANDROID_SDK_ROOT/platforms/android-35/android.jar"
           test -d "$FORCED_NDK_PATH"
           test -x "$ANDROID_SDK_ROOT/build-tools/35.0.0/apksigner"
@@ -280,7 +284,7 @@ jobs:
         run: |
           set -euxo pipefail
           env | sort > env_dump.txt
-          sdkmanager --list > sdk_list.txt || true
+          "$ANDROID_SDK_ROOT/tools/bin/sdkmanager" --list > sdk_list.txt || true
 
       - name: buildozer.spec artifact tipini güncelle (APK)
         shell: bash
