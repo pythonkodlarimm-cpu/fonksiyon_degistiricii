@@ -19,8 +19,8 @@ jobs:
       ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
       ANDROIDAPI: "35"
       ANDROIDMINAPI: "23"
-      FORCED_NDK_VERSION: "28.2.13676358"
-      FORCED_NDK_PATH: "/usr/local/lib/android/sdk/ndk/28.2.13676358"
+      FORCED_NDK_VERSION: "25.2.9519653"
+      FORCED_NDK_PATH: "/usr/local/lib/android/sdk/ndk/25.2.9519653"
 
     steps:
       - name: Depoyu al
@@ -111,7 +111,7 @@ jobs:
           "$ANDROID_SDK_ROOT/tools/bin/sdkmanager" "platform-tools"
           "$ANDROID_SDK_ROOT/tools/bin/sdkmanager" "platforms;android-35"
           "$ANDROID_SDK_ROOT/tools/bin/sdkmanager" "build-tools;35.0.0"
-          "$ANDROID_SDK_ROOT/tools/bin/sdkmanager" "ndk;28.2.13676358"
+          "$ANDROID_SDK_ROOT/tools/bin/sdkmanager" "ndk;25.2.9519653"
 
       - name: Kurulu Android paketlerini doğrula
         shell: bash
@@ -187,6 +187,7 @@ jobs:
 
           version_pattern = r"(?m)^version\s*=\s*.*$"
           numeric_pattern = r"(?m)^android\.numeric_version\s*=\s*.*$"
+          ndk_path_pattern = r"(?m)^android\.ndk_path\s*=\s*.*$"
 
           if re.search(version_pattern, text):
               text = re.sub(version_pattern, f"version = {yeni_surume}", text, count=1)
@@ -200,14 +201,20 @@ jobs:
                   text += "\n"
               text += f"\nandroid.numeric_version = {yeni_numeric}\n"
 
+          yeni_ndk_path = os.environ["FORCED_NDK_PATH"]
+          if re.search(ndk_path_pattern, text):
+              text = re.sub(ndk_path_pattern, f"android.ndk_path = {yeni_ndk_path}", text, count=1)
+
           spec_path.write_text(text, encoding="utf-8")
           print(f"Yeni sürüm yazıldı: {yeni_surume}")
           print(f"Yeni numeric version yazıldı: {yeni_numeric}")
+          print(f"NDK path yazıldı: {yeni_ndk_path}")
           PY
 
-          echo "---- Güncellenmiş buildozer.spec sürüm satırları ----"
+          echo "---- Güncellenmiş buildozer.spec satırları ----"
           grep -n "^version" buildozer.spec || true
           grep -n "^android.numeric_version" buildozer.spec || true
+          grep -n "^android.ndk_path" buildozer.spec || true
 
       - name: AD_ID manifest kontrolü
         shell: bash
@@ -232,10 +239,7 @@ jobs:
           rm -rf bin
           rm -rf dist_artifacts
           rm -f build_apk.log build_aab.log build.log
-          rm -f summary.md
-          rm -f env_dump.txt
-          rm -f sdk_list.txt
-          rm -f ndk_p4a_summary.md
+          rm -f summary.md env_dump.txt sdk_list.txt ndk_p4a_summary.md
           mkdir -p dist_artifacts
 
       - name: Ortam dump al
@@ -255,8 +259,8 @@ jobs:
 
           spec_path = Path("buildozer.spec")
           text = spec_path.read_text(encoding="utf-8")
-
           pattern = r"(?m)^android\.release_artifact\s*=\s*.*$"
+
           if re.search(pattern, text):
               text = re.sub(pattern, "android.release_artifact = apk", text, count=1)
           else:
@@ -269,38 +273,6 @@ jobs:
 
           grep -n "^android.release_artifact" buildozer.spec || true
 
-      - name: SDL patch uygula (NDK 28 fix)
-        shell: bash
-        env:
-          ANDROIDNDK: /usr/local/lib/android/sdk/ndk/28.2.13676358
-          ANDROID_NDK_HOME: /usr/local/lib/android/sdk/ndk/28.2.13676358
-        run: |
-          set -euxo pipefail
-
-          echo "Ön hazırlık için SDL kaynakları çıkarılıyor..."
-          buildozer android debug || true
-
-          echo "Bulunan SDL_androidsensor.c dosyaları:"
-          find .buildozer -name "SDL_androidsensor.c" -type f -print || true
-
-          PATCHED=0
-
-          while IFS= read -r file; do
-            [ -n "$file" ] || continue
-            echo "Patch uygulanıyor: $file"
-            sed -i 's/ALooper_pollAll/ALooper_pollOnce/g' "$file"
-            echo "Patch sonrası kontrol:"
-            grep -n "ALooper_pollOnce\|ALooper_pollAll" "$file" || true
-            PATCHED=1
-          done < <(find .buildozer -name "SDL_androidsensor.c" -type f)
-
-          if [ "$PATCHED" -ne 1 ]; then
-            echo "SDL_androidsensor.c bulunamadı, patch uygulanamadı!" >&2
-            exit 1
-          fi
-
-          echo "SDL patch adımı tamamlandı."
-
       - name: APK derle
         shell: bash
         env:
@@ -308,8 +280,8 @@ jobs:
           P4A_RELEASE_KEYSTORE_PASSWD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           P4A_RELEASE_KEYALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           P4A_RELEASE_KEYALIAS_PASSWD: ${{ secrets.ANDROID_KEY_ALIAS_PASSWORD }}
-          ANDROIDNDK: /usr/local/lib/android/sdk/ndk/28.2.13676358
-          ANDROID_NDK_HOME: /usr/local/lib/android/sdk/ndk/28.2.13676358
+          ANDROIDNDK: /usr/local/lib/android/sdk/ndk/25.2.9519653
+          ANDROID_NDK_HOME: /usr/local/lib/android/sdk/ndk/25.2.9519653
         run: |
           set -euxo pipefail
           echo "ANDROIDNDK=$ANDROIDNDK"
@@ -359,8 +331,8 @@ jobs:
 
           spec_path = Path("buildozer.spec")
           text = spec_path.read_text(encoding="utf-8")
-
           pattern = r"(?m)^android\.release_artifact\s*=\s*.*$"
+
           if re.search(pattern, text):
               text = re.sub(pattern, "android.release_artifact = aab", text, count=1)
           else:
@@ -380,8 +352,8 @@ jobs:
           P4A_RELEASE_KEYSTORE_PASSWD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           P4A_RELEASE_KEYALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           P4A_RELEASE_KEYALIAS_PASSWD: ${{ secrets.ANDROID_KEY_ALIAS_PASSWORD }}
-          ANDROIDNDK: /usr/local/lib/android/sdk/ndk/28.2.13676358
-          ANDROID_NDK_HOME: /usr/local/lib/android/sdk/ndk/28.2.13676358
+          ANDROIDNDK: /usr/local/lib/android/sdk/ndk/25.2.9519653
+          ANDROID_NDK_HOME: /usr/local/lib/android/sdk/ndk/25.2.9519653
         run: |
           set -euxo pipefail
           echo "ANDROIDNDK=$ANDROIDNDK"
@@ -430,16 +402,7 @@ jobs:
               return p.read_text(encoding="utf-8", errors="ignore")
 
           text = (oku("build_apk.log") + "\n" + oku("build_aab.log")).splitlines()
-
-          patterns = [
-              r"ndk",
-              r"python-for-android",
-              r"\bp4a\b",
-              r"sdl2",
-              r"python3",
-              r"libSDL2",
-              r"libpython",
-          ]
+          patterns = [r"ndk", r"python-for-android", r"\bp4a\b", r"sdl2", r"python3", r"libSDL2", r"libpython"]
 
           secilen = []
           for line in text:
@@ -456,9 +419,7 @@ jobs:
                   out.append(line)
 
           Path("ndk_p4a_summary.md").write_text(
-              "## NDK / p4a özeti\n\n```text\n" +
-              "\n".join(out[:250]) +
-              "\n```",
+              "## NDK / p4a özeti\n\n```text\n" + "\n".join(out[:250]) + "\n```",
               encoding="utf-8"
           )
           PY
@@ -489,31 +450,11 @@ jobs:
           lines = clean.splitlines()
 
           anahtarlar = (
-              "error",
-              "failed",
-              "exception",
-              "traceback",
-              "build failed",
-              "requested api target",
-              "sdkmanager",
-              "command failed",
-              "android api",
-              "ndk",
-              "gradle",
-              "no such file",
-              "sdk path",
-              "does not exist",
-              "keystore",
-              "apksigner",
-              "zipalign",
-              "bundle",
-              "aab",
-              "apk",
-              "alias",
-              "release",
-              "unsigned",
-              "p4a_release",
-              "validatesigningrelease",
+              "error", "failed", "exception", "traceback", "build failed",
+              "requested api target", "sdkmanager", "command failed", "android api",
+              "ndk", "gradle", "no such file", "sdk path", "does not exist",
+              "keystore", "apksigner", "zipalign", "bundle", "aab", "apk",
+              "alias", "release", "unsigned", "p4a_release", "validatesigningrelease",
           )
 
           parcali = []
@@ -526,9 +467,7 @@ jobs:
                   if parca and parca not in parcali:
                       parcali.append(parca)
 
-          out = []
-          out.append("## Android build hata özeti")
-          out.append("")
+          out = ["## Android build hata özeti", ""]
 
           if parcali:
               for idx, parca in enumerate(parcali[:12], 1):
@@ -545,46 +484,24 @@ jobs:
 
           spec = oku("buildozer.spec")
           if spec:
-              out.append("")
-              out.append("## buildozer.spec özeti")
-              out.append("```ini")
-              out.append("\n".join(spec.splitlines()[:260]))
-              out.append("```")
+              out.extend(["", "## buildozer.spec özeti", "```ini", "\n".join(spec.splitlines()[:260]), "```"])
 
           manifest = oku(".android/AndroidManifest.xml")
           if manifest:
-              out.append("")
-              out.append("## .android/AndroidManifest.xml")
-              out.append("```xml")
-              out.append("\n".join(manifest.splitlines()[:200]))
-              out.append("```")
+              out.extend(["", "## .android/AndroidManifest.xml", "```xml", "\n".join(manifest.splitlines()[:200]), "```"])
 
           env_dump = oku("env_dump.txt")
           if env_dump:
               secili = []
               for line in env_dump.splitlines():
                   if any(k in line for k in [
-                      "ANDROID",
-                      "JAVA_HOME",
-                      "pythonLocation",
-                      "GITHUB_WORKSPACE",
-                      "RUNNER_OS",
-                      "BUILD_NUMBER",
-                      "APP_VERSION",
-                      "APP_VERSION_CODE",
-                      "GRADLE_OPTS",
-                      "JAVA_TOOL_OPTIONS",
-                      "ANDROIDNDK",
-                      "ANDROID_NDK_HOME",
-                      "FORCED_NDK_VERSION",
-                      "FORCED_NDK_PATH",
+                      "ANDROID", "JAVA_HOME", "pythonLocation", "GITHUB_WORKSPACE",
+                      "RUNNER_OS", "BUILD_NUMBER", "APP_VERSION", "APP_VERSION_CODE",
+                      "GRADLE_OPTS", "JAVA_TOOL_OPTIONS", "ANDROIDNDK", "ANDROID_NDK_HOME",
+                      "FORCED_NDK_VERSION", "FORCED_NDK_PATH",
                   ]):
                       secili.append(line)
-              out.append("")
-              out.append("## Ortam özeti")
-              out.append("```text")
-              out.append("\n".join(secili[:200]))
-              out.append("```")
+              out.extend(["", "## Ortam özeti", "```text", "\n".join(secili[:200]), "```"])
 
           Path("summary.md").write_text("\n".join(out), encoding="utf-8")
           PY
