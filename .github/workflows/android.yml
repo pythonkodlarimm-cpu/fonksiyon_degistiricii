@@ -277,24 +277,29 @@ jobs:
         run: |
           set -euxo pipefail
 
-          SDL_FILE=$(find .buildozer -name "SDL_androidsensor.c" | head -n 1 || true)
+          echo "Ön hazırlık için SDL kaynakları çıkarılıyor..."
+          buildozer android debug || true
 
-          if [ -z "$SDL_FILE" ]; then
-            echo "SDL dosyası henüz yok, kaynakları çıkarmak için debug akışı tetikleniyor..."
-            buildozer android debug || true
-            SDL_FILE=$(find .buildozer -name "SDL_androidsensor.c" | head -n 1 || true)
-          fi
+          echo "Bulunan SDL_androidsensor.c dosyaları:"
+          find .buildozer -name "SDL_androidsensor.c" -type f -print || true
 
-          echo "Bulunan SDL dosyası: $SDL_FILE"
+          PATCHED=0
 
-          if [ -n "$SDL_FILE" ]; then
-            sed -i 's/ALooper_pollAll/ALooper_pollOnce/g' "$SDL_FILE"
-            grep -n "ALooper_pollOnce" "$SDL_FILE"
-            echo "SDL patch uygulandı"
-          else
-            echo "SDL dosyası bulunamadı!"
+          while IFS= read -r file; do
+            [ -n "$file" ] || continue
+            echo "Patch uygulanıyor: $file"
+            sed -i 's/ALooper_pollAll/ALooper_pollOnce/g' "$file"
+            echo "Patch sonrası kontrol:"
+            grep -n "ALooper_pollOnce\|ALooper_pollAll" "$file" || true
+            PATCHED=1
+          done < <(find .buildozer -name "SDL_androidsensor.c" -type f)
+
+          if [ "$PATCHED" -ne 1 ]; then
+            echo "SDL_androidsensor.c bulunamadı, patch uygulanamadı!" >&2
             exit 1
           fi
+
+          echo "SDL patch adımı tamamlandı."
 
       - name: APK derle
         shell: bash
