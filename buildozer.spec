@@ -21,27 +21,39 @@ fullscreen = 0
 icon.filename = app/assets/icons/app_icon.png
 presplash.filename = app/assets/icons/presplash.png
 
-android.permissions = READ_EXTERNAL_STORAGE,(name=android.permission.WRITE_EXTERNAL_STORAGE;maxSdkVersion=28),INTERNET,ACCESS_NETWORK_STATE,com.google.android.gms.permission.AD_ID
+# ✅ Play Store + AdMob + Network
+android.permissions = INTERNET,ACCESS_NETWORK_STATE,com.google.android.gms.permission.AD_ID,READ_EXTERNAL_STORAGE,(name=android.permission.WRITE_EXTERNAL_STORAGE;maxSdkVersion=28)
 
+# ✅ Android hedefleri (Play Store 2026 uyumlu)
 android.api = 35
 android.minapi = 23
 
+# ✅ SDK yolları
 android.sdk_path = /usr/local/lib/android/sdk
+android.ndk_path = /usr/local/lib/android/sdk/ndk/28.2.13676358
 android.ant_path = /usr/share/ant
 
-android.accept_sdk_license = True
+# ✅ AndroidX zorunlu
 android.enable_androidx = True
-android.allow_backup = True
 
-# android.yml bunu build sırasında apk / aab olarak değiştiriyor
+# ✅ Google Play güvenlik uyumları
+android.allow_backup = False
+android.accept_sdk_license = True
+
+# ✅ Build çıktısı android.yml kontrol edecek
 android.release_artifact = apk
 
+# ✅ AdMob
 android.gradle_dependencies = com.google.android.gms:play-services-ads:22.6.0
 android.meta_data = com.google.android.gms.ads.APPLICATION_ID=ca-app-pub-5522917995813710~6900495663
 
-# Özel manifest klasörünü build'e dahil et
+# ✅ Custom manifest
 android.add_src = .android
 
+# ✅ ARM destekleri (Play Store zorunlu)
+android.archs = arm64-v8a, armeabi-v7a
+
+# ✅ Log
 log_level = 2
 
 [buildozer]
