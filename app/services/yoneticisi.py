@@ -1,0 +1,152 @@
+# -*- coding: utf-8 -*-
+"""
+DOSYA: app/services/yoneticisi.py
+
+ROL:
+- Services katmanı için tek giriş noktası sağlamak
+- Alt servis yöneticilerini merkezileştirmek
+- Üst katmanın alt modül detaylarını bilmesini engellemek
+
+MİMARİ:
+- Lazy import kullanır
+- UI ve root katmanı doğrudan alt servis dosyalarına değil, bu yöneticiye bağlanır
+- Refactor sırasında import kırılmalarını azaltır
+- Android, belge, dosya, analiz, reklam, sistem ve yedek servislerini tek noktada toplar
+
+API UYUMLULUK:
+- Platform bağımsız çekirdek servislerle uyumludur
+- Android servisleri izole biçimde yönetir
+- Android API 35 hedefiyle uyumlu mimari için uygundur
+
+SURUM: 2
+TARIH: 2026-03-20
+IMZA: FY.
+"""
+
+from __future__ import annotations
+
+
+class ServicesYoneticisi:
+    # =========================================================
+    # ALT YONETICILER
+    # =========================================================
+    def _analiz_yoneticisi(self):
+        from app.services.analiz import AnalizYoneticisi
+        return AnalizYoneticisi()
+
+    def _android_yoneticisi(self):
+        from app.services.android import AndroidYoneticisi
+        return AndroidYoneticisi()
+
+    def _belge_yoneticisi(self):
+        from app.services.belge import BelgeYoneticisi
+        return BelgeYoneticisi()
+
+    def _dosya_yoneticisi(self):
+        from app.services.dosya import DosyaYoneticisi
+        return DosyaYoneticisi()
+
+    def _reklam_yoneticisi(self):
+        from app.services.reklam import ReklamYoneticisi
+        return ReklamYoneticisi()
+
+    def _sistem_yoneticisi(self):
+        from app.services.sistem import SistemYoneticisi
+        return SistemYoneticisi()
+
+    def _yedek_yoneticisi(self):
+        from app.services.yedek import YedekYoneticisi
+        return YedekYoneticisi()
+
+    # =========================================================
+    # ANALIZ
+    # =========================================================
+    def analiz_yoneticisi(self):
+        return self._analiz_yoneticisi()
+
+    def replace_karar_servisi_olustur(self, *args, **kwargs):
+        return self._analiz_yoneticisi().replace_karar_servisi_olustur(*args, **kwargs)
+
+    # =========================================================
+    # ANDROID
+    # =========================================================
+    def android_yoneticisi(self):
+        return self._android_yoneticisi()
+
+    def android_belge_servisi(self):
+        return self._android_yoneticisi().android_belge_servisi()
+
+    def android_ozel_izin_servisi(self):
+        return self._android_yoneticisi().android_ozel_izin_servisi()
+
+    def android_reklam_kopru_servisi(self):
+        return self._android_yoneticisi().android_reklam_kopru_servisi()
+
+    def android_uri_servisi(self):
+        return self._android_yoneticisi().android_uri_servisi()
+
+    # =========================================================
+    # BELGE
+    # =========================================================
+    def belge_yoneticisi(self):
+        return self._belge_yoneticisi()
+
+    def belge_ice_aktarma_servisi(self):
+        return self._belge_yoneticisi().belge_ice_aktarma_servisi()
+
+    def belge_kaydetme_servisi(self):
+        return self._belge_yoneticisi().belge_kaydetme_servisi()
+
+    def belge_oturumu_servisi(self):
+        return self._belge_yoneticisi().belge_oturumu_servisi()
+
+    # =========================================================
+    # DOSYA
+    # =========================================================
+    def dosya_yoneticisi(self):
+        return self._dosya_yoneticisi()
+
+    def dosya_okuma_servisi(self):
+        return self._dosya_yoneticisi().dosya_okuma_servisi()
+
+    def dosya_yazma_servisi(self):
+        return self._dosya_yoneticisi().dosya_yazma_servisi()
+
+    def gecici_dosya_servisi(self):
+        return self._dosya_yoneticisi().gecici_dosya_servisi()
+
+    # =========================================================
+    # REKLAM
+    # =========================================================
+    def reklam_yoneticisi(self):
+        return self._reklam_yoneticisi()
+
+    def banner_servisi(self):
+        return self._reklam_yoneticisi().banner_servisi()
+
+    # =========================================================
+    # SISTEM
+    # =========================================================
+    def sistem_yoneticisi(self):
+        return self._sistem_yoneticisi()
+
+    def gecici_bildirim_servisi(self):
+        return self._sistem_yoneticisi().gecici_bildirim_servisi()
+
+    def log_servisi(self):
+        return self._sistem_yoneticisi().log_servisi()
+
+    # =========================================================
+    # YEDEK
+    # =========================================================
+    def yedek_yoneticisi(self):
+        return self._yedek_yoneticisi()
+
+    def yedek_listeleme_servisi(self):
+        return self._yedek_yoneticisi().yedek_listeleme_servisi()
+
+    def yedek_silme_servisi(self):
+        return self._yedek_yoneticisi().yedek_silme_servisi()
+
+    def yedek_indirme_servisi(self):
+        return self._yedek_yoneticisi().yedek_indirme_servisi()
