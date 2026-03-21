@@ -54,8 +54,7 @@ jobs:
             libncurses5-dev libncursesw5-dev libtinfo6 cmake \
             libffi-dev libssl-dev build-essential ccache \
             libltdl-dev libsqlite3-dev sqlite3 bzip2 libbz2-dev \
-            libreadline-dev liblzma-dev gettext file \
-            apksigner zipalign
+            libreadline-dev liblzma-dev gettext file
 
       - name: Android SDK ortamını ayarla
         shell: bash
@@ -224,6 +223,7 @@ jobs:
           rm -f summary.md
           rm -f env_dump.txt
           rm -f sdk_list.txt
+          rm -f ndk_p4a_summary.md
           mkdir -p dist_artifacts
 
       - name: Ortam dump al
@@ -361,6 +361,60 @@ jobs:
           find .buildozer -type f \( -name "mapping.txt" -o -name "seeds.txt" -o -name "usage.txt" \) -print -exec cp {} dist_artifacts/mapping/ \; || true
           ls -la dist_artifacts/mapping || true
 
+      - name: NDK ve p4a özetini çıkar
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          def oku(dosya):
+              p = Path(dosya)
+              if not p.exists():
+                  return ""
+              return p.read_text(encoding="utf-8", errors="ignore")
+
+          text = (oku("build_apk.log") + "\n" + oku("build_aab.log")).splitlines()
+
+          patterns = [
+              r"ndk",
+              r"python-for-android",
+              r"\bp4a\b",
+              r"sdl2",
+              r"python3",
+              r"libSDL2",
+              r"libpython",
+          ]
+
+          secilen = []
+          for line in text:
+              low = line.lower()
+              if any(re.search(p, low) for p in patterns):
+                  secilen.append(line)
+
+          out = []
+          seen = set()
+          for line in secilen:
+              line = line.strip()
+              if line and line not in seen:
+                  seen.add(line)
+                  out.append(line)
+
+          Path("ndk_p4a_summary.md").write_text(
+              "## NDK / p4a özeti\n\n```text\n" +
+              "\n".join(out[:250]) +
+              "\n```",
+              encoding="utf-8"
+          )
+          PY
+
+      - name: NDK ve p4a özetini GitHub Summary'ye yaz
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          cat ndk_p4a_summary.md >> "$GITHUB_STEP_SUMMARY"
+
       - name: Hata özeti hazırla
         if: ${{ failure() }}
         shell: bash
@@ -492,6 +546,7 @@ jobs:
             build_apk.log
             build_aab.log
             summary.md
+            ndk_p4a_summary.md
             env_dump.txt
             sdk_list.txt
             buildozer.spec
