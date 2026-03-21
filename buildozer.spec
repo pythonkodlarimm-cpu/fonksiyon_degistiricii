@@ -33,7 +33,10 @@ android.enable_androidx = True
 android.allow_backup = True
 android.release_artifact = apk
 
-android.gradle_dependencies = com.google.android.gms:play-services-ads:22.6.0,androidx.fragment:fragment:1.8.9
+android.gradle_dependencies = com.google.android.gms:play-services-ads:22.6.0,androidx.fragment:fragment:1.6.2
+android.add_gradle_repositories = https://maven.google.com
+android.gradle_options = -Pandroid.enableJetifier=true -Pandroid.useAndroidX=true
+
 android.meta_data = com.google.android.gms.ads.APPLICATION_ID=ca-app-pub-5522917995813710~6900495663
 
 log_level = 2
