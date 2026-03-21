@@ -1,4 +1,4 @@
-name: Android APK
+name: Android Build (APK + AAB)
 
 on:
   workflow_dispatch:
@@ -15,18 +15,22 @@ jobs:
       BUILD_NUMBER: ${{ github.run_number }}
       APP_VERSION: 0.1.${{ github.run_number }}
       APP_VERSION_CODE: ${{ github.run_number }}
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+      ANDROIDAPI: "35"
+      ANDROIDMINAPI: "23"
 
     steps:
       - name: Depoyu al
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
 
       - name: Python kur
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v5
         with:
           python-version: "3.10"
 
       - name: Java kur
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
@@ -45,35 +49,30 @@ jobs:
           set -euxo pipefail
           sudo apt-get update
           sudo apt-get install -y \
-            git zip unzip openjdk-17-jdk python3-pip autoconf libtool pkg-config \
-            zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo5 cmake \
+            git zip unzip openjdk-17-jdk python3-pip python3-setuptools \
+            autoconf automake libtool pkg-config zlib1g-dev \
+            libncurses5-dev libncursesw5-dev libtinfo6 cmake \
             libffi-dev libssl-dev build-essential ccache \
             libltdl-dev libsqlite3-dev sqlite3 bzip2 libbz2-dev \
-            libreadline-dev liblzma-dev
+            libreadline-dev liblzma-dev gettext file \
+            apksigner zipalign
 
       - name: Android SDK ortamını ayarla
         shell: bash
         run: |
           set -euxo pipefail
 
-          echo "ANDROID_HOME=/usr/local/lib/android/sdk" >> "$GITHUB_ENV"
-          echo "ANDROID_SDK_ROOT=/usr/local/lib/android/sdk" >> "$GITHUB_ENV"
-          echo "ANDROIDAPI=35" >> "$GITHUB_ENV"
-          echo "ANDROIDMINAPI=23" >> "$GITHUB_ENV"
-
-          SDKMANAGER_BIN="$(find /usr/local/lib/android/sdk -type f -name sdkmanager | head -n 1 || true)"
+          SDKMANAGER_BIN="$(find "$ANDROID_SDK_ROOT" -type f -name sdkmanager | head -n 1 || true)"
           if [ -z "$SDKMANAGER_BIN" ]; then
             echo "sdkmanager bulunamadı" >&2
             exit 1
           fi
 
           echo "$(dirname "$SDKMANAGER_BIN")" >> "$GITHUB_PATH"
-          echo "/usr/local/lib/android/sdk/platform-tools" >> "$GITHUB_PATH"
+          echo "$ANDROID_SDK_ROOT/platform-tools" >> "$GITHUB_PATH"
 
-          sudo mkdir -p /usr/local/lib/android/sdk/tools/bin
-          sudo ln -sf "$SDKMANAGER_BIN" /usr/local/lib/android/sdk/tools/bin/sdkmanager
-
-          ls -la /usr/local/lib/android/sdk/tools/bin
+          sudo mkdir -p "$ANDROID_SDK_ROOT/tools/bin"
+          sudo ln -sf "$SDKMANAGER_BIN" "$ANDROID_SDK_ROOT/tools/bin/sdkmanager"
 
       - name: Ortam kontrolü
         shell: bash
@@ -95,26 +94,25 @@ jobs:
           javac -version
           which sdkmanager
           sdkmanager --version
-          /usr/local/lib/android/sdk/tools/bin/sdkmanager --version
 
       - name: Android platformlarını kur
         shell: bash
         run: |
           set -euxo pipefail
-          yes | /usr/local/lib/android/sdk/tools/bin/sdkmanager --licenses >/dev/null || true
-          /usr/local/lib/android/sdk/tools/bin/sdkmanager "platform-tools"
-          /usr/local/lib/android/sdk/tools/bin/sdkmanager "platforms;android-35"
-          /usr/local/lib/android/sdk/tools/bin/sdkmanager "build-tools;35.0.0"
+          yes | "$ANDROID_SDK_ROOT/tools/bin/sdkmanager" --licenses >/dev/null || true
+          "$ANDROID_SDK_ROOT/tools/bin/sdkmanager" "platform-tools"
+          "$ANDROID_SDK_ROOT/tools/bin/sdkmanager" "platforms;android-35"
+          "$ANDROID_SDK_ROOT/tools/bin/sdkmanager" "build-tools;35.0.0"
 
       - name: Kurulu Android paketlerini doğrula
         shell: bash
         run: |
           set -euxo pipefail
-          /usr/local/lib/android/sdk/tools/bin/sdkmanager --list | sed -n '/Installed packages:/,/Available Packages:/p' || true
-          test -f /usr/local/lib/android/sdk/platforms/android-35/android.jar
-          ls -la /usr/local/lib/android/sdk/platforms
-          ls -la /usr/local/lib/android/sdk/platforms/android-35
-          ls -la /usr/local/lib/android/sdk/build-tools || true
+          "$ANDROID_SDK_ROOT/tools/bin/sdkmanager" --list | sed -n '/Installed packages:/,/Available Packages:/p' || true
+          test -f "$ANDROID_SDK_ROOT/platforms/android-35/android.jar"
+          ls -la "$ANDROID_SDK_ROOT/platforms"
+          ls -la "$ANDROID_SDK_ROOT/platforms/android-35"
+          ls -la "$ANDROID_SDK_ROOT/build-tools/35.0.0"
 
       - name: Repo dosyalarını kontrol et
         shell: bash
@@ -124,10 +122,13 @@ jobs:
           test -f main.py
           test -f app/assets/icons/presplash.png
           test -f .android/AndroidManifest.xml
+
           echo "---- buildozer.spec ----"
           sed -n '1,260p' buildozer.spec
+
           echo "---- AndroidManifest ----"
           sed -n '1,200p' .android/AndroidManifest.xml
+
           echo "---- icons ----"
           ls -la app/assets/icons || true
 
@@ -136,7 +137,7 @@ jobs:
         run: |
           set -euxo pipefail
           python -m pip install --upgrade pip setuptools wheel
-          pip install buildozer cython==0.29.33
+          pip install "buildozer>=1.5.0" "cython==0.29.33"
           buildozer --version
           python -m pip show buildozer || true
           python -m pip show cython || true
@@ -197,6 +198,12 @@ jobs:
           grep -n "^version" buildozer.spec || true
           grep -n "^android.numeric_version" buildozer.spec || true
 
+      - name: AD_ID manifest kontrolü
+        shell: bash
+        run: |
+          set -euxo pipefail
+          grep -q 'com.google.android.gms.permission.AD_ID' .android/AndroidManifest.xml
+
       - name: Keystore dosyasını secret'tan oluştur
         shell: bash
         run: |
@@ -212,17 +219,43 @@ jobs:
           set -euxo pipefail
           rm -rf .buildozer
           rm -rf bin
-          rm -f build.log
+          rm -rf dist_artifacts
+          rm -f build_apk.log build_aab.log build.log
           rm -f summary.md
           rm -f env_dump.txt
           rm -f sdk_list.txt
+          mkdir -p dist_artifacts
 
       - name: Ortam dump al
         shell: bash
         run: |
           set -euxo pipefail
           env | sort > env_dump.txt
-          /usr/local/lib/android/sdk/tools/bin/sdkmanager --list > sdk_list.txt || true
+          "$ANDROID_SDK_ROOT/tools/bin/sdkmanager" --list > sdk_list.txt || true
+
+      - name: buildozer.spec artifact tipini güncelle (APK)
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          spec_path = Path("buildozer.spec")
+          text = spec_path.read_text(encoding="utf-8")
+
+          pattern = r"(?m)^android\.release_artifact\s*=\s*.*$"
+          if re.search(pattern, text):
+              text = re.sub(pattern, "android.release_artifact = apk", text, count=1)
+          else:
+              if not text.endswith("\n"):
+                  text += "\n"
+              text += "\nandroid.release_artifact = apk\n"
+
+          spec_path.write_text(text, encoding="utf-8")
+          PY
+
+          grep -n "^android.release_artifact" buildozer.spec || true
 
       - name: APK derle
         shell: bash
@@ -233,29 +266,100 @@ jobs:
           P4A_RELEASE_KEYALIAS_PASSWD: ${{ secrets.ANDROID_KEY_ALIAS_PASSWORD }}
         run: |
           set -euxo pipefail
-          test -f "${{ github.workspace }}/release.keystore"
-          ls -lh "${{ github.workspace }}/release.keystore"
-          buildozer android release 2>&1 | tee build.log
+          buildozer android release 2>&1 | tee build_apk.log
 
-      - name: İmzayı doğrula
-        if: ${{ success() }}
+      - name: APK dosyasını ayır
         shell: bash
         run: |
           set -euxo pipefail
-          APK_PATH="$(find bin -name '*.apk' ! -name '*unsigned*' | head -n 1)"
+          APK_PATH="$(find bin -type f -name '*.apk' ! -name '*unsigned*' | head -n 1)"
           test -n "$APK_PATH"
-          echo "Kontrol edilen APK: $APK_PATH"
-          /usr/local/lib/android/sdk/build-tools/35.0.0/apksigner verify --verbose "$APK_PATH"
+          cp "$APK_PATH" "dist_artifacts/fonksiyon-degistirici-${APP_VERSION}.apk"
+          ls -lh dist_artifacts
 
-      - name: 16 KB page size uyumluluğunu kontrol et
-        if: ${{ success() }}
+      - name: APK imzasını doğrula
         shell: bash
         run: |
           set -euxo pipefail
-          APK_PATH="$(find bin -name '*.apk' ! -name '*unsigned*' | head -n 1)"
-          test -n "$APK_PATH"
-          echo "16 KB kontrol edilen APK: $APK_PATH"
-          /usr/local/lib/android/sdk/build-tools/35.0.0/zipalign -c -P 16 -v 4 "$APK_PATH"
+          APK_PATH="dist_artifacts/fonksiyon-degistirici-${APP_VERSION}.apk"
+          test -f "$APK_PATH"
+          "$ANDROID_SDK_ROOT/build-tools/35.0.0/apksigner" verify --verbose "$APK_PATH"
+
+      - name: APK 16 KB page size uyumluluğunu kontrol et
+        shell: bash
+        run: |
+          set -euxo pipefail
+          APK_PATH="dist_artifacts/fonksiyon-degistirici-${APP_VERSION}.apk"
+          test -f "$APK_PATH"
+          "$ANDROID_SDK_ROOT/build-tools/35.0.0/zipalign" -c -P 16 -v 4 "$APK_PATH"
+
+      - name: AAB için bin klasörünü temizle
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rm -rf bin
+          mkdir -p bin
+
+      - name: buildozer.spec artifact tipini güncelle (AAB)
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          spec_path = Path("buildozer.spec")
+          text = spec_path.read_text(encoding="utf-8")
+
+          pattern = r"(?m)^android\.release_artifact\s*=\s*.*$"
+          if re.search(pattern, text):
+              text = re.sub(pattern, "android.release_artifact = aab", text, count=1)
+          else:
+              if not text.endswith("\n"):
+                  text += "\n"
+              text += "\nandroid.release_artifact = aab\n"
+
+          spec_path.write_text(text, encoding="utf-8")
+          PY
+
+          grep -n "^android.release_artifact" buildozer.spec || true
+
+      - name: AAB derle
+        shell: bash
+        env:
+          P4A_RELEASE_KEYSTORE: ${{ github.workspace }}/release.keystore
+          P4A_RELEASE_KEYSTORE_PASSWD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          P4A_RELEASE_KEYALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          P4A_RELEASE_KEYALIAS_PASSWD: ${{ secrets.ANDROID_KEY_ALIAS_PASSWORD }}
+        run: |
+          set -euxo pipefail
+          buildozer android release 2>&1 | tee build_aab.log
+
+      - name: AAB dosyasını ayır
+        shell: bash
+        run: |
+          set -euxo pipefail
+          AAB_PATH="$(find bin -type f -name '*.aab' | head -n 1)"
+          test -n "$AAB_PATH"
+          cp "$AAB_PATH" "dist_artifacts/fonksiyon-degistirici-${APP_VERSION}.aab"
+          ls -lh dist_artifacts
+
+      - name: AAB imzasını doğrula
+        shell: bash
+        run: |
+          set -euxo pipefail
+          AAB_PATH="dist_artifacts/fonksiyon-degistirici-${APP_VERSION}.aab"
+          test -f "$AAB_PATH"
+          jarsigner -verify -verbose -certs "$AAB_PATH"
+
+      - name: Mapping dosyasını topla (varsa)
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p dist_artifacts/mapping
+          find .buildozer -type f \( -name "mapping.txt" -o -name "seeds.txt" -o -name "usage.txt" \) -print -exec cp {} dist_artifacts/mapping/ \; || true
+          ls -la dist_artifacts/mapping || true
 
       - name: Hata özeti hazırla
         if: ${{ failure() }}
@@ -271,7 +375,7 @@ jobs:
                   return ""
               return p.read_text(encoding="utf-8", errors="ignore")
 
-          log_text = oku("build.log")
+          log_text = (oku("build_apk.log") + "\n\n" + oku("build_aab.log")).strip()
           ansi_re = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
           clean = ansi_re.sub("", log_text)
           lines = clean.splitlines()
@@ -294,7 +398,9 @@ jobs:
               "keystore",
               "apksigner",
               "zipalign",
-              "16 kb",
+              "bundle",
+              "aab",
+              "apk",
               "alias",
               "release",
               "unsigned",
@@ -317,16 +423,16 @@ jobs:
           out.append("")
 
           if parcali:
-              for idx, parca in enumerate(parcali[:10], 1):
+              for idx, parca in enumerate(parcali[:12], 1):
                   out.append(f"### Kritik parça {idx}")
                   out.append("```text")
                   out.append(parca)
                   out.append("```")
                   out.append("")
           else:
-              out.append("### Son 250 satır")
+              out.append("### Son 300 satır")
               out.append("```text")
-              out.append("\n".join(lines[-250:]))
+              out.append("\n".join(lines[-300:]))
               out.append("```")
 
           spec = oku("buildozer.spec")
@@ -383,12 +489,14 @@ jobs:
         with:
           name: build-diagnostics-${{ env.APP_VERSION }}
           path: |
-            build.log
+            build_apk.log
+            build_aab.log
             summary.md
             env_dump.txt
             sdk_list.txt
             buildozer.spec
             .android/AndroidManifest.xml
+            dist_artifacts/mapping/**
           if-no-files-found: warn
 
       - name: APK yükle
@@ -396,5 +504,13 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: fonksiyon-degistirici-apk-${{ env.APP_VERSION }}
-          path: bin/*.apk
-          if-no-files-found: warn
+          path: dist_artifacts/*.apk
+          if-no-files-found: error
+
+      - name: AAB yükle
+        if: ${{ success() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: fonksiyon-degistirici-aab-${{ env.APP_VERSION }}
+          path: dist_artifacts/*.aab
+          if-no-files-found: error
