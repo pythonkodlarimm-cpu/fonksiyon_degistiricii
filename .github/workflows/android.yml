@@ -7,6 +7,10 @@ on:
       - main
       - master
 
+concurrency:
+  group: android-build-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-22.04
@@ -15,12 +19,20 @@ jobs:
       BUILD_NUMBER: ${{ github.run_number }}
       APP_VERSION: 0.1.${{ github.run_number }}
       APP_VERSION_CODE: ${{ github.run_number }}
+
       ANDROID_HOME: /usr/local/lib/android/sdk
       ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+      ANDROIDSDK: /usr/local/lib/android/sdk
+      ANDROIDSDKROOT: /usr/local/lib/android/sdk
+
       ANDROIDAPI: "35"
       ANDROIDMINAPI: "23"
+
       FORCED_NDK_VERSION: "25.2.9519653"
       FORCED_NDK_PATH: "/usr/local/lib/android/sdk/ndk/25.2.9519653"
+
+      PYTHONUTF8: "1"
+      BUNDLETOOL_VERSION: "1.18.2"
 
     steps:
       - name: Depoyu al
@@ -56,27 +68,34 @@ jobs:
             libncurses5-dev libncursesw5-dev libtinfo6 cmake \
             libffi-dev libssl-dev build-essential ccache \
             libltdl-dev libsqlite3-dev sqlite3 bzip2 libbz2-dev \
-            libreadline-dev liblzma-dev gettext file wget curl
+            libreadline-dev liblzma-dev gettext file wget curl \
+            libc6-dev libstdc++6
 
       - name: Android SDK ortamını ayarla
         shell: bash
         run: |
           set -euxo pipefail
 
-          SDKMANAGER_BIN="$(find "$ANDROID_SDK_ROOT" -type f -name sdkmanager | head -n 1 || true)"
-          if [ -z "$SDKMANAGER_BIN" ]; then
-            echo "sdkmanager bulunamadı" >&2
+          SDKMANAGER_BIN=""
+          if [ -x "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" ]; then
+            SDKMANAGER_BIN="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          else
+            SDKMANAGER_BIN="$(find "$ANDROID_SDK_ROOT" -type f -name sdkmanager | sort | head -n 1 || true)"
+          fi
+
+          if [ -z "$SDKMANAGER_BIN" ] || [ ! -x "$SDKMANAGER_BIN" ]; then
+            echo "HATA: sdkmanager bulunamadı." >&2
             exit 1
           fi
 
+          echo "SDKMANAGER_BIN=$SDKMANAGER_BIN" >> "$GITHUB_ENV"
           echo "$(dirname "$SDKMANAGER_BIN")" >> "$GITHUB_PATH"
           echo "$ANDROID_SDK_ROOT/platform-tools" >> "$GITHUB_PATH"
 
-          sudo mkdir -p "$ANDROID_SDK_ROOT/tools/bin"
-          sudo ln -sf "$SDKMANAGER_BIN" "$ANDROID_SDK_ROOT/tools/bin/sdkmanager"
-
           echo "ANDROIDNDK=$FORCED_NDK_PATH" >> "$GITHUB_ENV"
           echo "ANDROID_NDK_HOME=$FORCED_NDK_PATH" >> "$GITHUB_ENV"
+          echo "ANDROIDSDK=$ANDROID_SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROIDSDKROOT=$ANDROID_SDK_ROOT" >> "$GITHUB_ENV"
 
       - name: Ortam kontrolü
         shell: bash
@@ -85,6 +104,8 @@ jobs:
           echo "PWD=$(pwd)"
           echo "ANDROID_HOME=$ANDROID_HOME"
           echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+          echo "ANDROIDSDK=$ANDROIDSDK"
+          echo "ANDROIDSDKROOT=$ANDROIDSDKROOT"
           echo "ANDROIDAPI=$ANDROIDAPI"
           echo "ANDROIDMINAPI=$ANDROIDMINAPI"
           echo "BUILD_NUMBER=$BUILD_NUMBER"
@@ -94,6 +115,7 @@ jobs:
           echo "FORCED_NDK_PATH=$FORCED_NDK_PATH"
           echo "ANDROIDNDK=$ANDROIDNDK"
           echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME"
+          echo "SDKMANAGER_BIN=$SDKMANAGER_BIN"
           which python
           python --version
           which java
@@ -107,19 +129,22 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
-          yes | "$ANDROID_SDK_ROOT/tools/bin/sdkmanager" --licenses >/dev/null || true
-          "$ANDROID_SDK_ROOT/tools/bin/sdkmanager" "platform-tools"
-          "$ANDROID_SDK_ROOT/tools/bin/sdkmanager" "platforms;android-35"
-          "$ANDROID_SDK_ROOT/tools/bin/sdkmanager" "build-tools;35.0.0"
-          "$ANDROID_SDK_ROOT/tools/bin/sdkmanager" "ndk;25.2.9519653"
+          yes | sdkmanager --licenses > /dev/null || true
+          sdkmanager "platform-tools"
+          sdkmanager "platforms;android-35"
+          sdkmanager "build-tools;35.0.0"
+          sdkmanager "ndk;25.2.9519653"
 
       - name: Kurulu Android paketlerini doğrula
         shell: bash
         run: |
           set -euxo pipefail
-          "$ANDROID_SDK_ROOT/tools/bin/sdkmanager" --list | sed -n '/Installed packages:/,/Available Packages:/p' || true
+          sdkmanager --list | sed -n '/Installed packages:/,/Available Packages:/p' || true
           test -f "$ANDROID_SDK_ROOT/platforms/android-35/android.jar"
           test -d "$FORCED_NDK_PATH"
+          test -x "$ANDROID_SDK_ROOT/build-tools/35.0.0/apksigner"
+          test -x "$ANDROID_SDK_ROOT/build-tools/35.0.0/zipalign"
+          test -x "$ANDROID_SDK_ROOT/build-tools/35.0.0/aapt"
           ls -la "$ANDROID_SDK_ROOT/platforms"
           ls -la "$ANDROID_SDK_ROOT/platforms/android-35"
           ls -la "$ANDROID_SDK_ROOT/build-tools/35.0.0"
@@ -138,7 +163,7 @@ jobs:
           sed -n '1,260p' buildozer.spec
 
           echo "---- AndroidManifest ----"
-          sed -n '1,200p' .android/AndroidManifest.xml
+          sed -n '1,220p' .android/AndroidManifest.xml
 
           echo "---- icons ----"
           ls -la app/assets/icons || true
@@ -148,10 +173,10 @@ jobs:
         run: |
           set -euxo pipefail
           python -m pip install --upgrade pip setuptools wheel
-          pip install "buildozer>=1.5.0" "cython==0.29.33"
+          python -m pip install "buildozer>=1.5.0" "Cython<3" packaging
           buildozer --version
           python -m pip show buildozer || true
-          python -m pip show cython || true
+          python -m pip show Cython || true
 
       - name: Gradle bellek ayarı
         shell: bash
@@ -162,6 +187,7 @@ jobs:
       - name: gradle.properties bellek ayarı
         shell: bash
         run: |
+          set -euxo pipefail
           mkdir -p ~/.gradle
           {
             echo "org.gradle.jvmargs=-Xmx4g -Dfile.encoding=UTF-8"
@@ -170,7 +196,7 @@ jobs:
           } > ~/.gradle/gradle.properties
           cat ~/.gradle/gradle.properties
 
-      - name: buildozer.spec sürümünü otomatik artır
+      - name: buildozer.spec sürüm ve android ayarlarını güncelle
         shell: bash
         run: |
           set -euxo pipefail
@@ -184,36 +210,40 @@ jobs:
 
           yeni_surume = os.environ["APP_VERSION"]
           yeni_numeric = os.environ["APP_VERSION_CODE"]
+          yeni_api = os.environ["ANDROIDAPI"]
+          yeni_minapi = os.environ["ANDROIDMINAPI"]
+          yeni_ndk_path = os.environ["FORCED_NDK_PATH"]
 
-          version_pattern = r"(?m)^version\s*=\s*.*$"
-          numeric_pattern = r"(?m)^android\.numeric_version\s*=\s*.*$"
-          ndk_path_pattern = r"(?m)^android\.ndk_path\s*=\s*.*$"
-
-          if re.search(version_pattern, text):
-              text = re.sub(version_pattern, f"version = {yeni_surume}", text, count=1)
-          else:
-              raise SystemExit("buildozer.spec içinde 'version =' satırı bulunamadı.")
-
-          if re.search(numeric_pattern, text):
-              text = re.sub(numeric_pattern, f"android.numeric_version = {yeni_numeric}", text, count=1)
-          else:
+          def set_or_add(text, key, value):
+              pattern = rf"(?m)^{re.escape(key)}\s*=\s*.*$"
+              repl = f"{key} = {value}"
+              if re.search(pattern, text):
+                  return re.sub(pattern, repl, text, count=1)
               if not text.endswith("\n"):
                   text += "\n"
-              text += f"\nandroid.numeric_version = {yeni_numeric}\n"
+              return text + repl + "\n"
 
-          yeni_ndk_path = os.environ["FORCED_NDK_PATH"]
-          if re.search(ndk_path_pattern, text):
-              text = re.sub(ndk_path_pattern, f"android.ndk_path = {yeni_ndk_path}", text, count=1)
+          text = set_or_add(text, "version", yeni_surume)
+          text = set_or_add(text, "android.numeric_version", yeni_numeric)
+          text = set_or_add(text, "android.api", yeni_api)
+          text = set_or_add(text, "android.minapi", yeni_minapi)
+          text = set_or_add(text, "android.ndk_path", yeni_ndk_path)
 
           spec_path.write_text(text, encoding="utf-8")
-          print(f"Yeni sürüm yazıldı: {yeni_surume}")
-          print(f"Yeni numeric version yazıldı: {yeni_numeric}")
-          print(f"NDK path yazıldı: {yeni_ndk_path}")
+
+          print("buildozer.spec güncellendi:")
+          print(f"  version = {yeni_surume}")
+          print(f"  android.numeric_version = {yeni_numeric}")
+          print(f"  android.api = {yeni_api}")
+          print(f"  android.minapi = {yeni_minapi}")
+          print(f"  android.ndk_path = {yeni_ndk_path}")
           PY
 
           echo "---- Güncellenmiş buildozer.spec satırları ----"
           grep -n "^version" buildozer.spec || true
           grep -n "^android.numeric_version" buildozer.spec || true
+          grep -n "^android.api" buildozer.spec || true
+          grep -n "^android.minapi" buildozer.spec || true
           grep -n "^android.ndk_path" buildozer.spec || true
 
       - name: Kaynak manifestte AD_ID kontrolü
@@ -242,7 +272,7 @@ jobs:
           rm -rf adid_check
           rm -f build_apk.log build_aab.log build.log
           rm -f summary.md env_dump.txt sdk_list.txt ndk_p4a_summary.md
-          rm -f bundletool.jar bundletool_version.txt bundletool_url.txt
+          rm -f bundletool.jar bundletool_version.txt
           mkdir -p dist_artifacts
 
       - name: Ortam dump al
@@ -250,7 +280,7 @@ jobs:
         run: |
           set -euxo pipefail
           env | sort > env_dump.txt
-          "$ANDROID_SDK_ROOT/tools/bin/sdkmanager" --list > sdk_list.txt || true
+          sdkmanager --list > sdk_list.txt || true
 
       - name: buildozer.spec artifact tipini güncelle (APK)
         shell: bash
@@ -285,10 +315,14 @@ jobs:
           P4A_RELEASE_KEYALIAS_PASSWD: ${{ secrets.ANDROID_KEY_ALIAS_PASSWORD }}
           ANDROIDNDK: /usr/local/lib/android/sdk/ndk/25.2.9519653
           ANDROID_NDK_HOME: /usr/local/lib/android/sdk/ndk/25.2.9519653
+          ANDROIDSDK: /usr/local/lib/android/sdk
+          ANDROIDSDKROOT: /usr/local/lib/android/sdk
         run: |
           set -euxo pipefail
           echo "ANDROIDNDK=$ANDROIDNDK"
           echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME"
+          echo "ANDROIDSDK=$ANDROIDSDK"
+          echo "ANDROIDSDKROOT=$ANDROIDSDKROOT"
           ls -la "$ANDROIDNDK"
           buildozer android release 2>&1 | tee build_apk.log
 
@@ -296,7 +330,7 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
-          APK_PATH="$(find bin -type f -name '*.apk' ! -name '*unsigned*' | head -n 1)"
+          APK_PATH="$(find bin -type f -name '*.apk' ! -name '*unsigned*' | sort | head -n 1)"
           test -n "$APK_PATH"
           cp "$APK_PATH" "dist_artifacts/fonksiyon-degistirici-${APP_VERSION}.apk"
           ls -lh dist_artifacts
@@ -341,10 +375,11 @@ jobs:
 
           grep -n "^android.release_artifact" buildozer.spec || true
 
-      - name: AAB için bin klasörünü temizle
+      - name: AAB öncesi temiz derleme ortamı hazırla
         shell: bash
         run: |
           set -euxo pipefail
+          buildozer android clean || true
           rm -rf bin
           mkdir -p bin
 
@@ -357,10 +392,14 @@ jobs:
           P4A_RELEASE_KEYALIAS_PASSWD: ${{ secrets.ANDROID_KEY_ALIAS_PASSWORD }}
           ANDROIDNDK: /usr/local/lib/android/sdk/ndk/25.2.9519653
           ANDROID_NDK_HOME: /usr/local/lib/android/sdk/ndk/25.2.9519653
+          ANDROIDSDK: /usr/local/lib/android/sdk
+          ANDROIDSDKROOT: /usr/local/lib/android/sdk
         run: |
           set -euxo pipefail
           echo "ANDROIDNDK=$ANDROIDNDK"
           echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME"
+          echo "ANDROIDSDK=$ANDROIDSDK"
+          echo "ANDROIDSDKROOT=$ANDROIDSDKROOT"
           ls -la "$ANDROIDNDK"
           buildozer android release 2>&1 | tee build_aab.log
 
@@ -368,7 +407,7 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
-          AAB_PATH="$(find bin -type f -name '*.aab' | head -n 1)"
+          AAB_PATH="$(find bin -type f -name '*.aab' | sort | head -n 1)"
           test -n "$AAB_PATH"
           cp "$AAB_PATH" "dist_artifacts/fonksiyon-degistirici-${APP_VERSION}.aab"
           ls -lh dist_artifacts
@@ -377,30 +416,10 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
-          rm -f bundletool.jar bundletool_version.txt bundletool_url.txt
-
-          curl -fsSL https://api.github.com/repos/google/bundletool/releases/latest -o bundletool_release.json
-          python - <<'PY' > bundletool_url.txt
-import json
-from pathlib import Path
-
-data = json.loads(Path("bundletool_release.json").read_text(encoding="utf-8"))
-for asset in data.get("assets", []):
-    name = asset.get("name", "")
-    if name.startswith("bundletool-all-") and name.endswith(".jar"):
-        print(asset["browser_download_url"])
-        break
-else:
-    raise SystemExit("bundletool jar asset bulunamadı")
-PY
-
-          BUNDLETOOL_URL="$(cat bundletool_url.txt)"
-          echo "bundletool url: $BUNDLETOOL_URL"
-
+          BUNDLETOOL_URL="https://github.com/google/bundletool/releases/download/${BUNDLETOOL_VERSION}/bundletool-all-${BUNDLETOOL_VERSION}.jar"
           curl -fL "$BUNDLETOOL_URL" -o bundletool.jar
           test -s bundletool.jar
           ls -lh bundletool.jar
-
           java -jar bundletool.jar version | tee bundletool_version.txt
 
       - name: AAB içinden universal APK üret
@@ -485,7 +504,7 @@ PY
               r"\bp4a\b",
               r"sdl2",
               r"python3",
-              r"libSDL2",
+              r"libsdl2",
               r"libpython",
               r"bundletool",
               r"ad_id",
@@ -508,10 +527,6 @@ PY
                   temiz.append(line)
 
           bolumler = []
-
-          bundletool_url = oku("bundletool_url.txt").strip()
-          if bundletool_url:
-              bolumler.append("## Bundletool URL\n\n```text\n" + bundletool_url + "\n```")
 
           bundletool_version = oku("bundletool_version.txt").strip()
           if bundletool_version:
@@ -594,10 +609,6 @@ PY
               out.append("\n".join(lines[-300:]))
               out.append("```")
 
-          bundletool_url = oku("bundletool_url.txt")
-          if bundletool_url:
-              out.extend(["", "## Bundletool URL", "```text", bundletool_url[:4000], "```"])
-
           bundletool_version = oku("bundletool_version.txt")
           if bundletool_version:
               out.extend(["", "## Bundletool sürümü", "```text", bundletool_version[:4000], "```"])
@@ -617,7 +628,7 @@ PY
 
           manifest = oku(".android/AndroidManifest.xml")
           if manifest:
-              out.extend(["", "## .android/AndroidManifest.xml", "```xml", "\n".join(manifest.splitlines()[:200]), "```"])
+              out.extend(["", "## .android/AndroidManifest.xml", "```xml", "\n".join(manifest.splitlines()[:220]), "```"])
 
           env_dump = oku("env_dump.txt")
           if env_dump:
@@ -627,10 +638,10 @@ PY
                       "ANDROID", "JAVA_HOME", "pythonLocation", "GITHUB_WORKSPACE",
                       "RUNNER_OS", "BUILD_NUMBER", "APP_VERSION", "APP_VERSION_CODE",
                       "GRADLE_OPTS", "JAVA_TOOL_OPTIONS", "ANDROIDNDK", "ANDROID_NDK_HOME",
-                      "FORCED_NDK_VERSION", "FORCED_NDK_PATH",
+                      "FORCED_NDK_VERSION", "FORCED_NDK_PATH", "SDKMANAGER_BIN"
                   ]):
                       secili.append(line)
-              out.extend(["", "## Ortam özeti", "```text", "\n".join(secili[:200]), "```"])
+              out.extend(["", "## Ortam özeti", "```text", "\n".join(secili[:250]), "```"])
 
           Path("summary.md").write_text("\n".join(out), encoding="utf-8")
           PY
@@ -657,7 +668,6 @@ PY
             .android/AndroidManifest.xml
             bundletool.jar
             bundletool_version.txt
-            bundletool_url.txt
             adid_check/**
             dist_artifacts/mapping/**
           if-no-files-found: warn
