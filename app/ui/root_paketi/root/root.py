@@ -6,11 +6,10 @@ ROL:
 - Uygulamanın ana root widget'ı
 - Dosya seçme, fonksiyon tarama, seçim, güncelleme ve geri yükleme akışını yönetir
 - UI katmanını çekirdek servislerle bağlar
-- Fonksiyon güncellemede replace stratejisi karar akışını yönetir
 - Global overlay toast kullanımını opsiyonel tutar
 - Tarama sonrası kullanıcıyı fonksiyon listesine yönlendirir
 - Fonksiyon seçimi sonrası kullanıcıyı editör alanına yönlendirir
-- Android tarafında AdMob banner başlatma akışını güvenli biçimde tetikler
+- Android tarafında AdMob banner başlatma akışını güvenli ve gecikmeli biçimde tetikler
 - Tarama loading / success overlay entegrasyonunu yönetir
 
 MİMARİ:
@@ -21,7 +20,7 @@ MİMARİ:
 - Root mixin yapısı alt paket klasörlerinden yüklenir
 - Eski alias dosyaları kullanılmaz
 
-SURUM: 45
+SURUM: 46
 TARIH: 2026-03-20
 IMZA: FY.
 """
@@ -92,9 +91,6 @@ class RootWidget(
         self.tarama_loading_overlay = None
         self.tarama_success_overlay = None
         self.app_version_text = self._resolve_app_version()
-
-        self._pending_update_payload = None
-        self._replace_karar_servisi = None
 
         self._use_global_toast_overlay = False
         self._banner_started = False
@@ -234,9 +230,12 @@ class RootWidget(
             return
 
         try:
-            reklam_yoneticisi = self._get_reklam_yoneticisi()
-            reklam_yoneticisi.banner_goster()
+            from app.services.reklam.banner_reklam_servisi import (
+                banner_goster_gecikmeli,
+            )
+
+            banner_goster_gecikmeli(delay=1.5)
             self._banner_started = True
-            print("[ROOT] AdMob banner başlatıldı.")
+            print("[ROOT] AdMob banner gecikmeli başlatıldı.")
         except Exception as exc:
             print(f"[ROOT] AdMob banner başlatılamadı: {exc}")
