@@ -11,6 +11,7 @@ source.exclude_dirs = .git,.github,__pycache__,bin,.buildozer,venv,.venv,tests
 source.exclude_patterns = *.bak,*.tmp,*.swp,.DS_Store
 
 version = 0.1.1
+android.numeric_version = 1
 
 requirements = python3,kivy,pygments,pyjnius
 
@@ -31,11 +32,14 @@ android.ant_path = /usr/share/ant
 android.accept_sdk_license = True
 android.enable_androidx = True
 android.allow_backup = True
+
+# android.yml bunu build sırasında apk / aab olarak değiştiriyor
 android.release_artifact = apk
 
 android.gradle_dependencies = com.google.android.gms:play-services-ads:22.6.0
 android.meta_data = com.google.android.gms.ads.APPLICATION_ID=ca-app-pub-5522917995813710~6900495663
 
+# Özel manifest klasörünü build'e dahil et
 android.add_src = .android
 
 log_level = 2
