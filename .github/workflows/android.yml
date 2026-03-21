@@ -56,7 +56,7 @@ jobs:
             libncurses5-dev libncursesw5-dev libtinfo6 cmake \
             libffi-dev libssl-dev build-essential ccache \
             libltdl-dev libsqlite3-dev sqlite3 bzip2 libbz2-dev \
-            libreadline-dev liblzma-dev gettext file
+            libreadline-dev liblzma-dev gettext file wget
 
       - name: Android SDK ortamını ayarla
         shell: bash
@@ -216,11 +216,12 @@ jobs:
           grep -n "^android.numeric_version" buildozer.spec || true
           grep -n "^android.ndk_path" buildozer.spec || true
 
-      - name: AD_ID manifest kontrolü
+      - name: Kaynak manifestte AD_ID kontrolü
         shell: bash
         run: |
           set -euxo pipefail
           grep -q 'com.google.android.gms.permission.AD_ID' .android/AndroidManifest.xml
+          echo "Kaynak manifest içinde AD_ID bulundu."
 
       - name: Keystore dosyasını secret'tan oluştur
         shell: bash
@@ -238,8 +239,10 @@ jobs:
           rm -rf .buildozer
           rm -rf bin
           rm -rf dist_artifacts
+          rm -rf adid_check
           rm -f build_apk.log build_aab.log build.log
           rm -f summary.md env_dump.txt sdk_list.txt ndk_p4a_summary.md
+          rm -f bundletool.jar bundletool_version.txt
           mkdir -p dist_artifacts
 
       - name: Ortam dump al
@@ -314,13 +317,6 @@ jobs:
           test -f "$APK_PATH"
           "$ANDROID_SDK_ROOT/build-tools/35.0.0/zipalign" -c -P 16 -v 4 "$APK_PATH"
 
-      - name: AAB için bin klasörünü temizle
-        shell: bash
-        run: |
-          set -euxo pipefail
-          rm -rf bin
-          mkdir -p bin
-
       - name: buildozer.spec artifact tipini güncelle (AAB)
         shell: bash
         run: |
@@ -344,6 +340,13 @@ jobs:
           PY
 
           grep -n "^android.release_artifact" buildozer.spec || true
+
+      - name: AAB için bin klasörünü temizle
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rm -rf bin
+          mkdir -p bin
 
       - name: AAB derle
         shell: bash
@@ -370,6 +373,58 @@ jobs:
           cp "$AAB_PATH" "dist_artifacts/fonksiyon-degistirici-${APP_VERSION}.aab"
           ls -lh dist_artifacts
 
+      - name: bundletool indir
+        shell: bash
+        run: |
+          set -euxo pipefail
+          wget -O bundletool.jar https://github.com/google/bundletool/releases/latest/download/bundletool-all.jar
+          test -f bundletool.jar
+          java -jar bundletool.jar version | tee bundletool_version.txt
+          ls -lh bundletool.jar
+
+      - name: AAB içinden universal APK üret
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p adid_check
+          java -jar bundletool.jar build-apks \
+            --bundle="dist_artifacts/fonksiyon-degistirici-${APP_VERSION}.aab" \
+            --output="adid_check/app.apks" \
+            --mode=universal \
+            --ks="${{ github.workspace }}/release.keystore" \
+            --ks-pass=pass:${{ secrets.ANDROID_KEYSTORE_PASSWORD }} \
+            --ks-key-alias="${{ secrets.ANDROID_KEY_ALIAS }}" \
+            --key-pass=pass:${{ secrets.ANDROID_KEY_ALIAS_PASSWORD }} \
+            --overwrite
+
+          test -f adid_check/app.apks
+          unzip -q adid_check/app.apks -d adid_check/apks
+          test -f adid_check/apks/universal.apk
+
+      - name: Universal APK içinde AD_ID iznini ayrıntılı kontrol et
+        shell: bash
+        run: |
+          set -euxo pipefail
+          APK_PATH="adid_check/apks/universal.apk"
+          test -f "$APK_PATH"
+
+          echo "---- aapt dump permissions ----"
+          "$ANDROID_SDK_ROOT/build-tools/35.0.0/aapt" dump permissions "$APK_PATH" | tee adid_check/aapt_permissions.txt
+
+          echo "---- AndroidManifest xmltree ----"
+          "$ANDROID_SDK_ROOT/build-tools/35.0.0/aapt" dump xmltree "$APK_PATH" AndroidManifest.xml | tee adid_check/manifest_tree.txt || true
+
+          echo "---- AD_ID grep ----"
+          grep -n "com.google.android.gms.permission.AD_ID" adid_check/aapt_permissions.txt || true
+          grep -n "com.google.android.gms.permission.AD_ID" adid_check/manifest_tree.txt || true
+
+          if grep -q "com.google.android.gms.permission.AD_ID" adid_check/aapt_permissions.txt; then
+            echo "AD_ID izni universal APK içinde bulundu." | tee adid_check/adid_result.txt
+          else
+            echo "HATA: AD_ID izni universal APK içinde bulunamadı." | tee adid_check/adid_result.txt
+            exit 1
+          fi
+
       - name: AAB imzasını doğrula
         shell: bash
         run: |
@@ -387,7 +442,7 @@ jobs:
           find .buildozer -type f \( -name "mapping.txt" -o -name "seeds.txt" -o -name "usage.txt" \) -print -exec cp {} dist_artifacts/mapping/ \; || true
           ls -la dist_artifacts/mapping || true
 
-      - name: NDK ve p4a özetini çıkar
+      - name: NDK / p4a / bundletool / AD_ID özetini çıkar
         if: ${{ always() }}
         shell: bash
         run: |
@@ -401,27 +456,58 @@ jobs:
                   return ""
               return p.read_text(encoding="utf-8", errors="ignore")
 
-          text = (oku("build_apk.log") + "\n" + oku("build_aab.log")).splitlines()
-          patterns = [r"ndk", r"python-for-android", r"\bp4a\b", r"sdl2", r"python3", r"libSDL2", r"libpython"]
+          log_text = (oku("build_apk.log") + "\n" + oku("build_aab.log")).splitlines()
+
+          patterns = [
+              r"ndk",
+              r"python-for-android",
+              r"\bp4a\b",
+              r"sdl2",
+              r"python3",
+              r"libSDL2",
+              r"libpython",
+              r"bundletool",
+              r"ad_id",
+              r"advertising",
+              r"permission",
+              r"manifest",
+          ]
 
           secilen = []
-          for line in text:
+          for line in log_text:
               low = line.lower()
               if any(re.search(p, low) for p in patterns):
-                  secilen.append(line)
+                  secilen.append(line.strip())
 
-          out = []
-          seen = set()
+          temiz = []
+          gorulen = set()
           for line in secilen:
-              line = line.strip()
-              if line and line not in seen:
-                  seen.add(line)
-                  out.append(line)
+              if line and line not in gorulen:
+                  gorulen.add(line)
+                  temiz.append(line)
 
-          Path("ndk_p4a_summary.md").write_text(
-              "## NDK / p4a özeti\n\n```text\n" + "\n".join(out[:250]) + "\n```",
-              encoding="utf-8"
-          )
+          bolumler = []
+
+          bundletool_version = oku("bundletool_version.txt").strip()
+          if bundletool_version:
+              bolumler.append("## Bundletool sürümü\n\n```text\n" + bundletool_version + "\n```")
+
+          adid_result = oku("adid_check/adid_result.txt").strip()
+          if adid_result:
+              bolumler.append("## AD_ID sonucu\n\n```text\n" + adid_result + "\n```")
+
+          aapt_permissions = oku("adid_check/aapt_permissions.txt")
+          if aapt_permissions:
+              bolumler.append("## aapt permissions\n\n```text\n" + aapt_permissions[:12000] + "\n```")
+
+          manifest_tree = oku("adid_check/manifest_tree.txt")
+          if manifest_tree:
+              bolumler.append("## manifest xmltree\n\n```text\n" + manifest_tree[:12000] + "\n```")
+
+          log_ozet = "## NDK / p4a / bundletool log özeti\n\n```text\n" + "\n".join(temiz[:350]) + "\n```"
+          bolumler.insert(0, log_ozet)
+
+          Path("ndk_p4a_summary.md").write_text("\n\n".join(bolumler), encoding="utf-8")
           PY
 
       - name: NDK ve p4a özetini GitHub Summary'ye yaz
@@ -455,6 +541,7 @@ jobs:
               "ndk", "gradle", "no such file", "sdk path", "does not exist",
               "keystore", "apksigner", "zipalign", "bundle", "aab", "apk",
               "alias", "release", "unsigned", "p4a_release", "validatesigningrelease",
+              "ad_id", "advertising", "bundletool"
           )
 
           parcali = []
@@ -470,7 +557,7 @@ jobs:
           out = ["## Android build hata özeti", ""]
 
           if parcali:
-              for idx, parca in enumerate(parcali[:12], 1):
+              for idx, parca in enumerate(parcali[:15], 1):
                   out.append(f"### Kritik parça {idx}")
                   out.append("```text")
                   out.append(parca)
@@ -481,6 +568,19 @@ jobs:
               out.append("```text")
               out.append("\n".join(lines[-300:]))
               out.append("```")
+
+          bundletool_version = oku("bundletool_version.txt")
+          if bundletool_version:
+              out.extend(["", "## Bundletool sürümü", "```text", bundletool_version[:4000], "```"])
+
+          for extra in [
+              "adid_check/adid_result.txt",
+              "adid_check/aapt_permissions.txt",
+              "adid_check/manifest_tree.txt",
+          ]:
+              txt = oku(extra)
+              if txt:
+                  out.extend(["", f"## {extra}", "```text", txt[:12000], "```"])
 
           spec = oku("buildozer.spec")
           if spec:
@@ -526,6 +626,9 @@ jobs:
             sdk_list.txt
             buildozer.spec
             .android/AndroidManifest.xml
+            bundletool.jar
+            bundletool_version.txt
+            adid_check/**
             dist_artifacts/mapping/**
           if-no-files-found: warn
 
