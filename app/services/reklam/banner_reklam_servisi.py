@@ -1,34 +1,8 @@
 # -*- coding: utf-8 -*-
-"""
-DOSYA: app/services/reklam/banner_reklam_servisi.py
-
-ROL:
-- Android üzerinde en altta sabit banner reklam göstermek
-- AdMob banner akışını UI'den bağımsız servis katmanında tutmak
-- Aynı banner'ın tekrar tekrar eklenmesini önlemek
-- Başarısız olduğunda uygulama akışını bozmadan sessiz şekilde loglamak
-
-MİMARİ:
-- Sadece Android platformunda çalışır
-- Native Android view oluşturur
-- Kivy widget ağacına yük bindirmez
-- Tekil banner mantığı kullanır
-- UI thread üzerinde güvenli çalışır
-- Reklam ayarlarını lazy import ile alır
-
-API UYUMLULUK:
-- API 35 uyumlu
-- AndroidX uyumlu
-- AdMob SDK ile uyumlu
-
-SURUM: 2
-TARIH: 2026-03-19
-IMZA: FY.
-"""
-
 from __future__ import annotations
 
 from kivy.utils import platform
+from kivy.clock import Clock
 
 try:
     from android.runnable import run_on_ui_thread
@@ -59,12 +33,25 @@ def banner_gosteriliyor_mu() -> bool:
     return bool(_BANNER_DURUMU.get("gosteriliyor", False))
 
 
+# =========================================================
+# 🚀 PERFORMANS: GECİKMELİ BAŞLAT (donmayı çözer)
+# =========================================================
+def banner_goster_gecikmeli(delay: float = 1.5) -> None:
+    """
+    Uygulama açıldıktan sonra banner'ı gecikmeli başlatır.
+    Donma problemini çözer.
+    """
+    Clock.schedule_once(lambda dt: banner_goster(), delay)
+
+
+# =========================================================
+# 🎯 ANA BANNER GÖSTERME
+# =========================================================
 @run_on_ui_thread
 def banner_goster() -> bool:
     global _BANNER_VIEW
 
     if platform != "android":
-        _debug("android dışı platformda banner gösterilmedi")
         return False
 
     if _BANNER_VIEW is not None and banner_gosteriliyor_mu():
@@ -85,20 +72,35 @@ def banner_goster() -> bool:
 
         activity = PythonActivity.mActivity
         if activity is None:
-            _debug("activity alınamadı")
+            _debug("activity yok")
             return False
 
-        MobileAds.initialize(activity)
+        # 🔥 ÖNEMLİ: initialize sadece 1 kere çalışmalı
+        if not _BANNER_DURUMU["baslatildi"]:
+            MobileAds.initialize(activity)
 
         adview = AdView(activity)
+
+        # TEST için:
+        # adview.setAdUnitId("ca-app-pub-3940256099942544/6300978111")
+
         adview.setAdUnitId(aktif_banner_reklam_id())
         adview.setAdSize(AdSize.BANNER)
 
+        # =========================================================
+        # 🎯 KONUM: ÜST + SAĞ + MENU BOŞLUKLU
+        # =========================================================
         params = FrameLayoutParams(
-            FrameLayoutParams.MATCH_PARENT,
+            FrameLayoutParams.WRAP_CONTENT,
             FrameLayoutParams.WRAP_CONTENT,
         )
-        params.gravity = Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL
+
+        # TOP RIGHT
+        params.gravity = Gravity.TOP | Gravity.RIGHT
+
+        # 🔥 SOL BOŞLUK: menu.png için alan bırak
+        # (cihaza göre oynatabilirsin)
+        params.setMargins(120, 40, 20, 0)
 
         activity.addContentView(adview, params)
 
@@ -109,17 +111,20 @@ def banner_goster() -> bool:
         _BANNER_DURUMU["baslatildi"] = True
         _BANNER_DURUMU["gosteriliyor"] = True
 
-        _debug("banner başarıyla gösterildi")
+        _debug("banner gösterildi")
         return True
 
     except Exception as exc:
         _BANNER_VIEW = None
         _BANNER_DURUMU["baslatildi"] = False
         _BANNER_DURUMU["gosteriliyor"] = False
-        _debug(f"banner gösterme hatası: {exc}")
+        _debug(f"hata: {exc}")
         return False
 
 
+# =========================================================
+# 🧹 BANNER GİZLE
+# =========================================================
 @run_on_ui_thread
 def banner_gizle() -> bool:
     global _BANNER_VIEW
@@ -128,7 +133,6 @@ def banner_gizle() -> bool:
         return False
 
     if _BANNER_VIEW is None:
-        _BANNER_DURUMU["gosteriliyor"] = False
         return False
 
     try:
@@ -143,9 +147,10 @@ def banner_gizle() -> bool:
 
         _BANNER_VIEW = None
         _BANNER_DURUMU["gosteriliyor"] = False
+
         _debug("banner gizlendi")
         return True
 
     except Exception as exc:
-        _debug(f"banner gizleme hatası: {exc}")
+        _debug(f"gizleme hatası: {exc}")
         return False
