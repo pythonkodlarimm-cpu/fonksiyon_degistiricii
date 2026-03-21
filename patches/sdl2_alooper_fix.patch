@@ -1,0 +1,8 @@
+--- a/src/sensor/android/SDL_androidsensor.c
++++ b/src/sensor/android/SDL_androidsensor.c
+@@ -161,7 +161,7 @@
+-    if (ALooper_pollAll(0, NULL, &events, (void **)&source) == LOOPER_ID_USER) {
++    if (ALooper_pollOnce(0, NULL, &events, (void **)&source) == LOOPER_ID_USER) {
+         if (source) {
+             source->process(state->android.app, source);
+         }
