@@ -17,11 +17,12 @@ MİMARİ:
 - Tüm dosya erişim paneli tum_dosya_erisim_paketi/yoneticisi.py üzerinden oluşturulur
 - Fonksiyon listesi fonksiyon_listesi_paketi/yoneticisi.py üzerinden oluşturulur
 - Tarama göstergesi tarama_gostergesi_paketi/yoneticisi.py üzerinden oluşturulur
+- Reklam işlemleri sadece ServicesYoneticisi üzerinden yürütülür
 - Root mixin yapısı alt paket klasörlerinden yüklenir
 - Eski alias dosyaları kullanılmaz
 
-SURUM: 46
-TARIH: 2026-03-20
+SURUM: 49
+TARIH: 2026-03-22
 IMZA: FY.
 """
 
@@ -36,6 +37,7 @@ from kivy.uix.floatlayout import FloatLayout
 from kivy.uix.scrollview import ScrollView
 from kivy.utils import platform
 
+from app.services.yoneticisi import ServicesYoneticisi
 from app.ui.root_paketi.akisi_dosya.dosya_akisi import RootDosyaAkisiMixin
 from app.ui.root_paketi.akisi_geri_yukleme.geri_yukleme_akisi import (
     RootGeriYuklemeAkisiMixin,
@@ -63,6 +65,8 @@ class RootWidget(
 ):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+
+        self.services = ServicesYoneticisi()
 
         self.main_root = BoxLayout(
             orientation="vertical",
@@ -94,6 +98,8 @@ class RootWidget(
 
         self._use_global_toast_overlay = False
         self._banner_started = False
+        self._banner_retry_count = 0
+        self._banner_retry_max = 4
         self._scan_in_progress = False
 
         try:
@@ -112,8 +118,8 @@ class RootWidget(
         from app.ui.durum_cubugu import DurumCubugu
         from app.ui.editor_paketi import EditorYoneticisi
         from app.ui.fonksiyon_listesi_paketi import FonksiyonListesiYoneticisi
-        from app.ui.tum_dosya_erisim_paketi import TumDosyaErisimYoneticisi
         from app.ui.tarama_gostergesi_paketi import TaramaGostergesiYoneticisi
+        from app.ui.tum_dosya_erisim_paketi import TumDosyaErisimYoneticisi
 
         editor_yoneticisi = EditorYoneticisi()
         tum_dosya_erisim_yoneticisi = TumDosyaErisimYoneticisi()
@@ -199,11 +205,6 @@ class RootWidget(
 
         self._setup_optional_toast_layer()
 
-        # =====================================================
-        # TARAMA GÖSTERGELERİ
-        # FloatLayout root üstüne eklenir; main_root içine konmaz
-        # Böylece tüm ekranı kaplayan overlay gibi davranır.
-        # =====================================================
         try:
             self.tarama_loading_overlay = (
                 tarama_gostergesi_yoneticisi.loading_overlay_olustur()
@@ -223,19 +224,59 @@ class RootWidget(
             print(f"[ROOT] Tarama success overlay oluşturulamadı: {exc}")
 
     def _try_start_banner(self, *_args) -> None:
+        print("[ROOT] _try_start_banner çağrıldı.")
+
         if self._banner_started:
+            print("[ROOT] Banner zaten başlatılmış, tekrar denenmeyecek.")
             return
 
         if platform != "android":
+            print(f"[ROOT] Banner başlatılmadı. Platform android değil: {platform}")
             return
 
-        try:
-            from app.services.reklam.banner_reklam_servisi import (
-                banner_goster_gecikmeli,
+        if self._banner_retry_count >= self._banner_retry_max:
+            print(
+                f"[ROOT] Banner başlatma deneme limiti doldu: "
+                f"{self._banner_retry_count}/{self._banner_retry_max}"
             )
+            return
 
-            banner_goster_gecikmeli(delay=1.5)
-            self._banner_started = True
-            print("[ROOT] AdMob banner gecikmeli başlatıldı.")
-        except Exception as exc:
-            print(f"[ROOT] AdMob banner başlatılamadı: {exc}")
+        self._banner_retry_count += 1
+        print(
+            f"[ROOT] Banner başlatma denemesi: "
+            f"{self._banner_retry_count}/{self._banner_retry_max}"
+        )
+
+        try:
+            print("[ROOT] ServicesYoneticisi üzerinden banner_goster_gecikmeli çağrılıyor...")
+            sonuc = self.services.banner_goster_gecikmeli(delay=1.5)
+
+            if sonuc is True:
+                self._banner_started = True
+                print(
+                    "[ROOT] AdMob banner başlatma planlandı/basarılı kabul edildi. "
+                    f"Mod={self.services.reklam_modu_etiketi()}"
+                )
+                return
+
+            print("[ROOT] Banner yöneticisi True dönmedi. Tekrar denenecek.")
+            self._schedule_banner_retry(2.0)
+
+        except Exception:
+            print("[ROOT] AdMob banner services yöneticisi üzerinden başlatılamadı.")
+            print(traceback.format_exc())
+            self._schedule_banner_retry(2.0)
+
+    def _schedule_banner_retry(self, delay: float = 2.0) -> None:
+        if self._banner_started:
+            return
+
+        if self._banner_retry_count >= self._banner_retry_max:
+            print(
+                f"[ROOT] Retry planlanmadı. Limit dolu: "
+                f"{self._banner_retry_count}/{self._banner_retry_max}"
+            )
+            return
+
+        print(f"[ROOT] Banner tekrar denemesi planlandı. {delay} sn sonra.")
+        Clock.schedule_once(self._try_start_banner, delay)
