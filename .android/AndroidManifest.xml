@@ -2,18 +2,31 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="org.fy.fonksiyon_degistirici">
 
-    <!-- Ağ erişimi -->
+    <!-- ===================================================== -->
+    <!-- İZİNLER -->
+    <!-- ===================================================== -->
+
+    <!-- İnternet (Reklam için ZORUNLU) -->
     <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- Ağ durumu -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
-    <!-- Advertising ID -->
+    <!-- Advertising ID (Play Console hatası için KRİTİK) -->
     <uses-permission android:name="com.google.android.gms.permission.AD_ID" />
+
+
+
+    <!-- ===================================================== -->
+    <!-- UYGULAMA -->
+    <!-- ===================================================== -->
 
     <application
         android:allowBackup="false"
-        android:usesCleartextTraffic="true">
+        android:usesCleartextTraffic="true"
+        android:label="Fonksiyon Degistirici">
 
-        <!-- AdMob App ID -->
+        <!-- AdMob App ID (SENİN GERÇEK ID'N) -->
         <meta-data
             android:name="com.google.android.gms.ads.APPLICATION_ID"
             android:value="ca-app-pub-5522917995813710~6900495663" />
