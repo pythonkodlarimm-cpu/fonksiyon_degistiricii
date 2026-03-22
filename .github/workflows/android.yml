@@ -521,20 +521,67 @@ jobs:
 
           find .buildozer -type f -name "*.so" -print | tee symbols_so_list.txt || true
 
-          if [ -s symbols_so_list.txt ]; then
-            while IFS= read -r sofile; do
-              cp --parents "$sofile" symbols_export/raw/
-            done < symbols_so_list.txt
-
-            cd symbols_export
-            zip -r "native-debug-symbols-${APP_VERSION}.zip" raw
-            cd ..
-
-            test -f "symbols_export/native-debug-symbols-${APP_VERSION}.zip"
-            ls -lh "symbols_export/native-debug-symbols-${APP_VERSION}.zip"
-          else
+          if [ ! -s symbols_so_list.txt ]; then
             echo "Uyarı: Paketlenecek .so debug symbols dosyası bulunamadı." | tee symbols_export_warning.txt
+            exit 0
           fi
+
+          while IFS= read -r sofile; do
+            abi=""
+            rel_after_abi=""
+
+            case "$sofile" in
+              *"/arm64-v8a/"*)
+                abi="arm64-v8a"
+                rel_after_abi="${sofile#*"/arm64-v8a/"}"
+                ;;
+              *"/armeabi-v7a/"*)
+                abi="armeabi-v7a"
+                rel_after_abi="${sofile#*"/armeabi-v7a/"}"
+                ;;
+              *"/x86_64/"*)
+                abi="x86_64"
+                rel_after_abi="${sofile#*"/x86_64/"}"
+                ;;
+              *"/x86/"*)
+                abi="x86"
+                rel_after_abi="${sofile#*"/x86/"}"
+                ;;
+              *)
+                echo "Uyarı: ABI ayırt edilemedi, atlandı -> $sofile"
+                continue
+                ;;
+            esac
+
+            dest_dir="symbols_export/raw/${abi}/$(dirname "$rel_after_abi")"
+            mkdir -p "$dest_dir"
+            cp "$sofile" "$dest_dir/"
+          done < symbols_so_list.txt
+
+          ABI_LIST=()
+          for abi in arm64-v8a armeabi-v7a x86 x86_64; do
+            if [ -d "symbols_export/raw/$abi" ]; then
+              if find "symbols_export/raw/$abi" -type f -name "*.so" | grep -q .; then
+                ABI_LIST+=("$abi")
+              fi
+            fi
+          done
+
+          if [ "${#ABI_LIST[@]}" -eq 0 ]; then
+            echo "Uyarı: Symbols export altında ABI klasörü oluşmadı." | tee symbols_export_warning.txt
+            exit 0
+          fi
+
+          (
+            cd symbols_export/raw
+            zip -r "../native-debug-symbols-${APP_VERSION}.zip" "${ABI_LIST[@]}"
+          )
+
+          test -f "symbols_export/native-debug-symbols-${APP_VERSION}.zip"
+          ls -lh "symbols_export/native-debug-symbols-${APP_VERSION}.zip"
+
+          echo "---- Symbols ZIP içeriği ----"
+          unzip -l "symbols_export/native-debug-symbols-${APP_VERSION}.zip" | tee symbols_export/zip_content.txt
 
       - name: Native debug symbols artifact yükle
         if: ${{ always() }}
@@ -619,6 +666,10 @@ jobs:
           if symbols_list:
               bolumler.append("## Symbols listesi\n\n```text\n" + symbols_list[:12000] + "\n```")
 
+          zip_content = oku("symbols_export/zip_content.txt")
+          if zip_content:
+              bolumler.append("## Native debug symbols ZIP içeriği\n\n```text\n" + zip_content[:12000] + "\n```")
+
           log_ozet = "## NDK / p4a / bundletool log özeti\n\n```text\n" + "\n".join(temiz[:350]) + "\n```"
           bolumler.insert(0, log_ozet)
 
@@ -643,6 +694,13 @@ jobs:
               echo "- Paket hazır: \`native-debug-symbols-${APP_VERSION}.zip\`"
               echo "- Artifact adı: \`native-debug-symbols-${APP_VERSION}\`"
               echo "- Actions sayfasındaki **Artifacts** bölümünden indirilebilir."
+              if [ -f "symbols_export/zip_content.txt" ]; then
+                echo ""
+                echo "### ZIP içeriği"
+                echo '```text'
+                cat symbols_export/zip_content.txt
+                echo '```'
+              fi
             else
               echo "- Uyarı: symbols zip üretilemedi."
               if [ -f symbols_export_warning.txt ]; then
@@ -716,6 +774,7 @@ jobs:
               "adid_check/aapt_permissions.txt",
               "adid_check/manifest_tree.txt",
               "symbols_so_list.txt",
+              "symbols_export/zip_content.txt",
           ]:
               txt = oku(extra)
               if txt:
