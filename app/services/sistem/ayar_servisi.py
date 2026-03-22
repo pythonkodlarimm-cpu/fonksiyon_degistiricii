@@ -4,21 +4,23 @@ DOSYA: app/services/sistem/ayar_servisi.py
 
 ROL:
 - Uygulama ayarlarını yüklemek / kaydetmek
-- Şimdilik dil ayarını saklamak
+- Dil ayarını saklamak
+- Uygulama durumunu (app_state) saklamak
 - Uygulama içi güvenli ayar dosyasını yönetmek
 
 MİMARİ:
 - Ayar dosyası uygulama veri alanında tutulur
 - JSON tabanlı sade ayar yapısı kullanılır
 - Bozuk içerikte kontrollü hata veya güvenli fallback döner
+- Dil ve uygulama durumu aynı settings.json içinde tutulur
 
 API UYUMLULUK:
 - API 35 uyumlu
 - Scoped storage dostu
 - Android ve masaüstü ortamlarında güvenli çalışır
 
-SURUM: 2
-TARIH: 2026-03-19
+SURUM: 4
+TARIH: 2026-03-22
 IMZA: FY.
 """
 
@@ -97,4 +99,38 @@ def set_language(code: str) -> None:
         data = {}
 
     data["language"] = temiz
+    ayarlari_kaydet(data)
+
+
+def get_app_state(default: dict | None = None) -> dict:
+    try:
+        data = ayarlari_yukle()
+        fallback = default if isinstance(default, dict) else {}
+        state = data.get("app_state", fallback)
+        return state if isinstance(state, dict) else fallback
+    except Exception:
+        return default if isinstance(default, dict) else {}
+
+
+def set_app_state(state: dict) -> None:
+    temiz_state = state if isinstance(state, dict) else {}
+
+    try:
+        data = ayarlari_yukle()
+    except Exception:
+        data = {}
+
+    data["app_state"] = temiz_state
+    ayarlari_kaydet(data)
+
+
+def clear_app_state() -> None:
+    try:
+        data = ayarlari_yukle()
+    except Exception:
+        data = {}
+
+    if "app_state" in data:
+        del data["app_state"]
+
     ayarlari_kaydet(data)
