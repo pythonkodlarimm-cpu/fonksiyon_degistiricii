@@ -7,6 +7,7 @@ ROL:
 - Mevcut kod, yeni kod ve aksiyon alanlarını bir araya getirir
 - Aksiyon, bildirim, popup, doğrulama ve yardımcı akışları ilgili yöneticiler üzerinden yürütür
 - Büyük kod içeriklerinde UI donmasını azaltmak için içerik yüklemeyi sade ve güvenli şekilde erteler
+- Üst katmanların editör iç yapısını bilmeden metin okuyup yazabilmesi için public text API sağlar
 
 MİMARİ:
 - Alt modüllere doğrudan erişmez
@@ -14,14 +15,15 @@ MİMARİ:
 - UI burada, iş akışı yöneticiler ve alt modüllerdedir
 - Davranış korunur, bağımlılık yapısı sadeleştirilmiştir
 - set_item akışı tek bir ertelenmiş yükleme ile stabil tutulur
+- Root ve diğer üst katmanlar editör iç widget yapısını bilmeden public API üzerinden içerik okuyup yazabilir
 
 API UYUMLULUK:
 - Platform bağımsızdır
 - Android API 35 ile uyumludur
 - Doğrudan Android bridge çağrısı içermez
 
-SURUM: 27
-TARIH: 2026-03-20
+SURUM: 28
+TARIH: 2026-03-22
 IMZA: FY.
 """
 
@@ -267,6 +269,45 @@ class EditorPaneli(BoxLayout):
 
     def set_new_code_text(self, text: str) -> None:
         self._set_new_code(text)
+
+    # =========================================================
+    # PUBLIC TEXT API
+    # =========================================================
+    def get_text(self) -> str:
+        """
+        Yeni kod alanındaki metni döner.
+        Üst katmanlar editör iç yapısını bilmeden bu public API üzerinden
+        içerik okuyabilir.
+        """
+        try:
+            return str(self.new_code_area.text or "")
+        except Exception:
+            return ""
+
+    def set_text(self, text: str) -> None:
+        """
+        Yeni kod alanına metin yazar.
+        Üst katmanlar editör iç yapısını bilmeden bu public API üzerinden
+        içerik geri yükleyebilir.
+        """
+        try:
+            self._set_new_code(text)
+        except Exception:
+            try:
+                self.new_code_area.text = str(text or "")
+            except Exception:
+                pass
+
+    def get_current_text(self) -> str:
+        """
+        Mevcut kod alanındaki salt okunur metni döner.
+        Tanılama, karşılaştırma ve gerektiğinde üst katman kullanımı için
+        yardımcı public API sunar.
+        """
+        try:
+            return str(self.current_code_area.text or "")
+        except Exception:
+            return ""
 
     # =========================================================
     # STATUS
