@@ -296,9 +296,10 @@ jobs:
           rm -rf bin
           rm -rf dist_artifacts
           rm -rf adid_check
+          rm -rf symbols_export
           rm -f build_apk.log build_aab.log build.log
           rm -f summary.md env_dump.txt sdk_list.txt ndk_p4a_summary.md
-          rm -f bundletool.jar bundletool_version.txt
+          rm -f bundletool.jar bundletool_version.txt symbols_so_list.txt symbols_export_warning.txt
           mkdir -p dist_artifacts
 
       - name: Ortam dump al
@@ -513,6 +514,40 @@ jobs:
           test -f "$AAB_PATH"
           jarsigner -verify -verbose -certs "$AAB_PATH"
 
+      - name: Native debug symbols paketini hazırla
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          rm -rf symbols_export
+          mkdir -p symbols_export/raw
+
+          find .buildozer -type f -name "*.so" -print | tee symbols_so_list.txt || true
+
+          if [ -s symbols_so_list.txt ]; then
+            while IFS= read -r sofile; do
+              cp --parents "$sofile" symbols_export/raw/
+            done < symbols_so_list.txt
+
+            cd symbols_export
+            zip -r "native-debug-symbols-${APP_VERSION}.zip" raw
+            cd ..
+
+            test -f "symbols_export/native-debug-symbols-${APP_VERSION}.zip"
+            ls -lh "symbols_export/native-debug-symbols-${APP_VERSION}.zip"
+          else
+            echo "Uyarı: Paketlenecek .so debug symbols dosyası bulunamadı." | tee symbols_export_warning.txt
+          fi
+
+      - name: Native debug symbols artifact yükle
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-debug-symbols-${{ env.APP_VERSION }}
+          path: symbols_export/native-debug-symbols-${{ env.APP_VERSION }}.zip
+          if-no-files-found: warn
+
       - name: Mapping dosyasını topla (varsa)
         if: ${{ always() }}
         shell: bash
@@ -584,6 +619,10 @@ jobs:
           if manifest_tree:
               bolumler.append("## manifest xmltree\n\n```text\n" + manifest_tree[:12000] + "\n```")
 
+          symbols_list = oku("symbols_so_list.txt")
+          if symbols_list:
+              bolumler.append("## Symbols listesi\n\n```text\n" + symbols_list[:12000] + "\n```")
+
           log_ozet = "## NDK / p4a / bundletool log özeti\n\n```text\n" + "\n".join(temiz[:350]) + "\n```"
           bolumler.insert(0, log_ozet)
 
@@ -595,6 +634,29 @@ jobs:
         shell: bash
         run: |
           cat ndk_p4a_summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Native debug symbols özetini GitHub Summary'ye yaz
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          {
+            echo ""
+            echo "## Native debug symbols"
+            echo ""
+            if [ -f "symbols_export/native-debug-symbols-${APP_VERSION}.zip" ]; then
+              echo "- Paket hazır: \`native-debug-symbols-${APP_VERSION}.zip\`"
+              echo "- Artifact adı: \`native-debug-symbols-${APP_VERSION}\`"
+              echo "- Actions sayfasındaki **Artifacts** bölümünden indirilebilir."
+            else
+              echo "- Uyarı: symbols zip üretilemedi."
+              if [ -f symbols_export_warning.txt ]; then
+                echo ""
+                echo '```text'
+                cat symbols_export_warning.txt
+                echo '```'
+              fi
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Hata özeti hazırla
         if: ${{ failure() }}
@@ -657,6 +719,7 @@ jobs:
               "adid_check/adid_result.txt",
               "adid_check/aapt_permissions.txt",
               "adid_check/manifest_tree.txt",
+              "symbols_so_list.txt",
           ]:
               txt = oku(extra)
               if txt:
@@ -705,6 +768,9 @@ jobs:
             bundletool_version.txt
             adid_check/**
             dist_artifacts/mapping/**
+            symbols_so_list.txt
+            symbols_export/**
+            symbols_export_warning.txt
           if-no-files-found: warn
 
       - name: APK yükle
