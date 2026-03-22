@@ -18,8 +18,8 @@ API UYUMLULUK:
 - Android servisleri izole biçimde yönetir
 - Android API 35 hedefiyle uyumlu mimari için uygundur
 
-SURUM: 2
-TARIH: 2026-03-20
+SURUM: 3
+TARIH: 2026-03-22
 IMZA: FY.
 """
 
@@ -121,8 +121,50 @@ class ServicesYoneticisi:
     def reklam_yoneticisi(self):
         return self._reklam_yoneticisi()
 
-    def banner_servisi(self):
-        return self._reklam_yoneticisi().banner_servisi()
+    def banner_goster(self) -> bool:
+        return self._reklam_yoneticisi().banner_goster()
+
+    def banner_goster_gecikmeli(self, delay: float = 1.5) -> bool:
+        return self._reklam_yoneticisi().banner_goster_gecikmeli(delay=delay)
+
+    def banner_gizle(self) -> bool:
+        return self._reklam_yoneticisi().banner_gizle()
+
+    def banner_baslatildi_mi(self) -> bool:
+        return self._reklam_yoneticisi().banner_baslatildi_mi()
+
+    def banner_gosteriliyor_mu(self) -> bool:
+        return self._reklam_yoneticisi().banner_gosteriliyor_mu()
+
+    def banner_planlandi_mi(self) -> bool:
+        return self._reklam_yoneticisi().banner_planlandi_mi()
+
+    def test_modu_aktif_mi(self) -> bool:
+        return self._reklam_yoneticisi().test_modu_aktif_mi()
+
+    def yayin_modu_aktif_mi(self) -> bool:
+        return self._reklam_yoneticisi().yayin_modu_aktif_mi()
+
+    def reklam_modu_etiketi(self) -> str:
+        return self._reklam_yoneticisi().reklam_modu_etiketi()
+
+    def aktif_admob_app_id(self) -> str:
+        return self._reklam_yoneticisi().aktif_admob_app_id()
+
+    def aktif_banner_reklam_id(self) -> str:
+        return self._reklam_yoneticisi().aktif_banner_reklam_id()
+
+    def aktif_interstitial_reklam_id(self) -> str:
+        return self._reklam_yoneticisi().aktif_interstitial_reklam_id()
+
+    def aktif_rewarded_reklam_id(self) -> str:
+        return self._reklam_yoneticisi().aktif_rewarded_reklam_id()
+
+    def gecis_reklami_goster(self) -> bool:
+        return self._reklam_yoneticisi().gecis_reklami_goster()
+
+    def odullu_reklam_goster(self) -> bool:
+        return self._reklam_yoneticisi().odullu_reklam_goster()
 
     # =========================================================
     # SISTEM
