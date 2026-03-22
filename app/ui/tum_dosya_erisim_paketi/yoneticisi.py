@@ -17,8 +17,8 @@ API UYUMLULUK:
 - Android API 35 ile uyumludur
 - Doğrudan Android bridge çağrısı içermez
 
-SURUM: 2
-TARIH: 2026-03-19
+SURUM: 3
+TARIH: 2026-03-22
 IMZA: FY.
 """
 
@@ -81,15 +81,8 @@ class TumDosyaErisimYoneticisi:
             compact=compact,
         )
 
-    def open_access_popup(self, status_value, debug=None):
-        return self._popups_yoneticisi().open_access_popup(
-            status_value=status_value,
-            debug=debug,
-        )
-
-    def open_main_menu(self, open_access_popup, open_backups_popup):
+    def open_main_menu(self, open_backups_popup):
         return self._popups_yoneticisi().open_main_menu(
-            open_access_popup=open_access_popup,
             open_backups_popup=open_backups_popup,
         )
 
@@ -185,15 +178,6 @@ class TumDosyaErisimYoneticisi:
             size_big_dp=size_big_dp,
             duration=duration,
         )
-
-    def erisim_durumu_getir(self, debug=None):
-        return self._ortak_yoneticisi().erisim_durumu_getir(debug=debug)
-
-    def erisim_durumu_metni(self, durum) -> str:
-        return self._ortak_yoneticisi().erisim_durumu_metni(durum)
-
-    def erisim_destekleniyor_mu(self) -> bool:
-        return self._ortak_yoneticisi().erisim_destekleniyor_mu()
 
     def dil_popup_baslat(self, *args, **kwargs):
         return self._ortak_yoneticisi().dil_popup_baslat(*args, **kwargs)
