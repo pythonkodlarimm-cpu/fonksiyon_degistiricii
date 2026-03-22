@@ -80,9 +80,9 @@ android.gradle_dependencies = com.google.android.gms:play-services-ads:22.6.0
 android.meta_data = com.google.android.gms.ads.APPLICATION_ID=ca-app-pub-5522917995813710~6900495663
 
 # ---------------------------------------------------------
-# EK MANIFEST
+# OZEL ANDROID KAYNAKLARI
 # ---------------------------------------------------------
-android.extra_manifest_xml = .android/extra_manifest.xml
+android.add_src = .android
 
 # ---------------------------------------------------------
 # DESTEKLENEN MIMARILER
