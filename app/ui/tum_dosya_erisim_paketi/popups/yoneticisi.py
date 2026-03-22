@@ -17,8 +17,8 @@ API UYUMLULUK:
 - Android API 35 ile uyumludur
 - Doğrudan Android bridge çağrısı içermez
 
-SURUM: 1
-TARIH: 2026-03-19
+SURUM: 2
+TARIH: 2026-03-22
 IMZA: FY.
 """
 
@@ -50,28 +50,14 @@ class TumDosyaErisimPopupsYoneticisi:
         )
 
     # =========================================================
-    # ACCESS
-    # =========================================================
-    def open_access_popup(self, status_value, debug=None):
-        from app.ui.tum_dosya_erisim_paketi.popups.erisim_popup import (
-            open_access_popup,
-        )
-
-        return open_access_popup(
-            status_value=status_value,
-            debug=debug,
-        )
-
-    # =========================================================
     # MENU
     # =========================================================
-    def open_main_menu(self, open_access_popup, open_backups_popup):
+    def open_main_menu(self, open_backups_popup):
         from app.ui.tum_dosya_erisim_paketi.popups.menu_popup import (
             open_main_menu,
         )
 
         return open_main_menu(
-            open_access_popup=open_access_popup,
             open_backups_popup=open_backups_popup,
         )
 
