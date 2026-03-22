@@ -3,23 +3,23 @@
 DOSYA: app/services/reklam/ayarlari.py
 
 ROL:
-- Reklam servisleri için ortak ayar ve sabitleri tutar
-- Test/canlı reklam birim geçişini tek yerden yönetir
-- Reklam katmanının UI akışını bozmadan merkezileşmesini sağlar
-- Gelecekte interstitial / rewarded reklamlara genişletilebilir yapı sağlar
+- AdMob reklam ayarlarını tek merkezden yönetir
+- Test / yayın modunu güvenli biçimde ayırır
+- Banner / interstitial / rewarded reklam kimliklerini tek yerden sağlar
+- Reklam servis dosyalarının sabit kalmasını sağlar
 
 MİMARİ:
-- Tüm reklam servisleri buradan beslenir
-- Banner / interstitial / rewarded ayrımı buradan yönetilir
-- Ortam (test/canlı) tek flag ile kontrol edilir
+- Tüm reklam servisleri bu dosyadan beslenir
+- Ortam seçimi tek merkezden yapılır
+- Yanlış mod kombinasyonları engellenir
 
 API UYUMLULUK:
 - AdMob SDK uyumlu
 - AndroidX uyumlu
 - API 35 uyumlu
 
-SURUM: 3
-TARIH: 2026-03-19
+SURUM: 4
+TARIH: 2026-03-22
 IMZA: FY.
 """
 
@@ -27,74 +27,136 @@ from __future__ import annotations
 
 
 # =========================================================
-# ORTAM AYARI
+# MOD AYARLARI
 # =========================================================
-
-TEST_MODU: bool = True
-
-
-def test_modu_aktif_mi() -> bool:
-    return bool(TEST_MODU)
-
-
+# Test aşamasında:
+# TEST_REKLAM_MODU = True
+# PLAY_STORE_YAYIN_MODU = False
+#
+# Canlı yayında:
+# TEST_REKLAM_MODU = False
+# PLAY_STORE_YAYIN_MODU = True
 # =========================================================
-# ADMOB GENEL
-# =========================================================
-
-ADMOB_APP_ID: str = "ca-app-pub-5522917995813710~6900495663"
+TEST_REKLAM_MODU: bool = True
+PLAY_STORE_YAYIN_MODU: bool = False
 
 
 # =========================================================
-# BANNER
+# TEST REKLAM BİLGİLERİ
+# Google resmi test kimlikleri
 # =========================================================
-
-TEST_BANNER_ID: str = "ca-app-pub-3940256099942544/9214589741"
-CANLI_BANNER_ID: str = "ca-app-pub-5522917995813710/2607730157"
-
-
-# =========================================================
-# INTERSTITIAL
-# =========================================================
-
-TEST_INTERSTITIAL_ID: str = "ca-app-pub-3940256099942544/1033173712"
-CANLI_INTERSTITIAL_ID: str = ""
+TEST_ADMOB_APP_ID: str = "ca-app-pub-3940256099942544~3347511713"
+TEST_BANNER_REKLAM_ID: str = "ca-app-pub-3940256099942544/9214589741"
+TEST_INTERSTITIAL_REKLAM_ID: str = "ca-app-pub-3940256099942544/1033173712"
+TEST_REWARDED_REKLAM_ID: str = "ca-app-pub-3940256099942544/5224354917"
 
 
 # =========================================================
-# REWARDED
+# CANLI REKLAM BİLGİLERİ
+# Kendi gerçek AdMob kimliklerin
 # =========================================================
-
-TEST_REWARDED_ID: str = "ca-app-pub-3940256099942544/5224354917"
-CANLI_REWARDED_ID: str = ""
+GERCEK_ADMOB_APP_ID: str = "ca-app-pub-5522917995813710~6900495663"
+GERCEK_BANNER_REKLAM_ID: str = "ca-app-pub-5522917995813710/2607730157"
+GERCEK_INTERSTITIAL_REKLAM_ID: str = ""
+GERCEK_REWARDED_REKLAM_ID: str = ""
 
 
 # =========================================================
-# INTERNAL HELPER
+# INTERNAL HELPERS
 # =========================================================
+def _mod_dogrula() -> None:
+    if TEST_REKLAM_MODU and PLAY_STORE_YAYIN_MODU:
+        raise ValueError(
+            "Reklam ayarı hatası: TEST_REKLAM_MODU ve "
+            "PLAY_STORE_YAYIN_MODU aynı anda True olamaz."
+        )
 
-def _coalesce(test_id: str, live_id: str) -> str:
-    """
-    Canlı ID boşsa fallback olarak test ID döner.
-    (kritik: boş reklam ID crash sebebi olur)
-    """
+    if not TEST_REKLAM_MODU and not PLAY_STORE_YAYIN_MODU:
+        raise ValueError(
+            "Reklam ayarı hatası: En az bir mod aktif olmalı. "
+            "TEST_REKLAM_MODU veya PLAY_STORE_YAYIN_MODU True olmalı."
+        )
+
+
+def _gerekli_deger_kontrol_et(deger: str, alan_adi: str) -> str:
+    temiz = str(deger or "").strip()
+    if not temiz:
+        raise ValueError(
+            f"Reklam ayarı hatası: {alan_adi} boş bırakılamaz."
+        )
+    return temiz
+
+
+def _aktif_id_getir(
+    test_id: str,
+    gercek_id: str,
+    alan_adi: str,
+) -> str:
+    _mod_dogrula()
+
     if test_modu_aktif_mi():
-        return test_id
+        return _gerekli_deger_kontrol_et(test_id, f"TEST {alan_adi}")
 
-    live = str(live_id or "").strip()
-    return live if live else test_id
+    return _gerekli_deger_kontrol_et(gercek_id, f"GERCEK {alan_adi}")
 
 
 # =========================================================
-# AKTİF SEÇİCİLER
+# MOD BİLGİLERİ
 # =========================================================
+def test_modu_aktif_mi() -> bool:
+    _mod_dogrula()
+    return bool(TEST_REKLAM_MODU)
 
+
+def yayin_modu_aktif_mi() -> bool:
+    _mod_dogrula()
+    return bool(PLAY_STORE_YAYIN_MODU)
+
+
+def reklam_modu_etiketi() -> str:
+    _mod_dogrula()
+    return "TEST" if TEST_REKLAM_MODU else "YAYIN"
+
+
+# =========================================================
+# AKTİF APP ID
+# =========================================================
+def aktif_admob_app_id() -> str:
+    return _aktif_id_getir(
+        TEST_ADMOB_APP_ID,
+        GERCEK_ADMOB_APP_ID,
+        "ADMOB_APP_ID",
+    )
+
+
+# =========================================================
+# AKTİF BANNER
+# =========================================================
 def aktif_banner_reklam_id() -> str:
-    return _coalesce(TEST_BANNER_ID, CANLI_BANNER_ID)
+    return _aktif_id_getir(
+        TEST_BANNER_REKLAM_ID,
+        GERCEK_BANNER_REKLAM_ID,
+        "BANNER_REKLAM_ID",
+    )
 
 
+# =========================================================
+# AKTİF INTERSTITIAL
+# =========================================================
 def aktif_interstitial_reklam_id() -> str:
-    return _coalesce(TEST_INTERSTITIAL_ID, CANLI_INTERSTITIAL_ID)
+    return _aktif_id_getir(
+        TEST_INTERSTITIAL_REKLAM_ID,
+        GERCEK_INTERSTITIAL_REKLAM_ID,
+        "INTERSTITIAL_REKLAM_ID",
+    )
 
 
+# =========================================================
+# AKTİF REWARDED
+# =========================================================
 def aktif_rewarded_reklam_id() -> str:
-    return _coalesce(TEST_REWARDED_ID, CANLI_REWARDED_ID)
+    return _aktif_id_getir(
+        TEST_REWARDED_REKLAM_ID,
+        GERCEK_REWARDED_REKLAM_ID,
+        "REWARDED_REKLAM_ID",
+    )
