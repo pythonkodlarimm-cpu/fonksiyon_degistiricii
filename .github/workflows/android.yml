@@ -9,7 +9,7 @@ on:
 
 concurrency:
   group: android-build-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -37,6 +37,7 @@ jobs:
       ADMOB_APP_ID: "ca-app-pub-5522917995813710~6900495663"
       ADMOB_PERMISSION: "com.google.android.gms.permission.AD_ID"
       ADMOB_GRADLE_DEP: "com.google.android.gms:play-services-ads:22.6.0"
+      TARGET_ARCHS: "arm64-v8a"
 
     steps:
       - name: Depoyu al
@@ -165,6 +166,7 @@ jobs:
           test -f buildozer.spec
           test -f main.py
           test -f app/assets/icons/presplash.png
+          test -f app/assets/icons/app_icon.png
 
           echo "---- buildozer.spec ----"
           sed -n '1,260p' buildozer.spec
@@ -220,6 +222,7 @@ jobs:
           admob_app_id = os.environ["ADMOB_APP_ID"]
           admob_permission = os.environ["ADMOB_PERMISSION"]
           admob_gradle_dep = os.environ["ADMOB_GRADLE_DEP"]
+          target_archs = os.environ["TARGET_ARCHS"]
 
           def set_or_add(text, key, value):
               pattern = rf"(?m)^{re.escape(key)}\s*=\s*.*$"
@@ -239,17 +242,10 @@ jobs:
           text = set_or_add(text, "android.api", yeni_api)
           text = set_or_add(text, "android.minapi", yeni_minapi)
           text = set_or_add(text, "android.ndk_path", yeni_ndk_path)
-          text = set_or_add(
-              text,
-              "android.permissions",
-              f"INTERNET,ACCESS_NETWORK_STATE,{admob_permission}"
-          )
+          text = set_or_add(text, "android.permissions", f"INTERNET,ACCESS_NETWORK_STATE,{admob_permission}")
           text = set_or_add(text, "android.gradle_dependencies", admob_gradle_dep)
-          text = set_or_add(
-              text,
-              "android.meta_data",
-              f"com.google.android.gms.ads.APPLICATION_ID={admob_app_id}"
-          )
+          text = set_or_add(text, "android.meta_data", f"com.google.android.gms.ads.APPLICATION_ID={admob_app_id}")
+          text = set_or_add(text, "android.archs", target_archs)
 
           text = remove_key(text, "android.add_src")
           text = remove_key(text, "android.extra_manifest_xml")
@@ -265,6 +261,7 @@ jobs:
           print(f"  android.permissions = INTERNET,ACCESS_NETWORK_STATE,{admob_permission}")
           print(f"  android.gradle_dependencies = {admob_gradle_dep}")
           print(f"  android.meta_data = com.google.android.gms.ads.APPLICATION_ID={admob_app_id}")
+          print(f"  android.archs = {target_archs}")
           print("  android.add_src kaldırıldı")
           print("  android.extra_manifest_xml kaldırıldı")
           PY
@@ -278,6 +275,7 @@ jobs:
           grep -n "^android.permissions" buildozer.spec || true
           grep -n "^android.gradle_dependencies" buildozer.spec || true
           grep -n "^android.meta_data" buildozer.spec || true
+          grep -n "^android.archs" buildozer.spec || true
           ! grep -n "^android.add_src" buildozer.spec
           ! grep -n "^android.extra_manifest_xml" buildozer.spec
 
@@ -623,7 +621,7 @@ jobs:
               "ndk", "gradle", "no such file", "sdk path", "does not exist",
               "keystore", "apksigner", "zipalign", "bundle", "aab", "apk",
               "alias", "release", "unsigned", "p4a_release", "validatesigningrelease",
-              "ad_id", "advertising", "bundletool"
+              "ad_id", "advertising", "bundletool", "canceled", "cancelled"
           )
 
           parcali = []
