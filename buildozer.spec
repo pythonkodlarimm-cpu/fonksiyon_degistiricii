@@ -19,8 +19,8 @@ source.exclude_patterns = *.bak,*.tmp,*.swp,.DS_Store
 # ---------------------------------------------------------
 # SURUM
 # ---------------------------------------------------------
-version = 0.1.2
-android.numeric_version = 2
+version = 0.1.3
+android.numeric_version = 3
 
 # ---------------------------------------------------------
 # GEREKSINIMLER
