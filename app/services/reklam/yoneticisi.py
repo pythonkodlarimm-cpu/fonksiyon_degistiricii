@@ -19,8 +19,8 @@ API UYUMLULUK:
 - AndroidX uyumlu
 - AdMob entegrasyon yapısına uyumlu
 
-SURUM: 3
-TARIH: 2026-03-19
+SURUM: 4
+TARIH: 2026-03-22
 IMZA: FY.
 """
 
@@ -35,6 +35,12 @@ class ReklamYoneticisi:
         from app.services.reklam.banner_reklam_servisi import banner_goster
         return banner_goster()
 
+    def banner_goster_gecikmeli(self, delay: float = 1.5) -> bool:
+        from app.services.reklam.banner_reklam_servisi import (
+            banner_goster_gecikmeli,
+        )
+        return banner_goster_gecikmeli(delay=delay)
+
     def banner_gizle(self) -> bool:
         from app.services.reklam.banner_reklam_servisi import banner_gizle
         return banner_gizle()
@@ -47,12 +53,28 @@ class ReklamYoneticisi:
         from app.services.reklam.banner_reklam_servisi import banner_gosteriliyor_mu
         return banner_gosteriliyor_mu()
 
+    def banner_planlandi_mi(self) -> bool:
+        from app.services.reklam.banner_reklam_servisi import banner_planlandi_mi
+        return banner_planlandi_mi()
+
     # =========================================================
     # AYAR / DURUM
     # =========================================================
     def test_modu_aktif_mi(self) -> bool:
         from app.services.reklam.ayarlari import test_modu_aktif_mi
         return test_modu_aktif_mi()
+
+    def yayin_modu_aktif_mi(self) -> bool:
+        from app.services.reklam.ayarlari import yayin_modu_aktif_mi
+        return yayin_modu_aktif_mi()
+
+    def reklam_modu_etiketi(self) -> str:
+        from app.services.reklam.ayarlari import reklam_modu_etiketi
+        return reklam_modu_etiketi()
+
+    def aktif_admob_app_id(self) -> str:
+        from app.services.reklam.ayarlari import aktif_admob_app_id
+        return aktif_admob_app_id()
 
     def aktif_banner_reklam_id(self) -> str:
         from app.services.reklam.ayarlari import aktif_banner_reklam_id
