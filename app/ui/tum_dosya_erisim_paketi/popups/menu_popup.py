@@ -4,7 +4,7 @@ DOSYA: app/ui/tum_dosya_erisim_paketi/popups/menu_popup.py
 
 ROL:
 - Tüm dosya erişim paketi ana menü popup'ını göstermek
-- Erişim işlemleri ve yedeklenen dosyalar akışlarına giriş sağlamak
+- Yedeklenen dosyalar akışına giriş sağlamak
 - İkon tabanlı sade menü sunmak
 
 MİMARİ:
@@ -17,8 +17,8 @@ API UYUMLULUK:
 - Android API 35 ile uyumludur
 - Doğrudan Android bridge çağrısı içermez
 
-SURUM: 3
-TARIH: 2026-03-19
+SURUM: 4
+TARIH: 2026-03-22
 IMZA: FY.
 """
 
@@ -108,7 +108,7 @@ def _ikonlu_aksiyon_karti(
     return wrap
 
 
-def open_main_menu(open_access_popup, open_backups_popup):
+def open_main_menu(open_backups_popup):
     content = BoxLayout(
         orientation="vertical",
         padding=dp(16),
@@ -143,22 +143,10 @@ def open_main_menu(open_access_popup, open_backups_popup):
         title="",
         content=content,
         size_hint=(0.92, None),
-        height=dp(240),
+        height=dp(210),
         auto_dismiss=True,
         separator_height=0,
     )
-
-    def _open_access(*_args):
-        try:
-            popup.dismiss()
-        except Exception:
-            pass
-
-        try:
-            if callable(open_access_popup):
-                open_access_popup()
-        except Exception:
-            pass
 
     def _open_backups(*_args):
         try:
@@ -172,13 +160,7 @@ def open_main_menu(open_access_popup, open_backups_popup):
         except Exception:
             pass
 
-    buttons.add_widget(
-        _ikonlu_aksiyon_karti(
-            icon_source="app/assets/icons/settings.png",
-            text="Erişim İşlemleri",
-            on_release=_open_access,
-        )
-    )
+    buttons.add_widget(Label(size_hint_x=1))
 
     buttons.add_widget(
         _ikonlu_aksiyon_karti(
@@ -187,6 +169,8 @@ def open_main_menu(open_access_popup, open_backups_popup):
             on_release=_open_backups,
         )
     )
+
+    buttons.add_widget(Label(size_hint_x=1))
 
     content.add_widget(buttons)
 
