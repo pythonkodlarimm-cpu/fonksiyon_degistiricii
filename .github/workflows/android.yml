@@ -296,6 +296,7 @@ jobs:
           rm -f build_apk.log build_aab.log build.log
           rm -f summary.md env_dump.txt sdk_list.txt ndk_p4a_summary.md
           rm -f bundletool.jar bundletool_version.txt symbols_so_list.txt symbols_export_warning.txt
+          rm -f symbols_export/flat_symbols_list.txt
           mkdir -p dist_artifacts
 
       - name: Ortam dump al
@@ -519,58 +520,69 @@ jobs:
           rm -rf symbols_export
           mkdir -p symbols_export/raw
 
-          find .buildozer -type f -name "*.so" -print | tee symbols_so_list.txt || true
+          find .buildozer -type f -name "*.so" | sort | tee symbols_so_list.txt || true
 
           if [ ! -s symbols_so_list.txt ]; then
-            echo "Uyarı: Paketlenecek .so debug symbols dosyası bulunamadı." | tee symbols_export_warning.txt
+            echo "Uyarı: Paketlenecek .so dosyası bulunamadı." | tee symbols_export_warning.txt
             exit 0
           fi
 
           while IFS= read -r sofile; do
             abi=""
-            rel_after_abi=""
-
             case "$sofile" in
-              *"/arm64-v8a/"*)
-                abi="arm64-v8a"
-                rel_after_abi="${sofile#*"/arm64-v8a/"}"
-                ;;
-              *"/armeabi-v7a/"*)
-                abi="armeabi-v7a"
-                rel_after_abi="${sofile#*"/armeabi-v7a/"}"
-                ;;
-              *"/x86_64/"*)
-                abi="x86_64"
-                rel_after_abi="${sofile#*"/x86_64/"}"
-                ;;
-              *"/x86/"*)
-                abi="x86"
-                rel_after_abi="${sofile#*"/x86/"}"
-                ;;
+              *"/arm64-v8a/"*) abi="arm64-v8a" ;;
+              *"/armeabi-v7a/"*) abi="armeabi-v7a" ;;
+              *"/x86_64/"*) abi="x86_64" ;;
+              *"/x86/"*) abi="x86" ;;
               *)
                 echo "Uyarı: ABI ayırt edilemedi, atlandı -> $sofile"
                 continue
                 ;;
             esac
 
-            dest_dir="symbols_export/raw/${abi}/$(dirname "$rel_after_abi")"
+            base_name="$(basename "$sofile")"
+            dest_dir="symbols_export/raw/${abi}"
             mkdir -p "$dest_dir"
-            cp "$sofile" "$dest_dir/"
+
+            if [ ! -f "$dest_dir/$base_name" ]; then
+              cp "$sofile" "$dest_dir/$base_name"
+            else
+              if cmp -s "$sofile" "$dest_dir/$base_name"; then
+                echo "Aynı dosya zaten var, atlandı: $dest_dir/$base_name"
+              else
+                alt_name="${base_name%.so}-dup.so"
+                i=1
+                while [ -f "$dest_dir/$alt_name" ]; do
+                  alt_name="${base_name%.so}-dup${i}.so"
+                  i=$((i + 1))
+                done
+                cp "$sofile" "$dest_dir/$alt_name"
+              fi
+            fi
           done < symbols_so_list.txt
 
           ABI_LIST=()
           for abi in arm64-v8a armeabi-v7a x86 x86_64; do
-            if [ -d "symbols_export/raw/$abi" ]; then
-              if find "symbols_export/raw/$abi" -type f -name "*.so" | grep -q .; then
-                ABI_LIST+=("$abi")
-              fi
+            if [ -d "symbols_export/raw/$abi" ] && find "symbols_export/raw/$abi" -maxdepth 1 -type f -name "*.so" | grep -q .; then
+              ABI_LIST+=("$abi")
             fi
           done
 
           if [ "${#ABI_LIST[@]}" -eq 0 ]; then
-            echo "Uyarı: Symbols export altında ABI klasörü oluşmadı." | tee symbols_export_warning.txt
+            echo "Uyarı: Symbols export altında geçerli ABI/.so yapısı oluşmadı." | tee symbols_export_warning.txt
             exit 0
           fi
+
+          echo "---- Düzleştirilmiş symbols içeriği ----"
+          find symbols_export/raw -maxdepth 2 -type f -name "*.so" | sort | tee symbols_export/flat_symbols_list.txt
+
+          for abi in "${ABI_LIST[@]}"; do
+            if find "symbols_export/raw/$abi" -mindepth 2 | grep -q .; then
+              echo "HATA: $abi altında beklenmeyen alt klasör var." | tee -a symbols_export_warning.txt
+              find "symbols_export/raw/$abi" -mindepth 2 | tee -a symbols_export_warning.txt
+              exit 1
+            fi
+          done
 
           (
             cd symbols_export/raw
@@ -640,9 +652,9 @@ jobs:
           temiz = []
           gorulen = set()
           for line in secilen:
-              if line and line not in gorulen:
-                  gorulen.add(line)
-                  temiz.append(line)
+            if line and line not in gorulen:
+              gorulen.add(line)
+              temiz.append(line)
 
           bolumler = []
 
@@ -665,6 +677,10 @@ jobs:
           symbols_list = oku("symbols_so_list.txt")
           if symbols_list:
               bolumler.append("## Symbols listesi\n\n```text\n" + symbols_list[:12000] + "\n```")
+
+          flat_symbols = oku("symbols_export/flat_symbols_list.txt")
+          if flat_symbols:
+              bolumler.append("## Düzleştirilmiş symbols listesi\n\n```text\n" + flat_symbols[:12000] + "\n```")
 
           zip_content = oku("symbols_export/zip_content.txt")
           if zip_content:
@@ -774,6 +790,7 @@ jobs:
               "adid_check/aapt_permissions.txt",
               "adid_check/manifest_tree.txt",
               "symbols_so_list.txt",
+              "symbols_export/flat_symbols_list.txt",
               "symbols_export/zip_content.txt",
           ]:
               txt = oku(extra)
