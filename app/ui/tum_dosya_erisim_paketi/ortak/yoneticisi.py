@@ -4,7 +4,7 @@ DOSYA: app/ui/tum_dosya_erisim_paketi/ortak/yoneticisi.py
 
 ROL:
 - Tüm dosya erişim paketi içindeki ortak modüllere tek giriş noktası sağlamak
-- Ortak bileşen, durum mantığı ve dil popup başlatıcı erişimini merkezileştirmek
+- Ortak bileşen ve dil popup başlatıcı erişimini merkezileştirmek
 - Üst katmanın alt modül detaylarını bilmesini engellemek
 
 MİMARİ:
@@ -17,8 +17,8 @@ API UYUMLULUK:
 - Android API 35 ile uyumludur
 - Doğrudan Android bridge çağrısı içermez
 
-SURUM: 1
-TARIH: 2026-03-19
+SURUM: 2
+TARIH: 2026-03-22
 IMZA: FY.
 """
 
@@ -32,10 +32,6 @@ class TumDosyaErisimOrtakYoneticisi:
     def bilesenler_modulu(self):
         from app.ui.tum_dosya_erisim_paketi.ortak import bilesenler
         return bilesenler
-
-    def durum_mantigi_modulu(self):
-        from app.ui.tum_dosya_erisim_paketi.ortak import durum_mantigi
-        return durum_mantigi
 
     def dil_popup_baslatici_modulu(self):
         from app.ui.tum_dosya_erisim_paketi.ortak import dil_popup_baslatici
@@ -57,18 +53,6 @@ class TumDosyaErisimOrtakYoneticisi:
             size_big_dp=size_big_dp,
             duration=duration,
         )
-
-    # =========================================================
-    # DURUM MANTIGI
-    # =========================================================
-    def erisim_durumu_getir(self, debug=None):
-        return self.durum_mantigi_modulu().erisim_durumu_getir(debug=debug)
-
-    def erisim_durumu_metni(self, durum) -> str:
-        return self.durum_mantigi_modulu().erisim_durumu_metni(durum)
-
-    def erisim_destekleniyor_mu(self) -> bool:
-        return self.durum_mantigi_modulu().erisim_destekleniyor_mu()
 
     # =========================================================
     # DIL POPUP
