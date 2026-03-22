@@ -80,11 +80,6 @@ android.gradle_dependencies = com.google.android.gms:play-services-ads:22.6.0
 android.meta_data = com.google.android.gms.ads.APPLICATION_ID=ca-app-pub-5522917995813710~6900495663
 
 # ---------------------------------------------------------
-# OZEL ANDROID KAYNAKLARI
-# ---------------------------------------------------------
-android.add_src = .android
-
-# ---------------------------------------------------------
 # DESTEKLENEN MIMARILER
 # ---------------------------------------------------------
 android.archs = arm64-v8a, armeabi-v7a
