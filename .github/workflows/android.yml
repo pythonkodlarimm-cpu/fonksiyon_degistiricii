@@ -37,7 +37,7 @@ jobs:
       ADMOB_APP_ID: "ca-app-pub-5522917995813710~6900495663"
       ADMOB_PERMISSION: "com.google.android.gms.permission.AD_ID"
       ADMOB_GRADLE_DEP: "com.google.android.gms:play-services-ads:22.6.0"
-      TARGET_ARCHS: "arm64-v8a"
+      TARGET_ARCHS: "arm64-v8a, armeabi-v7a"
 
     steps:
       - name: Depoyu al
