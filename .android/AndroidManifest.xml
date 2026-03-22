@@ -2,6 +2,23 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="org.fy.fonksiyon_degistirici">
 
+    <!-- Reklam kimliği (ZORUNLU) -->
     <uses-permission android:name="com.google.android.gms.permission.AD_ID" />
+
+    <!-- İnternet (Reklam için ZORUNLU) -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- Ağ durumu (opsiyonel ama önerilir) -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <application
+        android:usesCleartextTraffic="true">
+
+        <!-- AdMob App ID (SENİN GERÇEK ID'N) -->
+        <meta-data
+            android:name="com.google.android.gms.ads.APPLICATION_ID"
+            android:value="ca-app-pub-5522917995813710~6900495663" />
+
+    </application>
 
 </manifest>
