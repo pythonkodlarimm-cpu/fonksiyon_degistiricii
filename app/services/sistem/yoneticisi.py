@@ -5,14 +5,14 @@ DOSYA: app/services/sistem/yoneticisi.py
 ROL:
 - Sistem katmanına tek giriş noktası sağlamak
 - UI ve diğer katmanların alt sistem servis detaylarını bilmesini engellemek
-- Ayar, geçici bildirim ve premium akışlarını merkezileştirmek
+- Ayar, uygulama durumu, geçici bildirim ve premium akışlarını merkezileştirmek
 - İleride sistem servisleri büyüdüğünde tek noktadan yönetim sağlamak
 
 MİMARİ:
 - Alt sistem servislerine lazy import ile erişir
 - UI katmanı sadece bu yöneticiyi bilir
 - Sistem katmanının iç yapısını dış dünyadan saklar
-- Ayar, bildirim ve premium davranışını tek yerden toplar
+- Ayar, uygulama durumu, bildirim ve premium davranışını tek yerden toplar
 
 API UYUMLULUK:
 - API 35 uyumlu
@@ -20,8 +20,8 @@ API UYUMLULUK:
 - Platform bağımsız yardımcı servislerle güvenli çalışır
 - Android bridge kullanan premium servisini güvenli fallback ile çağırır
 
-SURUM: 1
-TARIH: 2026-03-19
+SURUM: 2
+TARIH: 2026-03-22
 IMZA: FY.
 """
 
@@ -47,6 +47,21 @@ class SistemYoneticisi:
     def set_language(self, code: str) -> None:
         from app.services.sistem.ayar_servisi import set_language
         set_language(code)
+
+    # =========================================================
+    # APP STATE
+    # =========================================================
+    def get_app_state(self, default: dict | None = None) -> dict:
+        from app.services.sistem.ayar_servisi import get_app_state
+        return get_app_state(default=default)
+
+    def set_app_state(self, state: dict) -> None:
+        from app.services.sistem.ayar_servisi import set_app_state
+        set_app_state(state)
+
+    def clear_app_state(self) -> None:
+        from app.services.sistem.ayar_servisi import clear_app_state
+        clear_app_state()
 
     # =========================================================
     # GECICI BILDIRIM
