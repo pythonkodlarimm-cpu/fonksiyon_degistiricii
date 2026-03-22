@@ -3,12 +3,22 @@
 DOSYA: app/services/__init__.py
 
 ROL:
-- ServicesYoneticisi için lazy import giriş noktası sağlar
-- Import maliyetini azaltır
-- Circular import riskini düşürür
+- Services katmanı için dışa açık lazy import giriş noktası sağlar
+- ServicesYoneticisi sınıfını tek kapıdan erişilebilir hale getirir
+- Import maliyetini azaltır ve modüler yapıyı korur
 
-SURUM: 1
-TARIH: 2026-03-20
+MİMARİ:
+- Services katmanının dış dünyaya açılan yüzüdür
+- Alt modül yollarını dış katmanlardan gizler
+- Lazy import ile gereksiz erken yüklemeyi önler
+- Circular import riskini azaltmaya yardımcı olur
+
+UYUMLULUK:
+- Android ve masaüstü çalışma düzeniyle uyumludur
+- Platforma özel kod içermez
+
+SURUM: 2
+TARIH: 2026-03-22
 IMZA: FY.
 """
 
