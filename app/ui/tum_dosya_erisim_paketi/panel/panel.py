@@ -5,8 +5,7 @@ DOSYA: app/ui/tum_dosya_erisim_paketi/panel/panel.py
 ROL:
 - Tüm dosya erişim panelini göstermek
 - Menü ikonunu sunmak
-- Erişim durumunu yenilemek
-- Ana menü, erişim popup ve yedek popup akışlarını başlatmak
+- Ana menü ve yedek popup akışını başlatmak
 
 MİMARİ:
 - Alt modülleri doğrudan import etmez
@@ -18,8 +17,8 @@ API UYUMLULUK:
 - Android API 35 ile uyumludur
 - Doğrudan Android bridge çağrısı içermez
 
-SURUM: 2
-TARIH: 2026-03-19
+SURUM: 3
+TARIH: 2026-03-22
 IMZA: FY.
 """
 
@@ -31,7 +30,7 @@ from app.ui.kart import Kart
 
 
 class TumDosyaErisimPaneli(Kart):
-    def __init__(self, on_status_changed=None, **kwargs):
+    def __init__(self, **kwargs):
         super().__init__(
             orientation="horizontal",
             size_hint_y=None,
@@ -43,13 +42,10 @@ class TumDosyaErisimPaneli(Kart):
             **kwargs,
         )
 
-        self.on_status_changed = on_status_changed
         self.menu_icon = None
-        self._last_status = None
         self._menu_anim = None
 
         self._build_ui()
-        self.refresh_status()
         self._start_menu_glow()
 
     # =========================================================
@@ -99,19 +95,6 @@ class TumDosyaErisimPaneli(Kart):
         self.add_widget(self.menu_icon)
 
     # =========================================================
-    # STATUS
-    # =========================================================
-    def refresh_status(self):
-        onceki = self._last_status
-        self._last_status = self._yonetici().erisim_durumu_getir(debug=self._debug)
-
-        try:
-            if callable(self.on_status_changed) and onceki != self._last_status:
-                self.on_status_changed(bool(self._last_status))
-        except Exception:
-            pass
-
-    # =========================================================
     # GLOW
     # =========================================================
     def _start_menu_glow(self) -> None:
@@ -130,9 +113,7 @@ class TumDosyaErisimPaneli(Kart):
     # =========================================================
     def _open_main_menu(self, *_args):
         try:
-            self.refresh_status()
             self._yonetici().open_main_menu(
-                open_access_popup=lambda: self._open_access_popup(),
                 open_backups_popup=lambda: self._open_backups_popup(),
             )
         except Exception as exc:
@@ -140,23 +121,6 @@ class TumDosyaErisimPaneli(Kart):
             self._yonetici().show_simple_popup(
                 title_text="Menü Hatası",
                 body_text=f"Menü açılamadı:\n{exc}",
-                icon_name="warning.png",
-                auto_close_seconds=1.8,
-                compact=True,
-            )
-
-    def _open_access_popup(self):
-        try:
-            self.refresh_status()
-            self._yonetici().open_access_popup(
-                status_value=self._last_status,
-                debug=self._debug,
-            )
-        except Exception as exc:
-            self._debug(f"erişim popup açılamadı: {exc}")
-            self._yonetici().show_simple_popup(
-                title_text="Erişim Hatası",
-                body_text=f"Erişim ekranı açılamadı:\n{exc}",
                 icon_name="warning.png",
                 auto_close_seconds=1.8,
                 compact=True,
