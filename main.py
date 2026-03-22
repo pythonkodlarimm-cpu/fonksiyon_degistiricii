@@ -11,6 +11,8 @@ ROL:
 - Proje kökünü sys.path içine ekler
 - APK içinde ve normal çalıştırmada importları sade ve güvenli tutar
 - Hata olursa traceback'i ekranda göstermeye çalışır
+- Uygulama arka plana geçince durum kaydını tetikler
+- Uygulama geri gelince durum geri yüklemeyi tetikler
 """
 
 from __future__ import annotations
@@ -101,7 +103,8 @@ class FonksiyonDegistiriciApp(App):
             core = CoreYoneticisi()
             self.title = f"{core.uygulama_adi()} v{core.tam_surum()}"
 
-            return RootWidget()
+            self.root_widget = RootWidget()
+            return self.root_widget
 
         except Exception:
             hata = traceback.format_exc()
@@ -109,6 +112,7 @@ class FonksiyonDegistiriciApp(App):
                 print(hata)
             except Exception:
                 pass
+            self.root_widget = None
             return _build_error_root(hata)
 
     def on_start(self):
@@ -116,6 +120,32 @@ class FonksiyonDegistiriciApp(App):
             print("PROJE_ROOT =", PROJE_ROOT)
         except Exception:
             pass
+
+    def on_pause(self):
+        try:
+            print("[APP] on_pause")
+            if hasattr(self, "root_widget") and self.root_widget is not None:
+                if hasattr(self.root_widget, "uygulama_durumu_kaydet"):
+                    self.root_widget.uygulama_durumu_kaydet()
+        except Exception:
+            try:
+                print(traceback.format_exc())
+            except Exception:
+                pass
+
+        return True
+
+    def on_resume(self):
+        try:
+            print("[APP] on_resume")
+            if hasattr(self, "root_widget") and self.root_widget is not None:
+                if hasattr(self.root_widget, "uygulama_durumu_geri_yukle"):
+                    self.root_widget.uygulama_durumu_geri_yukle()
+        except Exception:
+            try:
+                print(traceback.format_exc())
+            except Exception:
+                pass
 
 
 def main() -> None:
