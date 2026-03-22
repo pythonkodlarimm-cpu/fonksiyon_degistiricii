@@ -244,11 +244,7 @@ jobs:
               "android.permissions",
               f"INTERNET,ACCESS_NETWORK_STATE,{admob_permission}"
           )
-          text = set_or_add(
-              text,
-              "android.gradle_dependencies",
-              admob_gradle_dep
-          )
+          text = set_or_add(text, "android.gradle_dependencies", admob_gradle_dep)
           text = set_or_add(
               text,
               "android.meta_data",
@@ -494,12 +490,22 @@ jobs:
           grep -n "com.google.android.gms.ads.APPLICATION_ID" adid_check/manifest_tree.txt || true
           grep -n "ca-app-pub-5522917995813710~6900495663" adid_check/manifest_tree.txt || true
 
-          if grep -q "com.google.android.gms.permission.AD_ID" adid_check/aapt_permissions.txt; then
-            echo "AD_ID izni universal APK içinde bulundu." | tee adid_check/adid_result.txt
-          else
+          if ! grep -q "com.google.android.gms.permission.AD_ID" adid_check/aapt_permissions.txt; then
             echo "HATA: AD_ID izni universal APK içinde bulunamadı." | tee adid_check/adid_result.txt
             exit 1
           fi
+
+          if ! grep -q "com.google.android.gms.ads.APPLICATION_ID" adid_check/manifest_tree.txt; then
+            echo "HATA: APPLICATION_ID meta-data universal APK içinde bulunamadı." | tee -a adid_check/adid_result.txt
+            exit 1
+          fi
+
+          if ! grep -q "ca-app-pub-5522917995813710~6900495663" adid_check/manifest_tree.txt; then
+            echo "HATA: Beklenen AdMob App ID universal APK içinde bulunamadı." | tee -a adid_check/adid_result.txt
+            exit 1
+          fi
+
+          echo "AD_ID izni ve AdMob App ID universal APK içinde bulundu." | tee adid_check/adid_result.txt
 
       - name: AAB imzasını doğrula
         shell: bash
