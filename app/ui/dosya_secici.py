@@ -8,12 +8,14 @@ ROL:
 - Platforma göre uygun picker'ı yöneticisi üzerinden çağırır
 - Seçilen belgeyi üst katmana bildirir
 - Geliştirici modunda test dosya seçimini destekler
+- Aktif dile göre görünür metinleri üretir ve yeniler
 
 MİMARİ:
 - UI burada tutulur
 - Picker, popup, model ve geliştirici mod erişimi DosyaSeciciYoneticisi üzerinden yürür
 - Alt modüller doğrudan import edilmez
 - Ağır modüller uygulama açılışında yüklenmez
+- Kullanıcıya görünen metinler services -> sistem -> dil_servisi zincirinden alınır
 
 DAVRANIŞ:
 - Uygulama açılışında büyük Dosya Seç ikonu görünür
@@ -22,6 +24,7 @@ DAVRANIŞ:
 - Ham URI ekranda ana metin olarak gösterilmez
 - Dosya adı ve kısa durum bilgisi öne çıkarılır
 - DEV_MODE açıksa Test butonu da görünür
+- Dil değiştiğinde apply_language çağrısıyla görünür metinler güncellenebilir
 
 API UYUMLULUK:
 - Android tarafında sistem picker yalnızca yöneticisi üzerinden çağrılır
@@ -29,8 +32,8 @@ API UYUMLULUK:
 - API 35 uyumludur
 - Çoklu otomatik tetikleme kaldırılmıştır, tek güvenli tetikleme korunur
 
-SURUM: 36
-TARIH: 2026-03-20
+SURUM: 37
+TARIH: 2026-03-23
 IMZA: FY.
 """
 
@@ -83,7 +86,7 @@ class DosyaSecici(Kart):
         self.test_tool = None
 
         self._build_ui()
-        self._refresh_summary()
+        self.apply_language()
 
     # =========================================================
     # DEBUG
@@ -93,6 +96,60 @@ class DosyaSecici(Kart):
             print("[DOSYA_SECICI]", str(message))
         except Exception:
             pass
+
+    # =========================================================
+    # DIL
+    # =========================================================
+    def _services(self):
+        try:
+            parent = self.parent
+            while parent is not None:
+                services = getattr(parent, "services", None)
+                if services is not None:
+                    return services
+                parent = getattr(parent, "parent", None)
+        except Exception:
+            pass
+        return None
+
+    def _m(self, anahtar: str, default: str = "") -> str:
+        try:
+            services = self._services()
+            if services is not None:
+                return str(services.metin(anahtar, default) or default or anahtar)
+        except Exception:
+            pass
+        return str(default or anahtar)
+
+    def apply_language(self) -> None:
+        try:
+            if self.header is not None:
+                if hasattr(self.header, "set_text") and callable(self.header.set_text):
+                    self.header.set_text("Belge / Kod Dosyası")
+                else:
+                    self.header.text = "Belge / Kod Dosyası"
+        except Exception:
+            pass
+
+        try:
+            if self.select_tool is not None:
+                if hasattr(self.select_tool, "set_text") and callable(self.select_tool.set_text):
+                    self.select_tool.set_text(self._m("select_file", "Dosya Seç"))
+                elif hasattr(self.select_tool, "text"):
+                    self.select_tool.text = self._m("select_file", "Dosya Seç")
+        except Exception:
+            pass
+
+        try:
+            if self.test_tool is not None:
+                if hasattr(self.test_tool, "set_text") and callable(self.test_tool.set_text):
+                    self.test_tool.set_text(self._m("test", "Test"))
+                elif hasattr(self.test_tool, "text"):
+                    self.test_tool.text = self._m("test", "Test")
+        except Exception:
+            pass
+
+        self._refresh_summary()
 
     # =========================================================
     # UI
@@ -285,9 +342,15 @@ class DosyaSecici(Kart):
 
     def _refresh_summary(self) -> None:
         if not self._has_selection():
-            self.file_name_label.text = "Dosya seçilmedi"
-            self.file_detail_label.text = "Seçilen belge bilgisi burada görünür."
-            self.status_hint_label.text = "Belge seçmeniz bekleniyor."
+            self.file_name_label.text = self._m("file_not_selected", "Dosya seçilmedi")
+            self.file_detail_label.text = self._m(
+                "file_info_placeholder",
+                "Seçilen belge bilgisi burada görünür.",
+            )
+            self.status_hint_label.text = self._m(
+                "file_waiting",
+                "Belge seçmeniz bekleniyor.",
+            )
             self.status_hint_label.color = (0.76, 0.82, 0.92, 1)
             return
 
@@ -295,12 +358,17 @@ class DosyaSecici(Kart):
         identifier = str(self._last_identifier or "").strip()
 
         self.file_name_label.text = (
-            display_name if display_name else "Seçilen belge hazır"
+            display_name if display_name else self._m("file_not_selected", "Dosya seçilmedi")
         )
         self.file_detail_label.text = (
-            self._short_identifier(identifier) if identifier else "Belge kimliği yok"
+            self._short_identifier(identifier)
+            if identifier
+            else self._m("file_info_placeholder", "Seçilen belge bilgisi burada görünür.")
         )
-        self.status_hint_label.text = "Belge seçildi • Tarama otomatik başlatılır."
+        self.status_hint_label.text = self._m(
+            "file_selected_auto_scan",
+            "Belge seçildi • Tarama otomatik başlatılır.",
+        )
         self.status_hint_label.color = (0.72, 0.94, 0.78, 1)
 
     def _cancel_pending_scan_trigger(self) -> None:
