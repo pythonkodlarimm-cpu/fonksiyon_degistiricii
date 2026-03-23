@@ -28,7 +28,7 @@ MİMARİ:
 - Root mixin yapısı alt paket klasörlerinden yüklenir
 - Eski alias dosyaları kullanılmaz
 
-SURUM: 59
+SURUM: 60
 TARIH: 2026-03-23
 IMZA: FY.
 """
@@ -666,6 +666,43 @@ class RootWidget(
             print("[ROOT] Uygulama durumu kaydedilemedi.")
             print(traceback.format_exc())
 
+    def _clear_restore_view_state(self) -> None:
+        try:
+            self.current_file_path = ""
+            self.current_session = None
+            self.items = []
+            self.selected_item = None
+        except Exception:
+            pass
+
+        try:
+            self._clear_scan_transition_state()
+        except Exception:
+            pass
+
+        try:
+            if self.dosya_secici is not None:
+                self.dosya_secici.clear_selection()
+        except Exception:
+            pass
+
+        try:
+            if self.function_list is not None:
+                self.function_list.clear_all()
+        except Exception:
+            pass
+
+        try:
+            if self.editor is not None:
+                if hasattr(self.editor, "clear_all") and callable(self.editor.clear_all):
+                    self.editor.clear_all()
+                elif hasattr(self.editor, "clear_selection") and callable(
+                    self.editor.clear_selection
+                ):
+                    self.editor.clear_selection()
+        except Exception:
+            pass
+
     def _restore_items_from_saved_file(self, saved_file_path: str) -> bool:
         temiz_yol = str(saved_file_path or "").strip()
         if not temiz_yol:
@@ -688,8 +725,13 @@ class RootWidget(
             return False
 
         try:
+            items = list(items or [])
+            if not items:
+                print("[ROOT] Kayıtlı çalışma dosyası tarandı ama fonksiyon listesi boş.")
+                return False
+
             self.current_file_path = temiz_yol
-            self.items = list(items or [])
+            self.items = items
 
             if self.function_list is not None:
                 self.function_list.set_items(self.items)
@@ -704,9 +746,9 @@ class RootWidget(
             print(traceback.format_exc())
             return False
 
-    def _apply_saved_state(self, state: dict) -> None:
+    def _apply_saved_state(self, state: dict) -> bool:
         if not isinstance(state, dict) or not state:
-            return
+            return False
 
         current_file_path = str(state.get("current_file_path", "") or "").strip()
         selected_item_identity = str(
@@ -721,12 +763,21 @@ class RootWidget(
             state.get("selection_display_name", "") or ""
         ).strip()
 
+        self._clear_restore_view_state()
+
+        restore_ok = False
+        selected_ok = False
+        editor_text_ok = False
+        selection_ui_ok = False
+
         try:
             if self.dosya_secici is not None:
                 if selection_identifier:
                     self.dosya_secici.set_path(selection_identifier)
+                    selection_ui_ok = True
                 elif current_file_path:
                     self.dosya_secici.set_path(current_file_path)
+                    selection_ui_ok = True
 
                 if selection_display_name:
                     try:
@@ -737,25 +788,17 @@ class RootWidget(
         except Exception:
             pass
 
-        restore_ok = False
-
         try:
             if current_file_path:
                 restore_ok = self._restore_items_from_saved_file(current_file_path)
         except Exception:
             print("[ROOT] Saved file restore aşaması başarısız.")
             print(traceback.format_exc())
+            restore_ok = False
 
-        try:
-            if not restore_ok and current_file_path:
-                self.current_file_path = current_file_path
-        except Exception:
-            pass
-
-        try:
-            self._clear_scan_transition_state()
-        except Exception:
-            pass
+        if not restore_ok:
+            self._clear_restore_view_state()
+            return False
 
         try:
             if selected_item_identity:
@@ -763,6 +806,7 @@ class RootWidget(
                 if bulunan is not None:
                     try:
                         self.select_item(bulunan)
+                        selected_ok = True
                     except Exception:
                         self.selected_item = bulunan
                         try:
@@ -771,6 +815,7 @@ class RootWidget(
                                 and hasattr(self.editor, "set_item")
                             ):
                                 self.editor.set_item(bulunan)
+                                selected_ok = True
                         except Exception:
                             pass
         except Exception:
@@ -780,6 +825,7 @@ class RootWidget(
         try:
             if editor_text:
                 self._editor_text_yaz(editor_text)
+                editor_text_ok = True
         except Exception:
             print("[ROOT] Kayıtlı editör metni geri yüklenemedi.")
             print(traceback.format_exc())
@@ -795,6 +841,15 @@ class RootWidget(
             Clock.schedule_once(_apply_scroll, 0.12)
         except Exception:
             pass
+
+        if self.items:
+            return True
+
+        if selected_ok or editor_text_ok or selection_ui_ok:
+            return True
+
+        self._clear_restore_view_state()
+        return False
 
     def uygulama_durumu_geri_yukle(self) -> None:
         try:
@@ -817,23 +872,25 @@ class RootWidget(
             def _restore(*_args):
                 self._resume_restore_scheduled = False
                 try:
-                    self._apply_saved_state(state)
+                    restore_ok = self._apply_saved_state(state)
 
-                    if not self.items and self.current_file_path:
-                        print("[ROOT] Restore sonrası item listesi boş.")
-                        self.set_status_warning(
-                            "Dosya bulunamadı veya yeniden yüklenemedi."
+                    if restore_ok:
+                        self._show_temporary_restore_status(
+                            "Oturum geri yüklendi.",
+                            "onaylandi.png",
+                            3.5,
                         )
+                        print("[ROOT] Uygulama durumu geri yüklendi.")
+                        return
 
-                    self._show_temporary_restore_status(
-                        "Oturum geri yüklendi.",
-                        "onaylandi.png",
-                        3.5,
-                    )
-                    print("[ROOT] Uygulama durumu geri yüklendi.")
+                    self.set_status_warning("Önceki oturum geri yüklenemedi. Dosyayı yeniden seçin.")
+                    print("[ROOT] Uygulama durumu geri yüklenemedi: restore sonucu boş/geçersiz.")
+
                 except Exception:
+                    self._clear_restore_view_state()
                     print("[ROOT] Uygulama durumu geri yüklenemedi.")
                     print(traceback.format_exc())
+                    self.set_status_warning("Önceki oturum geri yüklenemedi. Dosyayı yeniden seçin.")
 
             Clock.schedule_once(_restore, 0.10)
 
@@ -853,16 +910,25 @@ class RootWidget(
             if not current_file_path and not editor_text:
                 return
 
-            self._apply_saved_state(state)
-            self._show_temporary_restore_status(
-                "Önceki oturum geri yüklendi.",
-                "onaylandi.png",
-                3.5,
-            )
-            print("[ROOT] Başlangıçta kayıtlı app state uygulandı.")
+            restore_ok = self._apply_saved_state(state)
+
+            if restore_ok:
+                self._show_temporary_restore_status(
+                    "Önceki oturum geri yüklendi.",
+                    "onaylandi.png",
+                    3.5,
+                )
+                print("[ROOT] Başlangıçta kayıtlı app state uygulandı.")
+                return
+
+            self.set_status_warning("Önceki oturum açılamadı. Dosyayı yeniden seçin.")
+            print("[ROOT] Başlangıç app state restore sonucu başarısız/geçersiz.")
+
         except Exception:
+            self._clear_restore_view_state()
             print("[ROOT] Başlangıç app state geri yükleme başarısız.")
             print(traceback.format_exc())
+            self.set_status_warning("Önceki oturum açılamadı. Dosyayı yeniden seçin.")
 
     # =========================================================
     # TARAMA -> GEÇİŞ REKLAMI -> LİSTE AÇMA
