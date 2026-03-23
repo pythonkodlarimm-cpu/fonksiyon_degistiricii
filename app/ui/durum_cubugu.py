@@ -7,12 +7,15 @@ ROL:
 - İkon + metin gösterir
 - Başarı / uyarı / hata gibi kısa mesajları taşır
 - Detaylı hata metni geldiğinde kopyalanabilir popup açabilir
+- İsteğe bağlı geçici aksiyon butonu gösterebilir
+- Aksiyon butonunu dikkat çekici pulse animasyonu ile gösterebilir
 
 MİMARİ:
 - Saf UI bileşenidir
 - Doğrudan Android API çağrısı yapmaz
 - Root ve diğer UI katmanları tarafından güvenli şekilde kullanılabilir
-- Mevcut API korunur, ek olarak detaylı hata metni desteklenir
+- Mevcut API korunur, ek olarak detaylı hata metni ve aksiyon butonu desteklenir
+- Pulse animasyonu sadece aksiyon butonu görünürken çalışır
 
 APK / ANDROID UYUMLULUK:
 - İkon değişiminde source güncellendikten sonra reload() çağrılır
@@ -21,13 +24,14 @@ APK / ANDROID UYUMLULUK:
 - API 35 ile güvenli kullanılabilir
 - APK / AAB davranış farkını azaltmak için görsel fallback mantığı korunmuştur
 
-SURUM: 6
-TARIH: 2026-03-20
+SURUM: 8
+TARIH: 2026-03-22
 IMZA: FY.
 """
 
 from __future__ import annotations
 
+from kivy.animation import Animation
 from kivy.core.clipboard import Clipboard
 from kivy.metrics import dp
 from kivy.uix.behaviors import ButtonBehavior
@@ -53,6 +57,8 @@ class DurumCubugu(ButtonBehavior, Kart):
     Not:
     - set_error çağrısında detaylı hata metni verilirse,
       çubuğa dokununca kopyalanabilir popup açılır.
+    - set_action çağrısı ile geçici aksiyon butonu gösterilebilir.
+    - Aksiyon butonu görünürken pulse animasyonu çalışabilir.
     """
 
     def __init__(self, **kwargs):
@@ -82,6 +88,10 @@ class DurumCubugu(ButtonBehavior, Kart):
         self._detailed_error_text = ""
         self._popup_ref = None
 
+        self._action_callback = None
+        self._action_visible = False
+        self._action_pulse_anim = None
+
         self.icon = Image(
             source="",
             size_hint=(None, None),
@@ -105,6 +115,21 @@ class DurumCubugu(ButtonBehavior, Kart):
         )
         self.label.bind(size=self._sync_label_size)
         self.add_widget(self.label)
+
+        self.action_button = Button(
+            text="",
+            size_hint=(None, None),
+            size=(0, 0),
+            opacity=0,
+            disabled=True,
+            background_normal="",
+            background_down="",
+            background_color=(0.18, 0.42, 0.72, 1),
+            color=(1, 1, 1, 1),
+            font_size="11sp",
+        )
+        self.action_button.bind(on_release=self._on_action_button_release)
+        self.add_widget(self.action_button)
 
         self._apply_info_style()
 
@@ -294,6 +319,84 @@ class DurumCubugu(ButtonBehavior, Kart):
             except Exception:
                 pass
 
+    def _stop_action_pulse(self) -> None:
+        try:
+            if self._action_pulse_anim is not None:
+                self._action_pulse_anim.cancel(self.action_button)
+        except Exception:
+            pass
+        self._action_pulse_anim = None
+
+    def _start_action_pulse(self) -> None:
+        self._stop_action_pulse()
+
+        try:
+            if not self._action_visible:
+                return
+
+            if self.action_button is None:
+                return
+
+            normal_w = dp(108)
+            normal_h = dp(30)
+            buyuk_w = dp(116)
+            buyuk_h = dp(34)
+
+            self.action_button.size = (normal_w, normal_h)
+
+            anim_buyut = Animation(
+                size=(buyuk_w, buyuk_h),
+                duration=0.45,
+            )
+            anim_kucult = Animation(
+                size=(normal_w, normal_h),
+                duration=0.45,
+            )
+
+            self._action_pulse_anim = anim_buyut + anim_kucult
+            self._action_pulse_anim.repeat = True
+            self._action_pulse_anim.start(self.action_button)
+        except Exception:
+            self._action_pulse_anim = None
+
+    def _show_action_button(self, text: str, callback) -> None:
+        self._action_callback = callback
+        self._action_visible = True
+
+        try:
+            self.action_button.text = self._safe_text(text, "Devam Et")
+            self.action_button.disabled = False
+            self.action_button.opacity = 1
+            self.action_button.size = (dp(108), dp(30))
+        except Exception:
+            pass
+
+        self._start_action_pulse()
+
+    def _hide_action_button(self) -> None:
+        self._stop_action_pulse()
+
+        self._action_callback = None
+        self._action_visible = False
+
+        try:
+            self.action_button.text = ""
+            self.action_button.disabled = True
+            self.action_button.opacity = 0
+            self.action_button.size = (0, 0)
+        except Exception:
+            pass
+
+    def _on_action_button_release(self, *_args) -> None:
+        callback = self._action_callback
+        if callback is None:
+            return
+
+        try:
+            callback()
+        except Exception:
+            pass
+
     # =========================================================
     # INTERACTION
     # =========================================================
@@ -309,6 +412,7 @@ class DurumCubugu(ButtonBehavior, Kart):
     # =========================================================
     def set_status(self, text: str, icon_name: str = "") -> None:
         self._clear_detailed_error()
+        self._hide_action_button()
         self.label.text = self._safe_text(text, " ")
         self._set_icon(icon_name)
         self._apply_info_style()
@@ -318,12 +422,14 @@ class DurumCubugu(ButtonBehavior, Kart):
 
     def set_success(self, text: str = "İşlem başarılı") -> None:
         self._clear_detailed_error()
+        self._hide_action_button()
         self.label.text = self._safe_text(text, "İşlem başarılı")
         self._set_icon("onaylandi.png")
         self._apply_success_style()
 
     def set_warning(self, text: str = "Uyarı") -> None:
         self._clear_detailed_error()
+        self._hide_action_button()
         self.label.text = self._safe_text(text, "Uyarı")
         self._set_icon("warning.png")
         self._apply_warning_style()
@@ -334,6 +440,7 @@ class DurumCubugu(ButtonBehavior, Kart):
         detailed_text: str = "",
         popup_title: str = "Hata Detayı",
     ) -> None:
+        self._hide_action_button()
         self.label.text = self._safe_text(text, "Bir hata oluştu")
         self._set_icon("error.png")
         self._apply_error_style()
@@ -343,3 +450,39 @@ class DurumCubugu(ButtonBehavior, Kart):
             self._set_detailed_error(detay, title=popup_title)
         else:
             self._clear_detailed_error()
+
+    def set_action(
+        self,
+        text: str,
+        button_text: str = "Devam Et",
+        callback=None,
+        icon_name: str = "onaylandi.png",
+        tone: str = "success",
+    ) -> None:
+        """
+        Durum çubuğunda metin + opsiyonel aksiyon butonu gösterir.
+        Tarama tamamlandıktan sonra 'Listeyi Aç' gibi CTA akışları için kullanılır.
+        """
+        self._clear_detailed_error()
+        self.label.text = self._safe_text(text, " ")
+
+        if tone == "error":
+            self._set_icon("error.png")
+            self._apply_error_style()
+        elif tone == "warning":
+            self._set_icon("warning.png")
+            self._apply_warning_style()
+        elif tone == "success":
+            self._set_icon(icon_name or "onaylandi.png")
+            self._apply_success_style()
+        else:
+            self._set_icon(icon_name)
+            self._apply_info_style()
+
+        if callable(callback):
+            self._show_action_button(button_text, callback)
+        else:
+            self._hide_action_button()
+
+    def clear_action(self) -> None:
+        self._hide_action_button()
