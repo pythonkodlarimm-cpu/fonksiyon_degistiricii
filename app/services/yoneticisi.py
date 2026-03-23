@@ -11,16 +11,17 @@ MİMARİ:
 - Lazy import kullanır
 - UI ve root katmanı doğrudan alt servis dosyalarına değil, bu yöneticiye bağlanır
 - Refactor sırasında import kırılmalarını azaltır
-- Android, belge, dosya, analiz, reklam, sistem ve yedek servislerini tek noktada toplar
+- Android, belge, dosya, analiz, reklam, güncelleme, sistem ve yedek servislerini tek noktada toplar
 - Banner ve geçiş reklamı gibi reklam akışları üst katmana tek kapıdan açılır
+- Play Store yönlendirmeli güncelleme akışı üst katmana tek kapıdan açılır
 
 API UYUMLULUK:
 - Platform bağımsız çekirdek servislerle uyumludur
 - Android servisleri izole biçimde yönetir
 - Android API 35 hedefiyle uyumlu mimari için uygundur
 
-SURUM: 4
-TARIH: 2026-03-22
+SURUM: 5
+TARIH: 2026-03-23
 IMZA: FY.
 """
 
@@ -50,6 +51,10 @@ class ServicesYoneticisi:
     def _reklam_yoneticisi(self):
         from app.services.reklam import ReklamYoneticisi
         return ReklamYoneticisi()
+
+    def _guncelleme_yoneticisi(self):
+        from app.services.guncelleme import GuncellemeYoneticisi
+        return GuncellemeYoneticisi()
 
     def _sistem_yoneticisi(self):
         from app.services.sistem import SistemYoneticisi
@@ -183,6 +188,32 @@ class ServicesYoneticisi:
 
     def odullu_reklam_goster(self) -> bool:
         return self._reklam_yoneticisi().odullu_reklam_goster()
+
+    # =========================================================
+    # GUNCELLEME
+    # =========================================================
+    def guncelleme_yoneticisi(self):
+        return self._guncelleme_yoneticisi()
+
+    def guncelleme_kontrol_aktif_mi(self) -> bool:
+        return self._guncelleme_yoneticisi().guncelleme_kontrol_aktif_mi()
+
+    def guncelleme_bildirim_metni(self) -> str:
+        return self._guncelleme_yoneticisi().guncelleme_bildirim_metni()
+
+    def guncelleme_buton_metni(self) -> str:
+        return self._guncelleme_yoneticisi().guncelleme_buton_metni()
+
+    def play_store_package_name(self) -> str:
+        return self._guncelleme_yoneticisi().play_store_package_name()
+
+    def play_store_sayfasini_ac(self, package_name: str = "") -> bool:
+        return self._guncelleme_yoneticisi().play_store_sayfasini_ac(
+            package_name=package_name
+        )
+
+    def guncelleme_bildirimi_gosterilmeli_mi(self) -> bool:
+        return self._guncelleme_yoneticisi().guncelleme_bildirimi_gosterilmeli_mi()
 
     # =========================================================
     # SISTEM
