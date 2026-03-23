@@ -8,6 +8,7 @@ ROL:
 - Aksiyon, bildirim, popup, doğrulama ve yardımcı akışları ilgili yöneticiler üzerinden yürütür
 - Büyük kod içeriklerinde UI donmasını azaltmak için içerik yüklemeyi sade ve güvenli şekilde erteler
 - Üst katmanların editör iç yapısını bilmeden metin okuyup yazabilmesi için public text API sağlar
+- Android restore akışında eksik item / geç zamanlama kaynaklı UI çökmesini azaltır
 
 MİMARİ:
 - Alt modüllere doğrudan erişmez
@@ -16,14 +17,15 @@ MİMARİ:
 - Davranış korunur, bağımlılık yapısı sadeleştirilmiştir
 - set_item akışı tek bir ertelenmiş yükleme ile stabil tutulur
 - Root ve diğer üst katmanlar editör iç widget yapısını bilmeden public API üzerinden içerik okuyup yazabilir
+- Widget hazır değilken veya item eksik gelirse güvenli fallback uygulanır
 
 API UYUMLULUK:
 - Platform bağımsızdır
 - Android API 35 ile uyumludur
 - Doğrudan Android bridge çağrısı içermez
 
-SURUM: 28
-TARIH: 2026-03-22
+SURUM: 29
+TARIH: 2026-03-23
 IMZA: FY.
 """
 
@@ -258,13 +260,39 @@ class EditorPaneli(BoxLayout):
 
     def clear_all(self) -> None:
         self._cancel_pending_set_item()
-        self._yardimci().close_popups(self)
+
+        try:
+            self._yardimci().close_popups(self)
+        except Exception:
+            pass
+
         self.current_item = None
         self._new_code_buffer = ""
-        self.path_label.set_text("Seçili fonksiyon: -")
-        self.current_code_area.text = ""
-        self.new_code_area.text = ""
-        self.inline_notice.hide_immediately()
+
+        try:
+            if self.path_label is not None:
+                self.path_label.set_text("Seçili fonksiyon: -")
+        except Exception:
+            pass
+
+        try:
+            if self.current_code_area is not None:
+                self.current_code_area.text = ""
+        except Exception:
+            pass
+
+        try:
+            if self.new_code_area is not None:
+                self.new_code_area.text = ""
+        except Exception:
+            pass
+
+        try:
+            if self.inline_notice is not None:
+                self.inline_notice.hide_immediately()
+        except Exception:
+            pass
+
         self._set_status_info("Hazır.", 0)
 
     def set_new_code_text(self, text: str) -> None:
@@ -274,36 +302,22 @@ class EditorPaneli(BoxLayout):
     # PUBLIC TEXT API
     # =========================================================
     def get_text(self) -> str:
-        """
-        Yeni kod alanındaki metni döner.
-        Üst katmanlar editör iç yapısını bilmeden bu public API üzerinden
-        içerik okuyabilir.
-        """
         try:
             return str(self.new_code_area.text or "")
         except Exception:
             return ""
 
     def set_text(self, text: str) -> None:
-        """
-        Yeni kod alanına metin yazar.
-        Üst katmanlar editör iç yapısını bilmeden bu public API üzerinden
-        içerik geri yükleyebilir.
-        """
         try:
             self._set_new_code(text)
         except Exception:
             try:
-                self.new_code_area.text = str(text or "")
+                if self.new_code_area is not None:
+                    self.new_code_area.text = str(text or "")
             except Exception:
                 pass
 
     def get_current_text(self) -> str:
-        """
-        Mevcut kod alanındaki salt okunur metni döner.
-        Tanılama, karşılaştırma ve gerektiğinde üst katman kullanımı için
-        yardımcı public API sunar.
-        """
         try:
             return str(self.current_code_area.text or "")
         except Exception:
@@ -335,6 +349,37 @@ class EditorPaneli(BoxLayout):
             pass
         self._pending_set_item_event = None
 
+    def _item_path_text(self, item) -> str:
+        if item is None:
+            return "-"
+
+        for attr_name in ("path", "name", "signature"):
+            try:
+                value = str(getattr(item, attr_name, "") or "").strip()
+                if value:
+                    return value
+            except Exception:
+                pass
+
+        return "-"
+
+    def _item_source_text(self, item) -> str:
+        if item is None:
+            return ""
+
+        try:
+            return str(getattr(item, "source", "") or "")
+        except Exception:
+            return ""
+
+    def _widgetler_hazir_mi(self) -> bool:
+        return bool(
+            self.path_label is not None
+            and self.current_code_area is not None
+            and self.new_code_area is not None
+            and self.inline_notice is not None
+        )
+
     # =========================================================
     # KOD
     # =========================================================
@@ -344,39 +389,84 @@ class EditorPaneli(BoxLayout):
             trim_outer_blank_lines=True,
         )
         self._new_code_buffer = metin
-        self.new_code_area.text = metin
-        self.new_code_area.scroll_to_top()
+
+        try:
+            if self.new_code_area is not None:
+                self.new_code_area.text = metin
+                self.new_code_area.scroll_to_top()
+        except Exception:
+            try:
+                if self.new_code_area is not None:
+                    self.new_code_area.text = metin
+            except Exception:
+                pass
 
     def set_item(self, item) -> None:
         self._cancel_pending_set_item()
         self._set_item_serial += 1
         aktif_serial = int(self._set_item_serial)
 
-        onceki_path = str(getattr(self.current_item, "path", "") or "")
-        yeni_path = str(getattr(item, "path", "") or "")
+        onceki_path = self._item_path_text(self.current_item)
+        yeni_path = self._item_path_text(item)
 
         self.current_item = item
-        self.inline_notice.hide_immediately()
+
+        try:
+            if self.inline_notice is not None:
+                self.inline_notice.hide_immediately()
+        except Exception:
+            pass
+
         self._set_status_info("Hazır.", 0)
 
         if item is None:
-            self._yardimci().close_popups(self)
-            self.path_label.set_text("Seçili fonksiyon: -")
-            self.current_code_area.text = ""
-            self.new_code_area.text = ""
+            try:
+                self._yardimci().close_popups(self)
+            except Exception:
+                pass
+
+            try:
+                if self.path_label is not None:
+                    self.path_label.set_text("Seçili fonksiyon: -")
+            except Exception:
+                pass
+
+            try:
+                if self.current_code_area is not None:
+                    self.current_code_area.text = ""
+            except Exception:
+                pass
+
+            try:
+                if self.new_code_area is not None:
+                    self.new_code_area.text = ""
+            except Exception:
+                pass
+
             self._new_code_buffer = ""
             return
 
-        self.path_label.set_text(f"Seçili fonksiyon: {getattr(item, 'path', '-')}")
+        try:
+            if self.path_label is not None:
+                self.path_label.set_text(f"Seçili fonksiyon: {yeni_path}")
+        except Exception:
+            pass
 
         if onceki_path != yeni_path:
             self._new_code_buffer = ""
 
-        source_raw = str(getattr(item, "source", "") or "")
+        source_raw = self._item_source_text(item)
         new_buffer_raw = str(self._new_code_buffer or "")
 
         def _apply(_dt):
             if aktif_serial != int(self._set_item_serial):
+                return
+
+            if self.current_item is not item:
+                return
+
+            if not self._widgetler_hazir_mi():
+                self._pending_set_item_event = Clock.schedule_once(_apply, 0.05)
                 return
 
             try:
@@ -399,14 +489,20 @@ class EditorPaneli(BoxLayout):
                 new_text = new_buffer_raw
 
             try:
-                self.current_code_area.text = current_text
+                self.current_code_area.text = str(current_text or "")
             except Exception:
-                self.current_code_area.text = ""
+                try:
+                    self.current_code_area.text = ""
+                except Exception:
+                    pass
 
             try:
-                self.new_code_area.text = new_text
+                self.new_code_area.text = str(new_text or "")
             except Exception:
-                self.new_code_area.text = ""
+                try:
+                    self.new_code_area.text = ""
+                except Exception:
+                    pass
 
             try:
                 self.current_code_area.scroll_to_top()
@@ -426,7 +522,7 @@ class EditorPaneli(BoxLayout):
 
             self._pending_set_item_event = None
 
-        self._pending_set_item_event = Clock.schedule_once(_apply, 0)
+        self._pending_set_item_event = Clock.schedule_once(_apply, 0.02)
 
     # =========================================================
     # AKSIYONLAR
