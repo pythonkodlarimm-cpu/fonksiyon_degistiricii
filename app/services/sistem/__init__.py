@@ -7,9 +7,20 @@ ROL:
 - Import yükünü azaltır
 - Circular import riskini minimize eder
 - Sistem katmanını dış dünyaya kontrollü şekilde açar
+- Dil, ayar, app state ve bildirim servislerini tek kapıdan sunar
 
-SURUM: 1
-TARIH: 2026-03-19
+MİMARİ:
+- Sistem katmanının dışa açılan yüzüdür
+- Alt modül yapısını gizler
+- Lazy import ile yalnızca ihtiyaç anında yükleme yapar
+- ServicesYoneticisi ile birlikte çalışacak şekilde tasarlanmıştır
+
+UYUMLULUK:
+- Android ve masaüstü ile uyumlu
+- Platform bağımsızdır
+
+SURUM: 2
+TARIH: 2026-03-23
 IMZA: FY.
 """
 
