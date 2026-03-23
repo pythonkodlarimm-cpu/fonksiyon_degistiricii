@@ -6,11 +6,13 @@ ROL:
 - Tüm dosya erişim panel bileşenine tek giriş noktası sağlar
 - Panel sınıfını lazy import ile yükler
 - Üst katmanın panel implementasyon detaylarını bilmesini engeller
+- Panel oluştururken services ve callback bağımlılıklarını güvenli şekilde aşağı katmana geçirir
 
 MİMARİ:
 - Lazy import kullanır (import maliyetini azaltır)
 - UI bileşenini doğrudan expose etmez, yönetici üzerinden verir
 - Panel oluşturma ve sınıf erişimi ayrılmıştır
+- Dil değişimi gibi üst katman callback'leri **kwargs ile panele aktarılabilir
 
 KULLANIM:
 - panel_sinifi() -> Panel class döner
@@ -21,8 +23,8 @@ API UYUMLULUK:
 - Android API 35 ile uyumludur
 - UI katmanı dışında bağımlılığı yoktur
 
-SURUM: 2
-TARIH: 2026-03-22
+SURUM: 3
+TARIH: 2026-03-23
 IMZA: FY.
 """
 
