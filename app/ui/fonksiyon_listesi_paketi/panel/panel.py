@@ -13,6 +13,7 @@ ROL:
 - Büyük listelerde render yükünü tek kareye yıkmadan parça parça işler
 - Seçim sırasında tüm listeyi yeniden çizmek yerine satır bazlı güncelleme yapar
 - Android / APK ortamında restore sonrası render yarış durumlarını azaltır
+- Aktif dile göre görünür metinleri yenileyebilir
 
 MİMARİ:
 - Kendi görselini kendi çizer
@@ -22,6 +23,7 @@ MİMARİ:
   UI kurulumu, render akışı, görünüm akışı ve hata akışı kullanılır
 - Panel dosyası orkestrasyon katmanı olarak sade tutulur
 - Render akışı widget hazırlığı ve seçim tutarlılığı için güvenli kontroller içerir
+- Kullanıcıya görünen metinler services -> sistem -> dil_servisi zincirinden alınır
 
 API UYUMLULUK:
 - Bu dosya doğrudan Android API çağrısı yapmaz
@@ -29,7 +31,7 @@ API UYUMLULUK:
 - Büyük liste / dar liste davranışı güvenli şekilde yönetilir
 - API 35 ile güvenle kullanılabilir
 
-SURUM: 6
+SURUM: 7
 TARIH: 2026-03-23
 IMZA: FY.
 """
@@ -42,6 +44,7 @@ from kivy.clock import Clock
 from kivy.metrics import dp
 from kivy.uix.boxlayout import BoxLayout
 
+from app.services.yoneticisi import ServicesYoneticisi
 from app.ui.fonksiyon_listesi_paketi.arama import AramaYoneticisi
 from app.ui.fonksiyon_listesi_paketi.gorunum_akisi import GorunumAkisiYoneticisi
 from app.ui.fonksiyon_listesi_paketi.hata_akisi import HataAkisiYoneticisi
@@ -54,7 +57,13 @@ from app.ui.tema import TEXT_MUTED
 
 
 class FonksiyonListesi(BoxLayout):
-    def __init__(self, on_select, on_error=None, **kwargs):
+    def __init__(
+        self,
+        on_select,
+        on_error=None,
+        services: ServicesYoneticisi | None = None,
+        **kwargs,
+    ):
         super().__init__(
             orientation="vertical",
             spacing=dp(8),
@@ -65,6 +74,7 @@ class FonksiyonListesi(BoxLayout):
 
         self.on_select = on_select
         self.on_error = on_error
+        self.services = services
 
         self._satir_yoneticisi = SatirYoneticisi()
         self._arama_yoneticisi = AramaYoneticisi()
@@ -105,10 +115,82 @@ class FonksiyonListesi(BoxLayout):
         self._pending_render_items = []
         self._pending_keep_scroll = False
 
-        # YENİ: mevcut satır widget referansları
         self._row_widgets = {}
 
         self._build_ui()
+
+    # =========================================================
+    # DIL
+    # =========================================================
+    def _get_services(self) -> ServicesYoneticisi:
+        if self.services is not None:
+            return self.services
+
+        try:
+            parent = self.parent
+            while parent is not None:
+                services = getattr(parent, "services", None)
+                if services is not None:
+                    self.services = services
+                    return services
+                parent = getattr(parent, "parent", None)
+        except Exception:
+            pass
+
+        self.services = ServicesYoneticisi()
+        return self.services
+
+    def _m(self, anahtar: str, default: str = "") -> str:
+        try:
+            return str(
+                self._get_services().metin(anahtar, default) or default or anahtar
+            )
+        except Exception:
+            return str(default or anahtar)
+
+    def refresh_language(self) -> None:
+        try:
+            if self.header is not None:
+                if hasattr(self.header, "set_text") and callable(self.header.set_text):
+                    self.header.set_text(
+                        self._m("function_list_title", "Fonksiyon Listesi")
+                    )
+                elif hasattr(self.header, "text"):
+                    self.header.text = self._m(
+                        "function_list_title",
+                        "Fonksiyon Listesi",
+                    )
+        except Exception:
+            pass
+
+        try:
+            if self.search_input is not None and hasattr(self.search_input, "hint_text"):
+                self.search_input.hint_text = self._m(
+                    "search_functions",
+                    "Fonksiyon ara...",
+                )
+        except Exception:
+            pass
+
+        try:
+            self._refresh_count_label()
+        except Exception:
+            pass
+
+        try:
+            self._selected_preview_card_text_guncelle()
+        except Exception:
+            pass
+
+        try:
+            self._new_preview_card_text_guncelle()
+        except Exception:
+            pass
+
+        try:
+            self._render_items(self.filtered_items, keep_scroll=True)
+        except Exception:
+            pass
 
     # =========================================================
     # SHARED HELPERS
@@ -137,6 +219,37 @@ class FonksiyonListesi(BoxLayout):
         except Exception:
             return False
 
+    def _refresh_count_label(self) -> None:
+        try:
+            if self.count_label is None:
+                return
+
+            toplam = len(self.all_items or [])
+            filtreli = len(self.filtered_items or [])
+
+            if toplam <= 0:
+                text_value = self._m("function_count_empty", "Fonksiyon yok")
+            elif filtreli == toplam:
+                text_value = self._m(
+                    "function_count_all",
+                    f"Toplam {toplam} fonksiyon",
+                )
+                if "{count}" in text_value:
+                    text_value = text_value.replace("{count}", str(toplam))
+            else:
+                text_value = self._m(
+                    "function_count_filtered",
+                    f"{filtreli} / {toplam} fonksiyon",
+                )
+                text_value = (
+                    text_value.replace("{filtered}", str(filtreli))
+                    .replace("{total}", str(toplam))
+                )
+
+            self.count_label.text = str(text_value)
+        except Exception:
+            pass
+
     # =========================================================
     # ERROR
     # =========================================================
@@ -146,24 +259,24 @@ class FonksiyonListesi(BoxLayout):
     def _format_exception_details(
         self,
         exc: Exception,
-        title: str = "Fonksiyon Listesi Hatası",
+        title: str = "",
     ) -> str:
         return self._hata_akisi_yoneticisi.format_exception_details(
             self,
             exc,
-            title,
+            title or self._m("function_list_error", "Fonksiyon Listesi Hatası"),
         )
 
     def _report_error(
         self,
         exc: Exception,
-        title: str = "Fonksiyon Listesi Hatası",
+        title: str = "",
         detailed_text: str = "",
     ) -> None:
         self._hata_akisi_yoneticisi.report_error(
             owner=self,
             exc=exc,
-            title=title,
+            title=title or self._m("function_list_error", "Fonksiyon Listesi Hatası"),
             detailed_text=detailed_text,
         )
 
@@ -173,8 +286,15 @@ class FonksiyonListesi(BoxLayout):
     def _build_ui(self) -> None:
         try:
             self._ui_kurulumu_yoneticisi.build_ui(self)
+            self.refresh_language()
         except Exception as exc:
-            self._report_error(exc, title="Fonksiyon Listesi UI Kurulum Hatası")
+            self._report_error(
+                exc,
+                title=self._m(
+                    "function_list_ui_setup_error",
+                    "Fonksiyon Listesi UI Kurulum Hatası",
+                ),
+            )
 
     # =========================================================
     # INTERNAL RENDER SCHEDULING
@@ -227,8 +347,15 @@ class FonksiyonListesi(BoxLayout):
                 keep_scroll=bool(self._pending_keep_scroll),
             )
             self._rebuild_row_widget_index()
+            self._refresh_count_label()
         except Exception as exc:
-            self._report_error(exc, title="Fonksiyon Listesi Render Hatası")
+            self._report_error(
+                exc,
+                title=self._m(
+                    "function_list_render_error",
+                    "Fonksiyon Listesi Render Hatası",
+                ),
+            )
 
     def _rebuild_row_widget_index(self) -> None:
         self._row_widgets = {}
@@ -287,8 +414,15 @@ class FonksiyonListesi(BoxLayout):
                 pass
 
             self._row_widgets = {}
+            self._refresh_count_label()
         except Exception as exc:
-            self._report_error(exc, title="Fonksiyon Listesi Temizleme Hatası")
+            self._report_error(
+                exc,
+                title=self._m(
+                    "function_list_clear_error",
+                    "Fonksiyon Listesi Temizleme Hatası",
+                ),
+            )
 
     def clear_selection(self) -> None:
         self.selected_item = None
@@ -317,8 +451,15 @@ class FonksiyonListesi(BoxLayout):
             self.clear_items()
             self.set_selected_preview("")
             self.set_new_preview("")
+            self._refresh_count_label()
         except Exception as exc:
-            self._report_error(exc, title="Fonksiyon Listesi Sıfırlama Hatası")
+            self._report_error(
+                exc,
+                title=self._m(
+                    "function_list_reset_error",
+                    "Fonksiyon Listesi Sıfırlama Hatası",
+                ),
+            )
 
     def set_items(self, items: Iterable) -> None:
         try:
@@ -345,8 +486,15 @@ class FonksiyonListesi(BoxLayout):
                     self.selected_item = None
 
             self._schedule_render(self.filtered_items, keep_scroll=False)
+            self._refresh_count_label()
         except Exception as exc:
-            self._report_error(exc, title="Fonksiyon Listesi Güncelleme Hatası")
+            self._report_error(
+                exc,
+                title=self._m(
+                    "function_list_update_error",
+                    "Fonksiyon Listesi Güncelleme Hatası",
+                ),
+            )
 
     def set_selected_preview(self, text: str) -> None:
         self._selected_preview_text = str(text or "")
@@ -369,7 +517,13 @@ class FonksiyonListesi(BoxLayout):
                     )
                 )
         except Exception as exc:
-            self._report_error(exc, title="Seçilen Önizleme Güncelleme Hatası")
+            self._report_error(
+                exc,
+                title=self._m(
+                    "selected_preview_update_error",
+                    "Seçilen Önizleme Güncelleme Hatası",
+                ),
+            )
 
     def _new_preview_card_text_guncelle(self) -> None:
         try:
@@ -381,7 +535,13 @@ class FonksiyonListesi(BoxLayout):
                     )
                 )
         except Exception as exc:
-            self._report_error(exc, title="Yeni Önizleme Güncelleme Hatası")
+            self._report_error(
+                exc,
+                title=self._m(
+                    "new_preview_update_error",
+                    "Yeni Önizleme Güncelleme Hatası",
+                ),
+            )
 
     # =========================================================
     # SELECTION
@@ -423,7 +583,13 @@ class FonksiyonListesi(BoxLayout):
         try:
             self._schedule_render(items, keep_scroll=keep_scroll)
         except Exception as exc:
-            self._report_error(exc, title="Fonksiyon Listesi Render Hatası")
+            self._report_error(
+                exc,
+                title=self._m(
+                    "function_list_render_error",
+                    "Fonksiyon Listesi Render Hatası",
+                ),
+            )
 
     def _scroll_top(self, *_args):
         self._render_akisi_yoneticisi.scroll_top(self, *_args)
@@ -438,7 +604,13 @@ class FonksiyonListesi(BoxLayout):
         try:
             self._gorunum_akisi_yoneticisi.set_toggle_icon(self, icon_name)
         except Exception as exc:
-            self._report_error(exc, title="Liste İkon Güncelleme Hatası")
+            self._report_error(
+                exc,
+                title=self._m(
+                    "list_icon_update_error",
+                    "Liste İkon Güncelleme Hatası",
+                ),
+            )
 
     def _update_toggle_icon(self) -> None:
         self._gorunum_akisi_yoneticisi.update_toggle_icon(self)
@@ -447,13 +619,25 @@ class FonksiyonListesi(BoxLayout):
         try:
             self._gorunum_akisi_yoneticisi.toggle_list_visibility(self, *_args)
         except Exception as exc:
-            self._report_error(exc, title="Liste Görünürlük Hatası")
+            self._report_error(
+                exc,
+                title=self._m(
+                    "list_visibility_error",
+                    "Liste Görünürlük Hatası",
+                ),
+            )
 
     def _sync_list_visibility(self) -> None:
         try:
             self._gorunum_akisi_yoneticisi.sync_list_visibility(self)
         except Exception as exc:
-            self._report_error(exc, title="Liste Görünüm Senkron Hatası")
+            self._report_error(
+                exc,
+                title=self._m(
+                    "list_sync_error",
+                    "Liste Görünüm Senkron Hatası",
+                ),
+            )
 
     # =========================================================
     # EVENTS
@@ -466,7 +650,6 @@ class FonksiyonListesi(BoxLayout):
             onceki_item = self.selected_item
             self.selected_item = item
 
-            # Tüm listeyi tekrar render ETME.
             self._refresh_row_selection_state(onceki_item, item)
 
             try:
@@ -485,7 +668,13 @@ class FonksiyonListesi(BoxLayout):
             except Exception:
                 pass
         except Exception as exc:
-            self._report_error(exc, title="Fonksiyon Seçim Hatası")
+            self._report_error(
+                exc,
+                title=self._m(
+                    "function_select_error",
+                    "Fonksiyon Seçim Hatası",
+                ),
+            )
 
     def _on_search_text(self, _instance, value: str) -> None:
         try:
@@ -504,5 +693,12 @@ class FonksiyonListesi(BoxLayout):
                 self.selected_item = hedef
 
             self._render_items(self.filtered_items, keep_scroll=True)
+            self._refresh_count_label()
         except Exception as exc:
-            self._report_error(exc, title="Fonksiyon Arama Hatası")
+            self._report_error(
+                exc,
+                title=self._m(
+                    "function_search_error",
+                    "Fonksiyon Arama Hatası",
+                ),
+      )
