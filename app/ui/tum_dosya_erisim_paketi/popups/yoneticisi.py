@@ -6,19 +6,21 @@ ROL:
 - Tüm dosya erişim paketi popup katmanına tek giriş noktası sağlamak
 - Popup modüllerini merkezileştirmek
 - Üst katmanın popup dosyalarının iç detaylarını bilmesini engellemek
+- Menü popup üzerinden dil seçimi akışına gerekli servis ve callback bilgisini iletmek
 
 MİMARİ:
 - Lazy import kullanır
 - Popup modüllerine doğrudan değil, bu yönetici üzerinden erişilir
 - Üst katman sadece bu yöneticiyi bilir
+- Menü popup açılışında servis ve dil callback bağımlılıkları bu katmandan geçirilir
 
 API UYUMLULUK:
 - Platform bağımsızdır
 - Android API 35 ile uyumludur
 - Doğrudan Android bridge çağrısı içermez
 
-SURUM: 2
-TARIH: 2026-03-22
+SURUM: 3
+TARIH: 2026-03-23
 IMZA: FY.
 """
 
@@ -52,13 +54,20 @@ class TumDosyaErisimPopupsYoneticisi:
     # =========================================================
     # MENU
     # =========================================================
-    def open_main_menu(self, open_backups_popup):
+    def open_main_menu(
+        self,
+        open_backups_popup,
+        on_language_changed=None,
+        services=None,
+    ):
         from app.ui.tum_dosya_erisim_paketi.popups.menu_popup import (
             open_main_menu,
         )
 
         return open_main_menu(
             open_backups_popup=open_backups_popup,
+            on_language_changed=on_language_changed,
+            services=services,
         )
 
     # =========================================================
