@@ -12,6 +12,7 @@ ROL:
 - İlk render sonrası görünüm tazelemesini güvenli biçimde zorlar
 - Büyük listelerde render yükünü tek kareye yıkmadan parça parça işler
 - Seçim sırasında tüm listeyi yeniden çizmek yerine satır bazlı güncelleme yapar
+- Android / APK ortamında restore sonrası render yarış durumlarını azaltır
 
 MİMARİ:
 - Kendi görselini kendi çizer
@@ -20,6 +21,7 @@ MİMARİ:
 - Alt paket yöneticileri üzerinden satır, arama, önizleme, yardımcı,
   UI kurulumu, render akışı, görünüm akışı ve hata akışı kullanılır
 - Panel dosyası orkestrasyon katmanı olarak sade tutulur
+- Render akışı widget hazırlığı ve seçim tutarlılığı için güvenli kontroller içerir
 
 API UYUMLULUK:
 - Bu dosya doğrudan Android API çağrısı yapmaz
@@ -27,8 +29,8 @@ API UYUMLULUK:
 - Büyük liste / dar liste davranışı güvenli şekilde yönetilir
 - API 35 ile güvenle kullanılabilir
 
-SURUM: 5
-TARIH: 2026-03-20
+SURUM: 6
+TARIH: 2026-03-23
 IMZA: FY.
 """
 
@@ -105,6 +107,7 @@ class FonksiyonListesi(BoxLayout):
 
         # YENİ: mevcut satır widget referansları
         self._row_widgets = {}
+
         self._build_ui()
 
     # =========================================================
@@ -112,6 +115,27 @@ class FonksiyonListesi(BoxLayout):
     # =========================================================
     def _text_muted_color(self):
         return TEXT_MUTED
+
+    def _ui_hazir_mi(self) -> bool:
+        try:
+            return bool(
+                self.container is not None
+                and self.scroll is not None
+            )
+        except Exception:
+            return False
+
+    def _item_gecerli_mi(self, item) -> bool:
+        if item is None:
+            return False
+
+        try:
+            path_value = str(getattr(item, "path", "") or "").strip()
+            name_value = str(getattr(item, "name", "") or "").strip()
+            source_value = str(getattr(item, "source", "") or "").strip()
+            return bool(path_value or name_value or source_value)
+        except Exception:
+            return False
 
     # =========================================================
     # ERROR
@@ -188,6 +212,14 @@ class FonksiyonListesi(BoxLayout):
             )
             return
 
+        if not self._ui_hazir_mi():
+            self._debug("Render ertelendi: liste widgetları henüz hazır değil.")
+            self._render_event = Clock.schedule_once(
+                lambda *_: self._run_scheduled_render(render_serial),
+                0.05,
+            )
+            return
+
         try:
             self._render_akisi_yoneticisi.render_items(
                 self,
@@ -205,11 +237,14 @@ class FonksiyonListesi(BoxLayout):
             if self.container is None:
                 return
 
-            for child in getattr(self.container, "children", []):
-                item = getattr(child, "item", None)
-                if item is None:
+            for child in list(getattr(self.container, "children", []) or []):
+                try:
+                    item = getattr(child, "item", None)
+                    if item is None:
+                        continue
+                    self._row_widgets[self._item_key(item)] = child
+                except Exception:
                     continue
-                self._row_widgets[self._item_key(item)] = child
         except Exception:
             self._row_widgets = {}
 
@@ -222,10 +257,16 @@ class FonksiyonListesi(BoxLayout):
             yeni_row = self._row_widgets.get(yeni_key)
 
             if onceki_row is not None and hasattr(onceki_row, "set_selected_state"):
-                onceki_row.set_selected_state(False)
+                try:
+                    onceki_row.set_selected_state(False)
+                except Exception:
+                    pass
 
             if yeni_row is not None and hasattr(yeni_row, "set_selected_state"):
-                yeni_row.set_selected_state(True)
+                try:
+                    yeni_row.set_selected_state(True)
+                except Exception:
+                    pass
         except Exception:
             pass
 
@@ -236,9 +277,15 @@ class FonksiyonListesi(BoxLayout):
         try:
             if self.container is None:
                 return
+
             self.container.clear_widgets()
             self.container.height = dp(1)
-            self.container.do_layout()
+
+            try:
+                self.container.do_layout()
+            except Exception:
+                pass
+
             self._row_widgets = {}
         except Exception as exc:
             self._report_error(exc, title="Fonksiyon Listesi Temizleme Hatası")
@@ -270,7 +317,6 @@ class FonksiyonListesi(BoxLayout):
             self.clear_items()
             self.set_selected_preview("")
             self.set_new_preview("")
-            self._schedule_render([], keep_scroll=False)
         except Exception as exc:
             self._report_error(exc, title="Fonksiyon Listesi Sıfırlama Hatası")
 
@@ -290,10 +336,13 @@ class FonksiyonListesi(BoxLayout):
             if not self.all_items:
                 self.selected_item = None
             else:
-                self.selected_item = self._yardimci_yoneticisi.restore_selected_item(
-                    self.all_items,
-                    onceki_secim,
-                )
+                try:
+                    self.selected_item = self._yardimci_yoneticisi.restore_selected_item(
+                        self.all_items,
+                        onceki_secim,
+                    )
+                except Exception:
+                    self.selected_item = None
 
             self._schedule_render(self.filtered_items, keep_scroll=False)
         except Exception as exc:
@@ -410,6 +459,9 @@ class FonksiyonListesi(BoxLayout):
     # EVENTS
     # =========================================================
     def _select(self, item) -> None:
+        if not self._item_gecerli_mi(item):
+            return
+
         try:
             onceki_item = self.selected_item
             self.selected_item = item
@@ -443,9 +495,12 @@ class FonksiyonListesi(BoxLayout):
                 hedef = None
                 secim_key = self._item_key(self.selected_item)
                 for item in self.filtered_items:
-                    if self._item_key(item) == secim_key:
-                        hedef = item
-                        break
+                    try:
+                        if self._item_key(item) == secim_key:
+                            hedef = item
+                            break
+                    except Exception:
+                        continue
                 self.selected_item = hedef
 
             self._render_items(self.filtered_items, keep_scroll=True)
