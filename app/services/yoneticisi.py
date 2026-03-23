@@ -14,13 +14,14 @@ MİMARİ:
 - Android, belge, dosya, analiz, reklam, güncelleme, sistem ve yedek servislerini tek noktada toplar
 - Banner ve geçiş reklamı gibi reklam akışları üst katmana tek kapıdan açılır
 - Play Store yönlendirmeli güncelleme akışı üst katmana tek kapıdan açılır
+- Dil ve lokalizasyon akışı üst katmana tek kapıdan açılır
 
 API UYUMLULUK:
 - Platform bağımsız çekirdek servislerle uyumludur
 - Android servisleri izole biçimde yönetir
 - Android API 35 hedefiyle uyumlu mimari için uygundur
 
-SURUM: 5
+SURUM: 8
 TARIH: 2026-03-23
 IMZA: FY.
 """
@@ -215,6 +216,11 @@ class ServicesYoneticisi:
     def guncelleme_bildirimi_gosterilmeli_mi(self) -> bool:
         return self._guncelleme_yoneticisi().guncelleme_bildirimi_gosterilmeli_mi()
 
+    def guncelleme_durumu_hesapla(self, mevcut_surum: str) -> dict:
+        return self._guncelleme_yoneticisi().guncelleme_durumu_hesapla(
+            mevcut_surum=mevcut_surum
+        )
+
     # =========================================================
     # SISTEM
     # =========================================================
@@ -226,6 +232,59 @@ class ServicesYoneticisi:
 
     def log_servisi(self):
         return self._sistem_yoneticisi().log_servisi()
+
+    def ayarlari_yukle(self) -> dict:
+        return self._sistem_yoneticisi().ayarlari_yukle()
+
+    def ayarlari_kaydet(self, data: dict) -> None:
+        self._sistem_yoneticisi().ayarlari_kaydet(data)
+
+    def get_language(self, default: str = "tr") -> str:
+        return self._sistem_yoneticisi().get_language(default=default)
+
+    def set_language(self, code: str) -> None:
+        self._sistem_yoneticisi().set_language(code)
+
+    def supported_languages(self) -> list[str]:
+        return self._sistem_yoneticisi().supported_languages()
+
+    def language_supported(self, code: str) -> bool:
+        return self._sistem_yoneticisi().language_supported(code)
+
+    def aktif_dil(self) -> str:
+        return self._sistem_yoneticisi().aktif_dil()
+
+    def desteklenen_diller(
+        self,
+        sadece_aktifler: bool = False,
+    ) -> dict[str, dict[str, object]]:
+        return self._sistem_yoneticisi().desteklenen_diller(
+            sadece_aktifler=sadece_aktifler
+        )
+
+    def dil_var_mi(self, code: str) -> bool:
+        return self._sistem_yoneticisi().dil_var_mi(code)
+
+    def dil_adi(self, code: str, default: str = "") -> str:
+        return self._sistem_yoneticisi().dil_adi(code=code, default=default)
+
+    def metin(self, anahtar: str, default: str = "") -> str:
+        return self._sistem_yoneticisi().metin(
+            anahtar=anahtar,
+            default=default,
+        )
+
+    def get_app_state(self, default: dict | None = None) -> dict:
+        return self._sistem_yoneticisi().get_app_state(default=default)
+
+    def set_app_state(self, state: dict) -> None:
+        self._sistem_yoneticisi().set_app_state(state)
+
+    def clear_app_state(self) -> None:
+        self._sistem_yoneticisi().clear_app_state()
+
+    def premium_aktif_mi(self) -> bool:
+        return self._sistem_yoneticisi().premium_aktif_mi()
 
     # =========================================================
     # YEDEK
