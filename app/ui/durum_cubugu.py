@@ -16,6 +16,7 @@ MİMARİ:
 - Root ve diğer UI katmanları tarafından güvenli şekilde kullanılabilir
 - Mevcut API korunur, ek olarak detaylı hata metni ve aksiyon butonu desteklenir
 - Pulse animasyonu sadece aksiyon butonu görünürken çalışır
+- Aynı aksiyon altyapısı hem tarama CTA hem güncelleme CTA için kullanılabilir
 
 APK / ANDROID UYUMLULUK:
 - İkon değişiminde source güncellendikten sonra reload() çağrılır
@@ -24,8 +25,8 @@ APK / ANDROID UYUMLULUK:
 - API 35 ile güvenli kullanılabilir
 - APK / AAB davranış farkını azaltmak için görsel fallback mantığı korunmuştur
 
-SURUM: 8
-TARIH: 2026-03-22
+SURUM: 9
+TARIH: 2026-03-23
 IMZA: FY.
 """
 
@@ -91,6 +92,7 @@ class DurumCubugu(ButtonBehavior, Kart):
         self._action_callback = None
         self._action_visible = False
         self._action_pulse_anim = None
+        self._action_tone = "info"
 
         self.icon = Image(
             source="",
@@ -205,6 +207,21 @@ class DurumCubugu(ButtonBehavior, Kart):
     def _has_detailed_error(self) -> bool:
         return bool(str(self._detailed_error_text or "").strip())
 
+    def _apply_action_button_theme(self, tone: str = "info") -> None:
+        self._action_tone = str(tone or "info").strip().lower() or "info"
+
+        try:
+            if self._action_tone == "success":
+                self.action_button.background_color = (0.16, 0.50, 0.28, 1)
+            elif self._action_tone == "warning":
+                self.action_button.background_color = (0.78, 0.52, 0.10, 1)
+            elif self._action_tone == "error":
+                self.action_button.background_color = (0.62, 0.18, 0.18, 1)
+            else:
+                self.action_button.background_color = (0.18, 0.42, 0.72, 1)
+        except Exception:
+            pass
+
     def _show_detailed_error_popup(self) -> None:
         if not self._has_detailed_error():
             return
@@ -257,7 +274,11 @@ class DurumCubugu(ButtonBehavior, Kart):
                 font_size="12sp",
             )
             detay.bind(
-                texture_size=lambda inst, val: setattr(inst, "height", max(dp(180), val[1]))
+                texture_size=lambda inst, val: setattr(
+                    inst,
+                    "height",
+                    max(dp(180), val[1]),
+                )
             )
             detay.bind(
                 size=lambda inst, size: setattr(inst, "text_size", (size[0], None))
@@ -359,7 +380,7 @@ class DurumCubugu(ButtonBehavior, Kart):
         except Exception:
             self._action_pulse_anim = None
 
-    def _show_action_button(self, text: str, callback) -> None:
+    def _show_action_button(self, text: str, callback, tone: str = "info") -> None:
         self._action_callback = callback
         self._action_visible = True
 
@@ -368,9 +389,11 @@ class DurumCubugu(ButtonBehavior, Kart):
             self.action_button.disabled = False
             self.action_button.opacity = 1
             self.action_button.size = (dp(108), dp(30))
+            self.action_button.width = max(dp(108), dp(24) * len(self.action_button.text))
         except Exception:
             pass
 
+        self._apply_action_button_theme(tone=tone)
         self._start_action_pulse()
 
     def _hide_action_button(self) -> None:
@@ -378,6 +401,7 @@ class DurumCubugu(ButtonBehavior, Kart):
 
         self._action_callback = None
         self._action_visible = False
+        self._action_tone = "info"
 
         try:
             self.action_button.text = ""
@@ -461,18 +485,21 @@ class DurumCubugu(ButtonBehavior, Kart):
     ) -> None:
         """
         Durum çubuğunda metin + opsiyonel aksiyon butonu gösterir.
-        Tarama tamamlandıktan sonra 'Listeyi Aç' gibi CTA akışları için kullanılır.
+        Tarama tamamlandıktan sonra 'Listeyi Aç' veya
+        güncelleme akışında 'Güncelle' gibi CTA'lar için kullanılır.
         """
+        secili_ton = str(tone or "success").strip().lower() or "success"
+
         self._clear_detailed_error()
         self.label.text = self._safe_text(text, " ")
 
-        if tone == "error":
+        if secili_ton == "error":
             self._set_icon("error.png")
             self._apply_error_style()
-        elif tone == "warning":
-            self._set_icon("warning.png")
+        elif secili_ton == "warning":
+            self._set_icon(icon_name or "warning.png")
             self._apply_warning_style()
-        elif tone == "success":
+        elif secili_ton == "success":
             self._set_icon(icon_name or "onaylandi.png")
             self._apply_success_style()
         else:
@@ -480,7 +507,11 @@ class DurumCubugu(ButtonBehavior, Kart):
             self._apply_info_style()
 
         if callable(callback):
-            self._show_action_button(button_text, callback)
+            self._show_action_button(
+                text=button_text,
+                callback=callback,
+                tone=secili_ton,
+            )
         else:
             self._hide_action_button()
 
