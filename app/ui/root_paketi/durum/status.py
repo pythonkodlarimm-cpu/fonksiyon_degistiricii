@@ -7,6 +7,7 @@ ROL:
 - Status bar ve toast/overlay bildirimlerini güvenli biçimde tetiklemek
 - Dosya erişim durumu değişimlerini kullanıcıya yansıtmak
 - Hata durumunda detaylı, kopyalanabilir hata bilgisini status bar'a iletmek
+- Aktif dile göre görünür durum metinlerini üretmek
 
 MİMARİ:
 - SADECE SistemYoneticisi kullanılır
@@ -14,14 +15,15 @@ MİMARİ:
 - Hata durumlarında sessiz fallback uygular
 - Status widget ve toast layer yoksa akışı bozmaz
 - Root paketinin alt durum modülüdür
+- Kullanıcıya görünen metinler sistem metin servisinden alınabilir
 
 API UYUMLULUK:
 - API 35 uyumlu
 - Android ve masaüstü ortamlarında güvenli çalışır
 - Doğrudan Android bridge çağrısı yapmaz
 
-SURUM: 4
-TARIH: 2026-03-20
+SURUM: 5
+TARIH: 2026-03-23
 IMZA: FY.
 """
 
@@ -31,6 +33,15 @@ from __future__ import annotations
 class RootStatusMixin:
     def _sistem(self):
         return self._get_sistem_yoneticisi()
+
+    def _m(self, anahtar: str, default: str = "") -> str:
+        try:
+            services = getattr(self, "services", None)
+            if services is not None and hasattr(services, "metin"):
+                return str(services.metin(anahtar, default) or default or anahtar)
+        except Exception:
+            pass
+        return str(default or anahtar)
 
     def _safe_set_status(self, text: str, icon_name: str = "") -> None:
         try:
@@ -108,8 +119,12 @@ class RootStatusMixin:
     def _on_file_access_status_changed(self, durum: bool) -> None:
         try:
             if durum:
-                self.set_status_success("Tüm dosya erişimi açık.")
+                self.set_status_success(
+                    self._m("all_files_access_on", "Tüm dosya erişimi açık.")
+                )
             else:
-                self.set_status_warning("Tüm dosya erişimi kapalı.")
+                self.set_status_warning(
+                    self._m("all_files_access_off", "Tüm dosya erişimi kapalı.")
+                )
         except Exception:
             pass
