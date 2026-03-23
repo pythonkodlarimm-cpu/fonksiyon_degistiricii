@@ -10,6 +10,7 @@ ROL:
 - Hata durumunda detaylı, kopyalanabilir hata bilgisini iletmek
 - Tarama göstergesi overlay akışını yönetmek
 - Ağır tarama işini UI thread'i bloklamadan yürütmek
+- Geçiş reklamı öncesi tarama sonucunu bekleyen state olarak hazırlamak
 - Diğer akışların tekrar kullanacağı dosya yenileme yardımcılarını sağlamak
 
 MİMARİ:
@@ -22,6 +23,8 @@ MİMARİ:
 - Arka plan thread'i yalnızca ağır iş yapar, UI güncellemesi ana thread'e döner
 - Aynı anda ikinci tarama başlatılmaz
 - Başarılı sonuçta loading overlay yavaşlayarak kapanır, sonra success overlay açılır
+- Tarama tamamlandıktan sonra fonksiyon listesine geçiş için bekleyen sonuç state'i hazırlanabilir
+- Fonksiyon listesi verisi, geçiş tamamlanmadan UI'ye uygulanmaz
 
 API UYUMLULUK:
 - Android (SAF + content URI) uyumludur
@@ -29,8 +32,8 @@ API UYUMLULUK:
 - Public API değiştirilmeden tarama loading / success overlay desteği eklenmiştir
 - _reload_items_from_current_file yardımcı API'si geri eklenmiştir
 
-SURUM: 18
-TARIH: 2026-03-20
+SURUM: 20
+TARIH: 2026-03-22
 IMZA: FY.
 """
 
@@ -65,6 +68,18 @@ class RootDosyaAkisiMixin:
     def _ensure_scan_state(self) -> None:
         if not hasattr(self, "_scan_in_progress"):
             self._scan_in_progress = False
+
+        if not hasattr(self, "_pending_scan_result"):
+            self._pending_scan_result = None
+
+        if not hasattr(self, "_pending_scan_item_count"):
+            self._pending_scan_item_count = 0
+
+        if not hasattr(self, "_pending_scan_display_name"):
+            self._pending_scan_display_name = ""
+
+        if not hasattr(self, "_pending_scan_ready"):
+            self._pending_scan_ready = False
 
     # =========================================================
     # TARAMA OVERLAY
@@ -143,6 +158,75 @@ class RootDosyaAkisiMixin:
             pass
 
     # =========================================================
+    # GEÇIŞ HAZIRLAMA
+    # =========================================================
+    def _clear_pending_scan_transition(self) -> None:
+        self._ensure_scan_state()
+        self._pending_scan_result = None
+        self._pending_scan_item_count = 0
+        self._pending_scan_display_name = ""
+        self._pending_scan_ready = False
+
+    def _prepare_pending_scan_transition(
+        self,
+        result: dict,
+        item_count: int,
+        display_name: str = "",
+    ) -> None:
+        self._ensure_scan_state()
+        self._pending_scan_result = dict(result or {})
+        self._pending_scan_item_count = int(item_count or 0)
+        self._pending_scan_display_name = str(display_name or "").strip()
+        self._pending_scan_ready = True
+
+        self._debug_scan(
+            "Geçiş için bekleyen tarama sonucu hazırlandı | "
+            f"item_count={self._pending_scan_item_count} "
+            f"display_name={self._pending_scan_display_name}"
+        )
+
+    def _open_function_list_directly(self) -> None:
+        try:
+            if self.function_list is not None:
+                self.function_list.set_items(self.items)
+        except Exception:
+            pass
+
+        try:
+            Clock.schedule_once(lambda *_: self._scroll_to_function_list(), 0.10)
+        except Exception:
+            pass
+
+    def _notify_scan_transition_ready(self, item_count: int, display_name: str) -> bool:
+        """
+        Root tarafında geçiş CTA / reklam akışı varsa ona devreder.
+        Yoksa False döner ve klasik davranış fallback olarak çalışır.
+        """
+        try:
+            hook = getattr(self, "_on_scan_transition_ready", None)
+            if callable(hook):
+                hook(
+                    item_count=int(item_count or 0),
+                    display_name=str(display_name or "").strip(),
+                )
+                return True
+        except Exception as exc:
+            self._debug_scan(f"_on_scan_transition_ready hatası: {exc}")
+
+        try:
+            hook = getattr(self, "scan_transition_ready", None)
+            if callable(hook):
+                hook(
+                    item_count=int(item_count or 0),
+                    display_name=str(display_name or "").strip(),
+                )
+                return True
+        except Exception as exc:
+            self._debug_scan(f"scan_transition_ready hatası: {exc}")
+
+        return False
+
+    # =========================================================
     # STATE / FILE
     # =========================================================
     def _working_file_ready(self) -> bool:
@@ -160,9 +244,7 @@ class RootDosyaAkisiMixin:
             if not str(self.current_file_path or "").strip():
                 return False
 
-            return bool(
-                self._belge().calisma_kopyasi_var_mi(self.current_session)
-            )
+            return bool(self._belge().calisma_kopyasi_var_mi(self.current_session))
         except Exception:
             return False
 
@@ -334,6 +416,7 @@ class RootDosyaAkisiMixin:
 
         if not result.get("ok"):
             self._scan_finish_error_visual()
+            self._clear_pending_scan_transition()
             self._clear_state()
 
             kind = str(result.get("kind", "") or "").strip().lower()
@@ -358,6 +441,7 @@ class RootDosyaAkisiMixin:
         kaynak_kimligi = str(result.get("kaynak_kimligi", "") or "").strip()
         gosterim_adi = str(result.get("gosterim_adi", "") or "").strip()
         items = list(result.get("items") or [])
+        item_count = len(items)
 
         self._clear_view_only()
 
@@ -372,37 +456,58 @@ class RootDosyaAkisiMixin:
         except Exception:
             pass
 
+        # =====================================================
+        # ÖNEMLİ:
+        # Fonksiyon listesi tarama biter bitmez doldurulmaz.
+        # CTA / reklam geçişi tamamlanana kadar boş tutulur.
+        # =====================================================
         try:
             if self.function_list is not None:
-                print("LISTEYE GIDEN ITEM SAYISI =", len(self.items))
-                self.function_list.set_items(self.items)
+                self.function_list.clear_all()
+                print("LISTE GEÇİŞ ÖNCESİ TEMİZLENDİ | item_count =", len(self.items))
             else:
-                print("LISTEYE GIDEN ITEM SAYISI = 0 (function_list yok)")
+                print("LISTE GEÇİŞ ÖNCESİ TEMİZLENEMEDİ (function_list yok)")
         except Exception as exc:
             self._scan_finish_error_visual()
             self.set_status_error(
-                "Fonksiyon listesine veri aktarılırken hata oluştu.",
+                "Fonksiyon listesi geçiş için hazırlanırken hata oluştu.",
                 detailed_text=self._format_exception_details(
                     exc,
-                    title="Fonksiyon Listesi Aktarım Hatası",
+                    title="Fonksiyon Listesi Hazırlama Hatası",
                 ),
-                popup_title="Fonksiyon Listesi Aktarım Hatası",
+                popup_title="Fonksiyon Listesi Hazırlama Hatası",
             )
             return
 
         self._reset_selection_only()
+        self._prepare_pending_scan_transition(
+            result=result,
+            item_count=item_count,
+            display_name=gosterim_adi,
+        )
 
         if gosterim_adi:
             self.set_status_success(
-                f"Tarama tamamlandı. {len(self.items)} fonksiyon bulundu. Belge: {gosterim_adi}"
+                f"Tarama tamamlandı. {item_count} fonksiyon bulundu. "
+                f"Belge: {gosterim_adi}"
             )
         else:
             self.set_status_success(
-                f"Tarama tamamlandı. {len(self.items)} fonksiyon bulundu."
+                f"Tarama tamamlandı. {item_count} fonksiyon bulundu."
             )
 
-        self._scan_finish_success_visual(item_count=len(self.items))
-        Clock.schedule_once(lambda *_: self._scroll_to_function_list(), 0.10)
+        self._scan_finish_success_visual(item_count=item_count)
+
+        if self._notify_scan_transition_ready(
+            item_count=item_count,
+            display_name=gosterim_adi,
+        ):
+            return
+
+        self._debug_scan(
+            "Geçiş hook bulunamadı. Klasik liste açma davranışına dönülüyor."
+        )
+        self._open_function_list_directly()
 
     # =========================================================
     # START
@@ -415,6 +520,7 @@ class RootDosyaAkisiMixin:
             return
 
         self._scan_in_progress = True
+        self._clear_pending_scan_transition()
         self._debug_scan("_start_scan_or_refresh çağrıldı")
 
         selection = self._selection_from_ui()
@@ -452,6 +558,7 @@ class RootDosyaAkisiMixin:
         except Exception as exc:
             self._ensure_scan_state()
             self._scan_in_progress = False
+            self._clear_pending_scan_transition()
             self._clear_state()
             self._scan_finish_error_visual()
             self.set_status_error(
@@ -470,6 +577,7 @@ class RootDosyaAkisiMixin:
         except Exception as exc:
             self._ensure_scan_state()
             self._scan_in_progress = False
+            self._clear_pending_scan_transition()
             self._clear_state()
             self._scan_finish_error_visual()
             self.set_status_error(
