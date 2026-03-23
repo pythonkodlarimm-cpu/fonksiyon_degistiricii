@@ -16,6 +16,7 @@ ROL:
 - Oturum geri yükleme bilgisini geçici olarak gösterir ve otomatik temizler
 - Uzak version.json kontrolü ile yeni sürüm varsa Play Store yönlendirmeli güncelleme CTA gösterir
 - Dil değişimi callback akışını alır ve üst UI durumunu günceller
+- Uygulama kapanınca değil, yalnızca aynı process içinde geçici state restore eder
 
 MİMARİ:
 - Editor paneli editor_paketi/yoneticisi.py üzerinden oluşturulur
@@ -24,12 +25,14 @@ MİMARİ:
 - Tarama göstergesi tarama_gostergesi_paketi/yoneticisi.py üzerinden oluşturulur
 - Reklam işlemleri sadece ServicesYoneticisi üzerinden yürütülür
 - Güncelleme işlemleri sadece ServicesYoneticisi üzerinden yürütülür
-- Uygulama durumu ServicesYoneticisi -> SistemYoneticisi -> ayar_servisi zinciriyle tutulur
+- Dil işlemleri sadece ServicesYoneticisi üzerinden yürütülür
+- Uygulama state'i sadece RAM içindeki geçici memory state ile tutulur
+- Disk tabanlı app_state restore kullanılmaz
 - Tarama sonucu ile fonksiyon listesi açılışı arasına doğal bir geçiş katmanı eklenmiştir
 - Root mixin yapısı alt paket klasörlerinden yüklenir
 - Eski alias dosyaları kullanılmaz
 
-SURUM: 61
+SURUM: 62
 TARIH: 2026-03-23
 IMZA: FY.
 """
@@ -137,10 +140,6 @@ class RootWidget(
             Clock.schedule_once(self._post_build_refresh, 0.08)
             Clock.schedule_once(self._try_start_banner, 0.35)
             Clock.schedule_once(self._try_preload_interstitial, 0.80)
-            Clock.schedule_once(
-                lambda *_: self._auto_restore_saved_state_on_start(),
-                0.60,
-            )
             Clock.schedule_once(self._check_update_from_endpoint, 1.20)
         except Exception:
             hata = traceback.format_exc()
@@ -623,20 +622,18 @@ class RootWidget(
         return self.services.sistem_yoneticisi()
 
     def _save_app_state_to_settings(self, state: dict) -> None:
-        try:
-            self._sistem().set_app_state(state if isinstance(state, dict) else {})
-        except Exception:
-            print("[ROOT] App state settings kaydı başarısız.")
-            print(traceback.format_exc())
+        """
+        Disk tabanlı app_state artık kullanılmıyor.
+        Bu method bilinçli olarak no-op bırakılmıştır.
+        """
+        return None
 
     def _load_app_state_from_settings(self) -> dict:
-        try:
-            state = self._sistem().get_app_state(default={})
-            return state if isinstance(state, dict) else {}
-        except Exception:
-            print("[ROOT] App state settings okuma başarısız.")
-            print(traceback.format_exc())
-            return {}
+        """
+        Disk tabanlı app_state restore artık kullanılmıyor.
+        Bu method bilinçli olarak boş sözlük döndürür.
+        """
+        return {}
 
     # =========================================================
     # GECICI STATUS
@@ -690,8 +687,7 @@ class RootWidget(
         try:
             state = self._collect_app_state()
             self._memory_app_state = dict(state)
-            self._save_app_state_to_settings(state)
-            print("[ROOT] Uygulama durumu kaydedildi.")
+            print("[ROOT] Uygulama durumu memory içinde kaydedildi.")
         except Exception:
             print("[ROOT] Uygulama durumu kaydedilemedi.")
             print(traceback.format_exc())
@@ -888,10 +884,8 @@ class RootWidget(
                 state = dict(self._memory_app_state)
 
             if not state:
-                state = self._load_app_state_from_settings()
-
-            if not state:
-                print("[ROOT] Geri yüklenecek app state bulunamadı.")
+                print("[ROOT] Memory app state bulunamadı.")
+                self.set_status_info("Yeni oturum açıldı.", "onaylandi.png")
                 return
 
             if self._resume_restore_scheduled:
@@ -910,61 +904,34 @@ class RootWidget(
                             "onaylandi.png",
                             3.5,
                         )
-                        print("[ROOT] Uygulama durumu geri yüklendi.")
+                        print("[ROOT] Uygulama durumu memory'den geri yüklendi.")
                         return
 
-                    self.set_status_warning(
-                        "Önceki oturum geri yüklenemedi. Dosyayı yeniden seçin."
-                    )
-                    print(
-                        "[ROOT] Uygulama durumu geri yüklenemedi: restore sonucu boş/geçersiz."
-                    )
+                    # 🔥 BURASI DEĞİŞTİ
+                    self.set_status_info("Yeni oturum açıldı.", "onaylandi.png")
+                    print("[ROOT] Memory restore başarısız. Yeni oturum başlatıldı.")
 
                 except Exception:
                     self._clear_restore_view_state()
                     print("[ROOT] Uygulama durumu geri yüklenemedi.")
                     print(traceback.format_exc())
-                    self.set_status_warning(
-                        "Önceki oturum geri yüklenemedi. Dosyayı yeniden seçin."
-                    )
+
+                    # 🔥 BURASI DEĞİŞTİ
+                    self.set_status_info("Yeni oturum açıldı.", "onaylandi.png")
 
             Clock.schedule_once(_restore, 0.10)
 
         except Exception:
             print("[ROOT] uygulama_durumu_geri_yukle çağrısı başarısız.")
             print(traceback.format_exc())
+            self.set_status_info("Yeni oturum açıldı.", "onaylandi.png")
 
     def _auto_restore_saved_state_on_start(self) -> None:
-        try:
-            state = self._load_app_state_from_settings()
-            if not state:
-                return
-
-            current_file_path = str(state.get("current_file_path", "") or "").strip()
-            editor_text = str(state.get("editor_text", "") or "")
-
-            if not current_file_path and not editor_text:
-                return
-
-            restore_ok = self._apply_saved_state(state)
-
-            if restore_ok:
-                self._show_temporary_restore_status(
-                    "Önceki oturum geri yüklendi.",
-                    "onaylandi.png",
-                    3.5,
-                )
-                print("[ROOT] Başlangıçta kayıtlı app state uygulandı.")
-                return
-
-            self.set_status_warning("Önceki oturum açılamadı. Dosyayı yeniden seçin.")
-            print("[ROOT] Başlangıç app state restore sonucu başarısız/geçersiz.")
-
-        except Exception:
-            self._clear_restore_view_state()
-            print("[ROOT] Başlangıç app state geri yükleme başarısız.")
-            print(traceback.format_exc())
-            self.set_status_warning("Önceki oturum açılamadı. Dosyayı yeniden seçin.")
+        """
+        Disk tabanlı otomatik restore artık kullanılmıyor.
+        Uygulama yeniden açıldığında temiz başlangıç yapılır.
+        """
+        return
 
     # =========================================================
     # TARAMA -> GEÇİŞ REKLAMI -> LİSTE AÇMA
