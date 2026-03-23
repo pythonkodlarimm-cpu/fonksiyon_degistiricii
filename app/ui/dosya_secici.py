@@ -24,7 +24,7 @@ DAVRANIŞ:
 - Ham URI ekranda ana metin olarak gösterilmez
 - Dosya adı ve kısa durum bilgisi öne çıkarılır
 - DEV_MODE açıksa Test butonu da görünür
-- Dil değiştiğinde apply_language çağrısıyla görünür metinler güncellenebilir
+- Dil değiştiğinde refresh_language / apply_language çağrısıyla görünür metinler güncellenebilir
 
 API UYUMLULUK:
 - Android tarafında sistem picker yalnızca yöneticisi üzerinden çağrılır
@@ -32,7 +32,7 @@ API UYUMLULUK:
 - API 35 uyumludur
 - Çoklu otomatik tetikleme kaldırılmıştır, tek güvenli tetikleme korunur
 
-SURUM: 37
+SURUM: 38
 TARIH: 2026-03-23
 IMZA: FY.
 """
@@ -44,6 +44,7 @@ from kivy.metrics import dp
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.label import Label
 
+from app.services.yoneticisi import ServicesYoneticisi
 from app.ui.dosya_secici_paketi import DosyaSeciciYoneticisi
 from app.ui.icon_toolbar import IconToolbar
 from app.ui.iconlu_baslik import IconluBaslik
@@ -52,7 +53,13 @@ from app.ui.tema import TEXT_MUTED, TEXT_PRIMARY
 
 
 class DosyaSecici(Kart):
-    def __init__(self, on_scan, on_refresh=None, **kwargs):
+    def __init__(
+        self,
+        on_scan,
+        on_refresh=None,
+        services: ServicesYoneticisi | None = None,
+        **kwargs,
+    ):
         super().__init__(
             orientation="vertical",
             size_hint_y=None,
@@ -67,6 +74,7 @@ class DosyaSecici(Kart):
 
         self.on_scan = on_scan
         self.on_refresh = on_refresh
+        self.services = services
 
         self._yonetici = DosyaSeciciYoneticisi()
         self._aktif_picker = None
@@ -100,41 +108,55 @@ class DosyaSecici(Kart):
     # =========================================================
     # DIL
     # =========================================================
-    def _services(self):
+    def _get_services(self) -> ServicesYoneticisi:
+        if self.services is not None:
+            return self.services
+
         try:
             parent = self.parent
             while parent is not None:
                 services = getattr(parent, "services", None)
                 if services is not None:
+                    self.services = services
                     return services
                 parent = getattr(parent, "parent", None)
         except Exception:
             pass
-        return None
+
+        self.services = ServicesYoneticisi()
+        return self.services
 
     def _m(self, anahtar: str, default: str = "") -> str:
         try:
-            services = self._services()
-            if services is not None:
-                return str(services.metin(anahtar, default) or default or anahtar)
+            return str(
+                self._get_services().metin(anahtar, default) or default or anahtar
+            )
         except Exception:
-            pass
-        return str(default or anahtar)
+            return str(default or anahtar)
 
     def apply_language(self) -> None:
         try:
             if self.header is not None:
                 if hasattr(self.header, "set_text") and callable(self.header.set_text):
-                    self.header.set_text("Belge / Kod Dosyası")
-                else:
-                    self.header.text = "Belge / Kod Dosyası"
+                    self.header.set_text(
+                        self._m("file_document_title", "Belge / Kod Dosyası")
+                    )
+                elif hasattr(self.header, "text"):
+                    self.header.text = self._m(
+                        "file_document_title",
+                        "Belge / Kod Dosyası",
+                    )
         except Exception:
             pass
 
         try:
             if self.select_tool is not None:
-                if hasattr(self.select_tool, "set_text") and callable(self.select_tool.set_text):
-                    self.select_tool.set_text(self._m("select_file", "Dosya Seç"))
+                if hasattr(self.select_tool, "set_text") and callable(
+                    self.select_tool.set_text
+                ):
+                    self.select_tool.set_text(
+                        self._m("select_file", "Dosya Seç")
+                    )
                 elif hasattr(self.select_tool, "text"):
                     self.select_tool.text = self._m("select_file", "Dosya Seç")
         except Exception:
@@ -142,7 +164,9 @@ class DosyaSecici(Kart):
 
         try:
             if self.test_tool is not None:
-                if hasattr(self.test_tool, "set_text") and callable(self.test_tool.set_text):
+                if hasattr(self.test_tool, "set_text") and callable(
+                    self.test_tool.set_text
+                ):
                     self.test_tool.set_text(self._m("test", "Test"))
                 elif hasattr(self.test_tool, "text"):
                     self.test_tool.text = self._m("test", "Test")
@@ -151,12 +175,15 @@ class DosyaSecici(Kart):
 
         self._refresh_summary()
 
+    def refresh_language(self) -> None:
+        self.apply_language()
+
     # =========================================================
     # UI
     # =========================================================
     def _build_ui(self) -> None:
         self.header = IconluBaslik(
-            text="Belge / Kod Dosyası",
+            text=self._m("file_document_title", "Belge / Kod Dosyası"),
             icon_name="schema.png",
             height_dp=30,
             font_size="15sp",
@@ -174,7 +201,7 @@ class DosyaSecici(Kart):
         )
 
         self.file_name_label = Label(
-            text="Dosya seçilmedi",
+            text=self._m("file_not_selected", "Dosya seçilmedi"),
             color=TEXT_PRIMARY,
             font_size="17sp",
             bold=True,
@@ -191,7 +218,10 @@ class DosyaSecici(Kart):
         summary_wrap.add_widget(self.file_name_label)
 
         self.file_detail_label = Label(
-            text="Seçilen belge bilgisi burada görünür.",
+            text=self._m(
+                "file_info_placeholder",
+                "Seçilen belge bilgisi burada görünür.",
+            ),
             color=TEXT_MUTED,
             font_size="11sp",
             halign="center",
@@ -207,7 +237,7 @@ class DosyaSecici(Kart):
         summary_wrap.add_widget(self.file_detail_label)
 
         self.status_hint_label = Label(
-            text="Belge seçmeniz bekleniyor.",
+            text=self._m("file_waiting", "Belge seçmeniz bekleniyor."),
             color=(0.76, 0.82, 0.92, 1),
             font_size="11sp",
             halign="center",
@@ -247,7 +277,7 @@ class DosyaSecici(Kart):
 
         self.select_tool = self.toolbar.add_tool(
             icon_name="dosya_sec.png",
-            text="Dosya Seç",
+            text=self._m("select_file", "Dosya Seç"),
             on_release=self._handle_select_pressed,
             icon_size_dp=68,
             text_size="14sp",
@@ -264,7 +294,7 @@ class DosyaSecici(Kart):
         if dev_mode:
             self.test_tool = self.toolbar.add_tool(
                 icon_name="dosya_sec.png",
-                text="Test",
+                text=self._m("test", "Test"),
                 on_release=self._handle_test_pressed,
                 icon_size_dp=48,
                 text_size="13sp",
@@ -298,8 +328,8 @@ class DosyaSecici(Kart):
 
     def _show_scan_error_popup(self, message: str) -> None:
         self._show_info_popup(
-            "Tarama Hatası",
-            str(message or "Tarama sırasında hata oluştu."),
+            self._m("scan_error_title", "Tarama Hatası"),
+            str(message or self._m("scan_error_message", "Tarama sırasında hata oluştu.")),
         )
 
     # =========================================================
@@ -342,7 +372,10 @@ class DosyaSecici(Kart):
 
     def _refresh_summary(self) -> None:
         if not self._has_selection():
-            self.file_name_label.text = self._m("file_not_selected", "Dosya seçilmedi")
+            self.file_name_label.text = self._m(
+                "file_not_selected",
+                "Dosya seçilmedi",
+            )
             self.file_detail_label.text = self._m(
                 "file_info_placeholder",
                 "Seçilen belge bilgisi burada görünür.",
@@ -358,13 +391,20 @@ class DosyaSecici(Kart):
         identifier = str(self._last_identifier or "").strip()
 
         self.file_name_label.text = (
-            display_name if display_name else self._m("file_not_selected", "Dosya seçilmedi")
+            display_name
+            if display_name
+            else self._m("file_not_selected", "Dosya seçilmedi")
         )
+
         self.file_detail_label.text = (
             self._short_identifier(identifier)
             if identifier
-            else self._m("file_info_placeholder", "Seçilen belge bilgisi burada görünür.")
+            else self._m(
+                "file_info_placeholder",
+                "Seçilen belge bilgisi burada görünür.",
+            )
         )
+
         self.status_hint_label.text = self._m(
             "file_selected_auto_scan",
             "Belge seçildi • Tarama otomatik başlatılır.",
@@ -446,8 +486,8 @@ class DosyaSecici(Kart):
         except Exception as exc:
             self._debug(f"Seçici açma hatası: {exc}")
             self._show_info_popup(
-                "Dosya Seçici",
-                f"Seçici açılamadı: {exc}",
+                self._m("file_picker_title", "Dosya Seçici"),
+                f"{self._m('file_picker_open_failed', 'Seçici açılamadı:')} {exc}",
             )
 
     def _open_test_selector(self, *_args):
@@ -461,8 +501,8 @@ class DosyaSecici(Kart):
         except Exception as exc:
             self._debug(f"Test seçici açma hatası: {exc}")
             self._show_info_popup(
-                "Test Dosya Seçici",
-                f"Test seçici açılamadı: {exc}",
+                self._m("test_file_picker_title", "Test Dosya Seçici"),
+                f"{self._m('test_file_picker_open_failed', 'Test seçici açılamadı:')} {exc}",
             )
 
     # =========================================================
@@ -512,17 +552,25 @@ class DosyaSecici(Kart):
 
         if not identifier:
             self._show_info_popup(
-                "Dosya Seçici",
-                "Seçilen dosya kimliği alınamadı.",
+                self._m("file_picker_title", "Dosya Seçici"),
+                self._m(
+                    "file_identifier_missing",
+                    "Seçilen dosya kimliği alınamadı.",
+                ),
             )
             return
 
         try:
-            if hasattr(selection, "is_valid") and callable(getattr(selection, "is_valid")):
+            if hasattr(selection, "is_valid") and callable(
+                getattr(selection, "is_valid")
+            ):
                 if not selection.is_valid():
                     self._show_info_popup(
-                        "Dosya Seçici",
-                        "Seçilen belge geçerli değil.",
+                        self._m("file_picker_title", "Dosya Seçici"),
+                        self._m(
+                            "selected_document_invalid",
+                            "Seçilen belge geçerli değil.",
+                        ),
                     )
                     return
         except Exception:
@@ -542,8 +590,11 @@ class DosyaSecici(Kart):
 
         if selection is None:
             self._show_info_popup(
-                "Test Dosya Seçici",
-                "Seçilen test dosyası geçerli değil.",
+                self._m("test_file_picker_title", "Test Dosya Seçici"),
+                self._m(
+                    "selected_test_file_invalid",
+                    "Seçilen test dosyası geçerli değil.",
+                ),
             )
             return
 
