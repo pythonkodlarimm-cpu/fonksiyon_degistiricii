@@ -187,11 +187,13 @@ class RootWidget(
         self.dosya_secici = DosyaSecici(
             on_scan=self.scan_file,
             on_refresh=self.refresh_file,
+            services=self.services,
         )
         self.dosya_secici.size_hint_y = None
         self.main_column.add_widget(self.dosya_secici)
 
         self.function_list = fonksiyon_listesi_yoneticisi.panel_olustur(
+            services=self.services,
             on_select=self.select_item,
             on_error=lambda exc, title="", detailed_text="": self.set_status_error(
                 str(exc or "Fonksiyon listesi hatası"),
@@ -210,6 +212,7 @@ class RootWidget(
         self.main_column.add_widget(self.function_list)
 
         self.editor = editor_yoneticisi.panel_olustur(
+            services=self.services,
             on_update=self.update_selected_function,
             on_restore=self.geri_yukle_secili_belge,
         )
@@ -227,7 +230,7 @@ class RootWidget(
             padding=(0, dp(2), 0, 0),
         )
 
-        self.status = DurumCubugu()
+        self.status = DurumCubugu(services=self.services)
         self.status.size_hint_y = None
         self.bottom_bar.add_widget(self.status)
 
@@ -263,6 +266,36 @@ class RootWidget(
     # LANGUAGE
     # =========================================================
     def _on_language_changed(self, code: str) -> None:
+        try:
+            if self.dosya_secici is not None and hasattr(self.dosya_secici, "refresh_language"):
+                self.dosya_secici.refresh_language()
+        except Exception:
+            pass
+
+        try:
+            if self.function_list is not None and hasattr(self.function_list, "refresh_language"):
+                self.function_list.refresh_language()
+        except Exception:
+            pass
+
+        try:
+            if self.editor is not None and hasattr(self.editor, "refresh_language"):
+                self.editor.refresh_language()
+        except Exception:
+            pass
+
+        try:
+            if self.status is not None and hasattr(self.status, "refresh_language"):
+                self.status.refresh_language()
+        except Exception:
+            pass
+
+        try:
+            if self.file_access_panel is not None and hasattr(self.file_access_panel, "refresh_language"):
+                self.file_access_panel.refresh_language()
+        except Exception:
+            pass
+
         try:
             mesaj = self.services.metin(
                 "language_updated",
@@ -622,17 +655,9 @@ class RootWidget(
         return self.services.sistem_yoneticisi()
 
     def _save_app_state_to_settings(self, state: dict) -> None:
-        """
-        Disk tabanlı app_state artık kullanılmıyor.
-        Bu method bilinçli olarak no-op bırakılmıştır.
-        """
         return None
 
     def _load_app_state_from_settings(self) -> dict:
-        """
-        Disk tabanlı app_state restore artık kullanılmıyor.
-        Bu method bilinçli olarak boş sözlük döndürür.
-        """
         return {}
 
     # =========================================================
@@ -907,7 +932,6 @@ class RootWidget(
                         print("[ROOT] Uygulama durumu memory'den geri yüklendi.")
                         return
 
-                    # 🔥 BURASI DEĞİŞTİ
                     self.set_status_info("Yeni oturum açıldı.", "onaylandi.png")
                     print("[ROOT] Memory restore başarısız. Yeni oturum başlatıldı.")
 
@@ -915,8 +939,6 @@ class RootWidget(
                     self._clear_restore_view_state()
                     print("[ROOT] Uygulama durumu geri yüklenemedi.")
                     print(traceback.format_exc())
-
-                    # 🔥 BURASI DEĞİŞTİ
                     self.set_status_info("Yeni oturum açıldı.", "onaylandi.png")
 
             Clock.schedule_once(_restore, 0.10)
@@ -927,10 +949,6 @@ class RootWidget(
             self.set_status_info("Yeni oturum açıldı.", "onaylandi.png")
 
     def _auto_restore_saved_state_on_start(self) -> None:
-        """
-        Disk tabanlı otomatik restore artık kullanılmıyor.
-        Uygulama yeniden açıldığında temiz başlangıç yapılır.
-        """
         return
 
     # =========================================================
