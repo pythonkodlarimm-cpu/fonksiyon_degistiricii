@@ -15,6 +15,7 @@ ROL:
 - Uygulama arka plan / geri dönüş durum kaydını ve geri yüklemesini yürütür
 - Oturum geri yükleme bilgisini geçici olarak gösterir ve otomatik temizler
 - Uzak version.json kontrolü ile yeni sürüm varsa Play Store yönlendirmeli güncelleme CTA gösterir
+- Dil değişimi callback akışını alır ve üst UI durumunu günceller
 
 MİMARİ:
 - Editor paneli editor_paketi/yoneticisi.py üzerinden oluşturulur
@@ -28,7 +29,7 @@ MİMARİ:
 - Root mixin yapısı alt paket klasörlerinden yüklenir
 - Eski alias dosyaları kullanılmaz
 
-SURUM: 60
+SURUM: 61
 TARIH: 2026-03-23
 IMZA: FY.
 """
@@ -177,6 +178,8 @@ class RootWidget(
         self.main_column.bind(minimum_height=self.main_column.setter("height"))
 
         self.file_access_panel = tum_dosya_erisim_yoneticisi.panel_olustur(
+            services=self.services,
+            on_language_changed=self._on_language_changed,
             on_status_changed=self._on_file_access_status_changed,
         )
         self.file_access_panel.size_hint_y = None
@@ -256,6 +259,33 @@ class RootWidget(
         except Exception as exc:
             self.tarama_success_overlay = None
             print(f"[ROOT] Tarama success overlay oluşturulamadı: {exc}")
+
+    # =========================================================
+    # LANGUAGE
+    # =========================================================
+    def _on_language_changed(self, code: str) -> None:
+        try:
+            mesaj = self.services.metin(
+                "language_updated",
+                "Dil güncellendi.",
+            )
+        except Exception:
+            mesaj = "Dil güncellendi."
+
+        try:
+            self.set_status_success(str(mesaj or "Dil güncellendi."))
+        except Exception:
+            pass
+
+        try:
+            self._clear_update_cta()
+        except Exception:
+            pass
+
+        try:
+            Clock.schedule_once(self._check_update_from_endpoint, 0.20)
+        except Exception:
+            pass
 
     # =========================================================
     # BANNER
@@ -883,14 +913,20 @@ class RootWidget(
                         print("[ROOT] Uygulama durumu geri yüklendi.")
                         return
 
-                    self.set_status_warning("Önceki oturum geri yüklenemedi. Dosyayı yeniden seçin.")
-                    print("[ROOT] Uygulama durumu geri yüklenemedi: restore sonucu boş/geçersiz.")
+                    self.set_status_warning(
+                        "Önceki oturum geri yüklenemedi. Dosyayı yeniden seçin."
+                    )
+                    print(
+                        "[ROOT] Uygulama durumu geri yüklenemedi: restore sonucu boş/geçersiz."
+                    )
 
                 except Exception:
                     self._clear_restore_view_state()
                     print("[ROOT] Uygulama durumu geri yüklenemedi.")
                     print(traceback.format_exc())
-                    self.set_status_warning("Önceki oturum geri yüklenemedi. Dosyayı yeniden seçin.")
+                    self.set_status_warning(
+                        "Önceki oturum geri yüklenemedi. Dosyayı yeniden seçin."
+                    )
 
             Clock.schedule_once(_restore, 0.10)
 
