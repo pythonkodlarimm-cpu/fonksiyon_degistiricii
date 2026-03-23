@@ -12,13 +12,14 @@ MİMARİ:
 - UI ve root katmanı doğrudan alt servis dosyalarına değil, bu yöneticiye bağlanır
 - Refactor sırasında import kırılmalarını azaltır
 - Android, belge, dosya, analiz, reklam, sistem ve yedek servislerini tek noktada toplar
+- Banner ve geçiş reklamı gibi reklam akışları üst katmana tek kapıdan açılır
 
 API UYUMLULUK:
 - Platform bağımsız çekirdek servislerle uyumludur
 - Android servisleri izole biçimde yönetir
 - Android API 35 hedefiyle uyumlu mimari için uygundur
 
-SURUM: 3
+SURUM: 4
 TARIH: 2026-03-22
 IMZA: FY.
 """
@@ -65,7 +66,10 @@ class ServicesYoneticisi:
         return self._analiz_yoneticisi()
 
     def replace_karar_servisi_olustur(self, *args, **kwargs):
-        return self._analiz_yoneticisi().replace_karar_servisi_olustur(*args, **kwargs)
+        return self._analiz_yoneticisi().replace_karar_servisi_olustur(
+            *args,
+            **kwargs,
+        )
 
     # =========================================================
     # ANDROID
@@ -139,6 +143,23 @@ class ServicesYoneticisi:
     def banner_planlandi_mi(self) -> bool:
         return self._reklam_yoneticisi().banner_planlandi_mi()
 
+    def gecis_reklami_yukle(self) -> bool:
+        return self._reklam_yoneticisi().gecis_reklami_yukle()
+
+    def gecis_reklami_hazir_mi(self) -> bool:
+        return self._reklam_yoneticisi().gecis_reklami_hazir_mi()
+
+    def gecis_reklami_yukleniyor_mu(self) -> bool:
+        return self._reklam_yoneticisi().gecis_reklami_yukleniyor_mu()
+
+    def gecis_reklami_goster(self, sonrasi_callback=None) -> bool:
+        return self._reklam_yoneticisi().gecis_reklami_goster(
+            sonrasi_callback=sonrasi_callback,
+        )
+
+    def gecis_reklami_temizle(self) -> None:
+        self._reklam_yoneticisi().gecis_reklami_temizle()
+
     def test_modu_aktif_mi(self) -> bool:
         return self._reklam_yoneticisi().test_modu_aktif_mi()
 
@@ -159,9 +180,6 @@ class ServicesYoneticisi:
 
     def aktif_rewarded_reklam_id(self) -> str:
         return self._reklam_yoneticisi().aktif_rewarded_reklam_id()
-
-    def gecis_reklami_goster(self) -> bool:
-        return self._reklam_yoneticisi().gecis_reklami_goster()
 
     def odullu_reklam_goster(self) -> bool:
         return self._reklam_yoneticisi().odullu_reklam_goster()
