@@ -14,6 +14,7 @@ ROL:
 - Tarama loading / success overlay entegrasyonunu yönetir
 - Uygulama arka plan / geri dönüş durum kaydını ve geri yüklemesini yürütür
 - Oturum geri yükleme bilgisini geçici olarak gösterir ve otomatik temizler
+- Uzak version.json kontrolü ile yeni sürüm varsa Play Store yönlendirmeli güncelleme CTA gösterir
 
 MİMARİ:
 - Editor paneli editor_paketi/yoneticisi.py üzerinden oluşturulur
@@ -21,13 +22,14 @@ MİMARİ:
 - Fonksiyon listesi fonksiyon_listesi_paketi/yoneticisi.py üzerinden oluşturulur
 - Tarama göstergesi tarama_gostergesi_paketi/yoneticisi.py üzerinden oluşturulur
 - Reklam işlemleri sadece ServicesYoneticisi üzerinden yürütülür
+- Güncelleme işlemleri sadece ServicesYoneticisi üzerinden yürütülür
 - Uygulama durumu ServicesYoneticisi -> SistemYoneticisi -> ayar_servisi zinciriyle tutulur
 - Tarama sonucu ile fonksiyon listesi açılışı arasına doğal bir geçiş katmanı eklenmiştir
 - Root mixin yapısı alt paket klasörlerinden yüklenir
 - Eski alias dosyaları kullanılmaz
 
-SURUM: 57
-TARIH: 2026-03-22
+SURUM: 59
+TARIH: 2026-03-23
 IMZA: FY.
 """
 
@@ -35,6 +37,7 @@ from __future__ import annotations
 
 import traceback
 from pathlib import Path
+from threading import Thread
 
 from kivy.clock import Clock
 from kivy.metrics import dp
@@ -120,6 +123,13 @@ class RootWidget(
         self._pending_scan_ready = False
         self._scan_transition_busy = False
 
+        # =====================================================
+        # GUNCELLEME CTA / VERSION CHECK STATE
+        # =====================================================
+        self._update_cta_visible = False
+        self._update_state: dict = {}
+        self._update_check_in_progress = False
+
         try:
             self._build_ui()
             self.set_status_info("Hazır.", "onaylandi.png")
@@ -130,6 +140,7 @@ class RootWidget(
                 lambda *_: self._auto_restore_saved_state_on_start(),
                 0.60,
             )
+            Clock.schedule_once(self._check_update_from_endpoint, 1.20)
         except Exception:
             hata = traceback.format_exc()
             print(hata)
@@ -333,6 +344,124 @@ class RootWidget(
             print(traceback.format_exc())
 
     # =========================================================
+    # GUNCELLEME CTA / VERSION CHECK
+    # =========================================================
+    def _current_app_version(self) -> str:
+        try:
+            return str(self.app_version_text or "").strip()
+        except Exception:
+            return ""
+
+    def _check_update_from_endpoint(self, *_args) -> None:
+        if self._pending_scan_ready:
+            return
+
+        if self._update_check_in_progress:
+            return
+
+        try:
+            if not self.services.guncelleme_kontrol_aktif_mi():
+                return
+        except Exception:
+            return
+
+        mevcut_surum = self._current_app_version()
+        if not mevcut_surum:
+            return
+
+        self._update_check_in_progress = True
+
+        def _worker():
+            try:
+                result = self.services.guncelleme_durumu_hesapla(mevcut_surum)
+            except Exception:
+                result = {}
+            Clock.schedule_once(lambda *_: self._apply_update_check_result(result), 0)
+
+        try:
+            Thread(target=_worker, daemon=True).start()
+        except Exception:
+            self._update_check_in_progress = False
+
+    def _apply_update_check_result(self, result: dict) -> None:
+        self._update_check_in_progress = False
+
+        try:
+            self._update_state = dict(result or {})
+        except Exception:
+            self._update_state = {}
+
+        if self._pending_scan_ready:
+            return
+
+        update_available = bool(self._update_state.get("update_available", False))
+        unsupported_version = bool(self._update_state.get("unsupported_version", False))
+        force_update = bool(self._update_state.get("force_update", False))
+
+        if not update_available and not unsupported_version:
+            self._clear_update_cta()
+            return
+
+        if force_update or unsupported_version:
+            self._show_update_cta(force=True)
+            return
+
+        self._show_update_cta(force=False)
+
+    def _show_update_cta(self, force: bool = False) -> None:
+        if self._pending_scan_ready:
+            return
+
+        mesaj = str(
+            self._update_state.get("message", "") or "Yeni sürüm mevcut."
+        ).strip()
+
+        if force and not mesaj:
+            mesaj = "Yeni sürüm gerekli."
+
+        try:
+            if self.status is not None and hasattr(self.status, "set_action"):
+                self.status.set_action(
+                    text=mesaj or "Yeni sürüm mevcut.",
+                    button_text=self.services.guncelleme_buton_metni(),
+                    callback=self._open_play_store_for_update,
+                    icon_name="warning.png",
+                    tone="warning",
+                )
+                self._update_cta_visible = True
+                print("[ROOT] Güncelleme CTA gösterildi.")
+        except Exception:
+            print("[ROOT] Güncelleme CTA gösterilemedi.")
+            print(traceback.format_exc())
+
+    def _clear_update_cta(self) -> None:
+        self._update_cta_visible = False
+        try:
+            if (
+                self.status is not None
+                and hasattr(self.status, "clear_action")
+                and not self._pending_scan_ready
+            ):
+                self.status.clear_action()
+        except Exception:
+            pass
+
+    def _open_play_store_for_update(self) -> None:
+        try:
+            ok = self.services.play_store_sayfasini_ac(
+                package_name=self.services.play_store_package_name()
+            )
+            if ok:
+                print("[ROOT] Play Store güncelleme sayfası açıldı.")
+                return
+
+            self.set_status_warning("Play Store açılamadı.")
+        except Exception:
+            print("[ROOT] Play Store açma akışı başarısız.")
+            print(traceback.format_exc())
+            self.set_status_warning("Play Store açılamadı.")
+
+    # =========================================================
     # EDITOR STATE
     # =========================================================
     def _editor_text_al(self) -> str:
@@ -480,7 +609,7 @@ class RootWidget(
             return {}
 
     # =========================================================
-    # GEÇICI STATUS
+    # GECICI STATUS
     # =========================================================
     def _show_temporary_restore_status(
         self,
@@ -509,7 +638,10 @@ class RootWidget(
         def _reset_status(*_args):
             self._restore_status_reset_event = None
             try:
+                if self._pending_scan_ready:
+                    return
                 self.set_status_info("Hazır.", "onaylandi.png")
+                Clock.schedule_once(self._check_update_from_endpoint, 0.10)
             except Exception:
                 pass
 
@@ -634,7 +766,10 @@ class RootWidget(
                     except Exception:
                         self.selected_item = bulunan
                         try:
-                            if self.editor is not None and hasattr(self.editor, "set_item"):
+                            if (
+                                self.editor is not None
+                                and hasattr(self.editor, "set_item")
+                            ):
                                 self.editor.set_item(bulunan)
                         except Exception:
                             pass
@@ -740,6 +875,7 @@ class RootWidget(
         self._pending_scan_item_count = int(item_count or 0)
         self._pending_scan_display_name = str(display_name or "").strip()
         self._pending_scan_ready = True
+        self._clear_update_cta()
 
         try:
             self._try_preload_interstitial()
@@ -806,6 +942,7 @@ class RootWidget(
             Clock.schedule_once(lambda *_: self._scroll_to_function_list(), 0.10)
             self.set_status_success("Fonksiyon listesi açıldı.")
             print("[ROOT] Fonksiyon listesi geçiş sonrası açıldı.")
+            Clock.schedule_once(self._check_update_from_endpoint, 0.40)
         except Exception:
             print("[ROOT] Fonksiyon listesi açılamadı.")
             print(traceback.format_exc())
@@ -858,3 +995,4 @@ class RootWidget(
             pass
 
         self.set_status_info("Hazır.", "onaylandi.png")
+        Clock.schedule_once(self._check_update_from_endpoint, 0.10)
