@@ -10,6 +10,7 @@ ROL:
 - Tarama sonrası kullanıcıyı fonksiyon listesine yönlendirir
 - Fonksiyon seçimi sonrası kullanıcıyı editör alanına yönlendirir
 - Android tarafında AdMob banner başlatma akışını güvenli ve gecikmeli biçimde tetikler
+- Geçiş reklamını (interstitial) preload eder ve doğal geçiş noktasında gösterir
 - Tarama loading / success overlay entegrasyonunu yönetir
 - Uygulama arka plan / geri dönüş durum kaydını ve geri yüklemesini yürütür
 - Oturum geri yükleme bilgisini geçici olarak gösterir ve otomatik temizler
@@ -21,10 +22,11 @@ MİMARİ:
 - Tarama göstergesi tarama_gostergesi_paketi/yoneticisi.py üzerinden oluşturulur
 - Reklam işlemleri sadece ServicesYoneticisi üzerinden yürütülür
 - Uygulama durumu ServicesYoneticisi -> SistemYoneticisi -> ayar_servisi zinciriyle tutulur
+- Tarama sonucu ile fonksiyon listesi açılışı arasına doğal bir geçiş katmanı eklenmiştir
 - Root mixin yapısı alt paket klasörlerinden yüklenir
 - Eski alias dosyaları kullanılmaz
 
-SURUM: 53
+SURUM: 57
 TARIH: 2026-03-22
 IMZA: FY.
 """
@@ -32,6 +34,7 @@ IMZA: FY.
 from __future__ import annotations
 
 import traceback
+from pathlib import Path
 
 from kivy.clock import Clock
 from kivy.metrics import dp
@@ -108,11 +111,21 @@ class RootWidget(
         self._memory_app_state = {}
         self._restore_status_reset_event = None
 
+        # =====================================================
+        # TARAMA -> GEÇİŞ REKLAMI -> LİSTE AÇMA STATE
+        # =====================================================
+        self._pending_scan_result = None
+        self._pending_scan_item_count = 0
+        self._pending_scan_display_name = ""
+        self._pending_scan_ready = False
+        self._scan_transition_busy = False
+
         try:
             self._build_ui()
             self.set_status_info("Hazır.", "onaylandi.png")
             Clock.schedule_once(self._post_build_refresh, 0.08)
             Clock.schedule_once(self._try_start_banner, 0.35)
+            Clock.schedule_once(self._try_preload_interstitial, 0.80)
             Clock.schedule_once(
                 lambda *_: self._auto_restore_saved_state_on_start(),
                 0.60,
@@ -233,6 +246,9 @@ class RootWidget(
             self.tarama_success_overlay = None
             print(f"[ROOT] Tarama success overlay oluşturulamadı: {exc}")
 
+    # =========================================================
+    # BANNER
+    # =========================================================
     def _try_start_banner(self, *_args) -> None:
         print("[ROOT] _try_start_banner çağrıldı.")
 
@@ -294,6 +310,31 @@ class RootWidget(
         print(f"[ROOT] Banner tekrar denemesi planlandı. {delay} sn sonra.")
         Clock.schedule_once(self._try_start_banner, delay)
 
+    # =========================================================
+    # INTERSTITIAL PRELOAD
+    # =========================================================
+    def _try_preload_interstitial(self, *_args) -> None:
+        if platform != "android":
+            return
+
+        try:
+            if self.services.gecis_reklami_hazir_mi():
+                print("[ROOT] Geçiş reklamı zaten hazır.")
+                return
+
+            if self.services.gecis_reklami_yukleniyor_mu():
+                print("[ROOT] Geçiş reklamı zaten yükleniyor.")
+                return
+
+            sonuc = self.services.gecis_reklami_yukle()
+            print(f"[ROOT] Geçiş reklamı preload sonucu: {sonuc}")
+        except Exception:
+            print("[ROOT] Geçiş reklamı preload başarısız.")
+            print(traceback.format_exc())
+
+    # =========================================================
+    # EDITOR STATE
+    # =========================================================
     def _editor_text_al(self) -> str:
         try:
             if self.editor is None:
@@ -387,11 +428,25 @@ class RootWidget(
         return None
 
     def _collect_app_state(self) -> dict:
+        selection_identifier = ""
+        selection_display_name = ""
+
+        try:
+            if self.dosya_secici is not None:
+                selection_identifier = str(self.dosya_secici.get_path() or "").strip()
+                selection_display_name = str(
+                    self.dosya_secici.get_display_name() or ""
+                ).strip()
+        except Exception:
+            pass
+
         state = {
             "current_file_path": str(self.current_file_path or ""),
             "selected_item_identity": self._selected_item_identity(),
             "editor_text": self._editor_text_al(),
             "scroll_y": None,
+            "selection_identifier": selection_identifier,
+            "selection_display_name": selection_display_name,
         }
 
         try:
@@ -402,6 +457,9 @@ class RootWidget(
 
         return state
 
+    # =========================================================
+    # SISTEM / APP STATE
+    # =========================================================
     def _sistem(self):
         return self.services.sistem_yoneticisi()
 
@@ -421,6 +479,9 @@ class RootWidget(
             print(traceback.format_exc())
             return {}
 
+    # =========================================================
+    # GEÇICI STATUS
+    # =========================================================
     def _show_temporary_restore_status(
         self,
         message: str,
@@ -433,6 +494,12 @@ class RootWidget(
         except Exception:
             pass
         self._restore_status_reset_event = None
+
+        try:
+            if self.status is not None and hasattr(self.status, "clear_action"):
+                self.status.clear_action()
+        except Exception:
+            pass
 
         try:
             self.set_status_info(str(message or "Oturum geri yüklendi."), icon_name)
@@ -454,6 +521,9 @@ class RootWidget(
         except Exception:
             pass
 
+    # =========================================================
+    # APP STATE SAVE / RESTORE
+    # =========================================================
     def uygulama_durumu_kaydet(self) -> None:
         try:
             state = self._collect_app_state()
@@ -463,6 +533,44 @@ class RootWidget(
         except Exception:
             print("[ROOT] Uygulama durumu kaydedilemedi.")
             print(traceback.format_exc())
+
+    def _restore_items_from_saved_file(self, saved_file_path: str) -> bool:
+        temiz_yol = str(saved_file_path or "").strip()
+        if not temiz_yol:
+            return False
+
+        try:
+            path_obj = Path(temiz_yol)
+            if not path_obj.exists() or not path_obj.is_file():
+                print(f"[ROOT] Kayıtlı çalışma dosyası bulunamadı: {temiz_yol}")
+                return False
+        except Exception:
+            print(f"[ROOT] Kayıtlı çalışma dosyası doğrulanamadı: {temiz_yol}")
+            return False
+
+        try:
+            items = self._get_core_yoneticisi().scan_functions_from_file(temiz_yol)
+        except Exception:
+            print("[ROOT] Kayıtlı çalışma dosyası yeniden taranamadı.")
+            print(traceback.format_exc())
+            return False
+
+        try:
+            self.current_file_path = temiz_yol
+            self.items = list(items or [])
+
+            if self.function_list is not None:
+                self.function_list.set_items(self.items)
+
+            print(
+                "[ROOT] Kayıtlı çalışma dosyasından içerik geri yüklendi. "
+                f"item_count={len(self.items)}"
+            )
+            return True
+        except Exception:
+            print("[ROOT] Kayıtlı çalışma dosyası UI'ye uygulanamadı.")
+            print(traceback.format_exc())
+            return False
 
     def _apply_saved_state(self, state: dict) -> None:
         if not isinstance(state, dict) or not state:
@@ -474,25 +582,46 @@ class RootWidget(
         ).strip()
         editor_text = str(state.get("editor_text", "") or "")
         scroll_y = state.get("scroll_y", None)
+        selection_identifier = str(
+            state.get("selection_identifier", "") or ""
+        ).strip()
+        selection_display_name = str(
+            state.get("selection_display_name", "") or ""
+        ).strip()
 
         try:
-            if current_file_path and self.dosya_secici is not None:
-                self.dosya_secici.set_path(current_file_path)
+            if self.dosya_secici is not None:
+                if selection_identifier:
+                    self.dosya_secici.set_path(selection_identifier)
+                elif current_file_path:
+                    self.dosya_secici.set_path(current_file_path)
+
+                if selection_display_name:
+                    try:
+                        self.dosya_secici._last_display_name = selection_display_name
+                        self.dosya_secici._refresh_summary()
+                    except Exception:
+                        pass
         except Exception:
             pass
 
+        restore_ok = False
+
         try:
-            if current_file_path and self.current_file_path != current_file_path:
+            if current_file_path:
+                restore_ok = self._restore_items_from_saved_file(current_file_path)
+        except Exception:
+            print("[ROOT] Saved file restore aşaması başarısız.")
+            print(traceback.format_exc())
+
+        try:
+            if not restore_ok and current_file_path:
                 self.current_file_path = current_file_path
         except Exception:
             pass
 
         try:
-            if current_file_path and not self.items:
-                try:
-                    self._reload_items_from_current_file()
-                except Exception:
-                    pass
+            self._clear_scan_transition_state()
         except Exception:
             pass
 
@@ -500,19 +629,35 @@ class RootWidget(
             if selected_item_identity:
                 bulunan = self._find_item_by_identity_value(selected_item_identity)
                 if bulunan is not None:
-                    self.selected_item = bulunan
+                    try:
+                        self.select_item(bulunan)
+                    except Exception:
+                        self.selected_item = bulunan
+                        try:
+                            if self.editor is not None and hasattr(self.editor, "set_item"):
+                                self.editor.set_item(bulunan)
+                        except Exception:
+                            pass
         except Exception:
-            pass
+            print("[ROOT] Kayıtlı seçili fonksiyon geri yüklenemedi.")
+            print(traceback.format_exc())
 
         try:
             if editor_text:
                 self._editor_text_yaz(editor_text)
         except Exception:
-            pass
+            print("[ROOT] Kayıtlı editör metni geri yüklenemedi.")
+            print(traceback.format_exc())
+
+        def _apply_scroll(*_args):
+            try:
+                if scroll_y is not None and self.scroll is not None:
+                    self.scroll.scroll_y = float(scroll_y)
+            except Exception:
+                pass
 
         try:
-            if scroll_y is not None and self.scroll is not None:
-                self.scroll.scroll_y = float(scroll_y)
+            Clock.schedule_once(_apply_scroll, 0.12)
         except Exception:
             pass
 
@@ -538,6 +683,13 @@ class RootWidget(
                 self._resume_restore_scheduled = False
                 try:
                     self._apply_saved_state(state)
+
+                    if not self.items and self.current_file_path:
+                        print("[ROOT] Restore sonrası item listesi boş.")
+                        self.set_status_warning(
+                            "Dosya bulunamadı veya yeniden yüklenemedi."
+                        )
+
                     self._show_temporary_restore_status(
                         "Oturum geri yüklendi.",
                         "onaylandi.png",
@@ -576,3 +728,133 @@ class RootWidget(
         except Exception:
             print("[ROOT] Başlangıç app state geri yükleme başarısız.")
             print(traceback.format_exc())
+
+    # =========================================================
+    # TARAMA -> GEÇİŞ REKLAMI -> LİSTE AÇMA
+    # =========================================================
+    def _on_scan_transition_ready(
+        self,
+        item_count: int = 0,
+        display_name: str = "",
+    ) -> None:
+        self._pending_scan_item_count = int(item_count or 0)
+        self._pending_scan_display_name = str(display_name or "").strip()
+        self._pending_scan_ready = True
+
+        try:
+            self._try_preload_interstitial()
+        except Exception:
+            pass
+
+        mesaj = (
+            f"Tarama tamamlandı. {self._pending_scan_item_count} fonksiyon bulundu."
+        )
+
+        try:
+            if self.status is not None and hasattr(self.status, "set_action"):
+                self.status.set_action(
+                    text=mesaj,
+                    button_text="Listeyi Aç",
+                    callback=self.continue_after_scan_transition,
+                    icon_name="onaylandi.png",
+                    tone="success",
+                )
+            else:
+                self.set_status_success(
+                    mesaj + " Listeyi açmak için devam edin."
+                )
+        except Exception:
+            self.set_status_success(
+                mesaj + " Listeyi açmak için devam edin."
+            )
+
+        print(
+            "[ROOT] Tarama geçiş aşaması hazırlandı | "
+            f"item_count={self._pending_scan_item_count} "
+            f"display_name={self._pending_scan_display_name}"
+        )
+
+    def _clear_scan_transition_state(self) -> None:
+        self._pending_scan_result = None
+        self._pending_scan_item_count = 0
+        self._pending_scan_display_name = ""
+        self._pending_scan_ready = False
+        self._scan_transition_busy = False
+
+        try:
+            if self.status is not None and hasattr(self.status, "clear_action"):
+                self.status.clear_action()
+        except Exception:
+            pass
+
+    def _apply_function_list_after_transition(self) -> None:
+        try:
+            if self.function_list is not None:
+                self.function_list.set_items(self.items)
+                print(
+                    "[ROOT] Fonksiyon listesi geçiş sonrası dolduruldu. "
+                    f"item_count={len(self.items)}"
+                )
+        except Exception:
+            print("[ROOT] Fonksiyon listesi geçiş sonrası doldurulamadı.")
+            print(traceback.format_exc())
+
+    def _open_function_list_after_transition(self) -> None:
+        try:
+            self._apply_function_list_after_transition()
+            self._clear_scan_transition_state()
+            Clock.schedule_once(lambda *_: self._scroll_to_function_list(), 0.10)
+            self.set_status_success("Fonksiyon listesi açıldı.")
+            print("[ROOT] Fonksiyon listesi geçiş sonrası açıldı.")
+        except Exception:
+            print("[ROOT] Fonksiyon listesi açılamadı.")
+            print(traceback.format_exc())
+
+    def continue_after_scan_transition(self) -> bool:
+        """
+        Tarama sonrası bekleyen geçişi devam ettirir.
+        UI tarafındaki 'Devam et / Listeyi aç' aksiyonu bu metodu çağırmalıdır.
+        """
+        if not self._pending_scan_ready:
+            print("[ROOT] Bekleyen tarama geçişi yok.")
+            return False
+
+        if self._scan_transition_busy:
+            print("[ROOT] Tarama geçişi zaten işleniyor.")
+            return False
+
+        self._scan_transition_busy = True
+
+        try:
+            if self.services.gecis_reklami_hazir_mi():
+                print("[ROOT] Geçiş reklamı hazır. Gösteriliyor...")
+                gosterildi = self.services.gecis_reklami_goster(
+                    sonrasi_callback=self._open_function_list_after_transition,
+                )
+
+                if gosterildi:
+                    return True
+
+            print("[ROOT] Geçiş reklamı hazır değil veya gösterilemedi. Direkt açılıyor.")
+            self._open_function_list_after_transition()
+            return True
+
+        except Exception:
+            print("[ROOT] Geçiş reklamı akışı başarısız. Direkt açılıyor.")
+            print(traceback.format_exc())
+            self._open_function_list_after_transition()
+            return False
+
+    def cancel_scan_transition(self) -> None:
+        """
+        Gerekirse bekleyen tarama geçişini temizler.
+        """
+        self._clear_scan_transition_state()
+
+        try:
+            if self.function_list is not None:
+                self.function_list.clear_all()
+        except Exception:
+            pass
+
+        self.set_status_info("Hazır.", "onaylandi.png")
