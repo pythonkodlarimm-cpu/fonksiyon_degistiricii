@@ -12,13 +12,14 @@ MİMARİ:
 - Tüm reklam servisleri bu dosyadan beslenir
 - Ortam seçimi tek merkezden yapılır
 - Yanlış mod kombinasyonları engellenir
+- Banner ve geçiş reklamı aynı ayar katmanından yönetilir
 
 API UYUMLULUK:
 - AdMob SDK uyumlu
 - AndroidX uyumlu
 - API 35 uyumlu
 
-SURUM: 4
+SURUM: 5
 TARIH: 2026-03-22
 IMZA: FY.
 """
@@ -57,7 +58,7 @@ TEST_REWARDED_REKLAM_ID: str = "ca-app-pub-3940256099942544/5224354917"
 # =========================================================
 GERCEK_ADMOB_APP_ID: str = "ca-app-pub-5522917995813710~6900495663"
 GERCEK_BANNER_REKLAM_ID: str = "ca-app-pub-5522917995813710/2607730157"
-GERCEK_INTERSTITIAL_REKLAM_ID: str = ""
+GERCEK_INTERSTITIAL_REKLAM_ID: str = "ca-app-pub-5522917995813710/8789776927"
 GERCEK_REWARDED_REKLAM_ID: str = ""
 
 
