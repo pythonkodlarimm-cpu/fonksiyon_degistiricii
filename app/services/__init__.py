@@ -6,19 +6,21 @@ ROL:
 - Services katmanı için dışa açık lazy import giriş noktası sağlar
 - ServicesYoneticisi sınıfını tek kapıdan erişilebilir hale getirir
 - Import maliyetini azaltır ve modüler yapıyı korur
+- Dil, güncelleme, reklam ve diğer servis akışlarının üst katmana tek kapıdan açılmasını destekler
 
 MİMARİ:
 - Services katmanının dış dünyaya açılan yüzüdür
 - Alt modül yollarını dış katmanlardan gizler
 - Lazy import ile gereksiz erken yüklemeyi önler
 - Circular import riskini azaltmaya yardımcı olur
+- Dış dünya yalnızca ServicesYoneticisi sınıfını bilir
 
 UYUMLULUK:
 - Android ve masaüstü çalışma düzeniyle uyumludur
 - Platforma özel kod içermez
 
-SURUM: 2
-TARIH: 2026-03-22
+SURUM: 3
+TARIH: 2026-03-23
 IMZA: FY.
 """
 
