@@ -9,6 +9,7 @@ ROL:
 - Büyük kod içeriklerinde UI donmasını azaltmak için içerik yüklemeyi sade ve güvenli şekilde erteler
 - Üst katmanların editör iç yapısını bilmeden metin okuyup yazabilmesi için public text API sağlar
 - Android restore akışında eksik item / geç zamanlama kaynaklı UI çökmesini azaltır
+- Aktif dile göre görünür metinleri üretir ve yeniler
 
 MİMARİ:
 - Alt modüllere doğrudan erişmez
@@ -18,13 +19,14 @@ MİMARİ:
 - set_item akışı tek bir ertelenmiş yükleme ile stabil tutulur
 - Root ve diğer üst katmanlar editör iç widget yapısını bilmeden public API üzerinden içerik okuyup yazabilir
 - Widget hazır değilken veya item eksik gelirse güvenli fallback uygulanır
+- Kullanıcıya görünen metinler services -> sistem -> dil_servisi zincirinden alınır
 
 API UYUMLULUK:
 - Platform bağımsızdır
 - Android API 35 ile uyumludur
 - Doğrudan Android bridge çağrısı içermez
 
-SURUM: 29
+SURUM: 30
 TARIH: 2026-03-23
 IMZA: FY.
 """
@@ -35,17 +37,26 @@ from kivy.clock import Clock
 from kivy.metrics import dp
 from kivy.uix.boxlayout import BoxLayout
 
+from app.services.yoneticisi import ServicesYoneticisi
 from app.ui.icon_toolbar import IconToolbar
 from app.ui.iconlu_baslik import IconluBaslik
 from app.ui.tema import TEXT_MUTED, TEXT_PRIMARY
 
 
 class EditorPaneli(BoxLayout):
-    def __init__(self, on_update=None, on_restore=None, **kwargs):
+    def __init__(
+        self,
+        on_update=None,
+        on_restore=None,
+        services: ServicesYoneticisi | None = None,
+        **kwargs,
+    ):
         super().__init__(orientation="vertical", spacing=dp(10), **kwargs)
 
         self.on_update = on_update
         self.on_restore = on_restore
+        self.services = services
+
         self.current_item = None
         self._new_code_buffer = ""
         self._current_popup = None
@@ -53,42 +64,166 @@ class EditorPaneli(BoxLayout):
 
         self.path_label = None
         self.error_box = None
+        self.current_title = None
+        self.new_title = None
+        self.current_open_tool = None
+        self.new_edit_tool = None
         self.current_code_area = None
         self.inline_notice = None
         self.new_code_area = None
         self.action_toolbar = None
 
+        self._tool_clear = None
+        self._tool_update = None
+        self._tool_check = None
+        self._tool_copy = None
+        self._tool_restore = None
+
         self._pending_set_item_event = None
         self._set_item_serial = 0
 
         self._build_ui()
-        self._set_status_info("Hazır.", 0)
+        self._set_status_info(self._m("app_ready", "Hazır."), 0)
+
+    # =========================================================
+    # DIL
+    # =========================================================
+    def _get_services(self) -> ServicesYoneticisi:
+        if self.services is not None:
+            return self.services
+
+        try:
+            parent = self.parent
+            while parent is not None:
+                services = getattr(parent, "services", None)
+                if services is not None:
+                    self.services = services
+                    return services
+                parent = getattr(parent, "parent", None)
+        except Exception:
+            pass
+
+        self.services = ServicesYoneticisi()
+        return self.services
+
+    def _m(self, anahtar: str, default: str = "") -> str:
+        try:
+            return str(
+                self._get_services().metin(anahtar, default) or default or anahtar
+            )
+        except Exception:
+            return str(default or anahtar)
+
+    def refresh_language(self) -> None:
+        try:
+            if self.path_label is not None:
+                self.path_label.set_text(
+                    f"{self._m('selected_function', 'Seçili fonksiyon: -').split(':')[0]}: "
+                    f"{self._item_path_text(self.current_item) if self.current_item is not None else '-'}"
+                )
+        except Exception:
+            pass
+
+        try:
+            if self.current_title is not None:
+                self.current_title.set_text(self._m("current_code", "Mevcut Kod"))
+        except Exception:
+            pass
+
+        try:
+            if self.new_title is not None:
+                self.new_title.set_text(
+                    self._m("new_function_code", "Yeni Fonksiyon Kodu")
+                )
+        except Exception:
+            pass
+
+        try:
+            if self.current_open_tool is not None:
+                if hasattr(self.current_open_tool, "set_text") and callable(
+                    self.current_open_tool.set_text
+                ):
+                    self.current_open_tool.set_text(self._m("open", "Aç"))
+                elif hasattr(self.current_open_tool, "text"):
+                    self.current_open_tool.text = self._m("open", "Aç")
+        except Exception:
+            pass
+
+        try:
+            if self.new_edit_tool is not None:
+                if hasattr(self.new_edit_tool, "set_text") and callable(
+                    self.new_edit_tool.set_text
+                ):
+                    self.new_edit_tool.set_text(self._m("edit", "Düzenle"))
+                elif hasattr(self.new_edit_tool, "text"):
+                    self.new_edit_tool.text = self._m("edit", "Düzenle")
+        except Exception:
+            pass
+
+        try:
+            if self.new_code_area is not None and hasattr(self.new_code_area, "hint_text"):
+                self.new_code_area.hint_text = self._m(
+                    "new_function_hint",
+                    "Tam fonksiyon kodunu buraya yaz veya yapıştır.",
+                )
+        except Exception:
+            pass
+
+        self._refresh_action_toolbar_language()
+
+    def _refresh_action_toolbar_language(self) -> None:
+        tool_map = [
+            (self._tool_clear, "clear", "Temizle"),
+            (self._tool_update, "update", "Güncelle"),
+            (self._tool_check, "check", "Kontrol Et"),
+            (self._tool_copy, "file_copy", "Kopyala"),
+            (self._tool_restore, "restore", "Geri Yükle"),
+        ]
+
+        for tool, key, default in tool_map:
+            try:
+                if tool is None:
+                    continue
+
+                text_value = self._m(key, default)
+                if hasattr(tool, "set_text") and callable(tool.set_text):
+                    tool.set_text(text_value)
+                elif hasattr(tool, "text"):
+                    tool.text = text_value
+            except Exception:
+                continue
 
     # =========================================================
     # YONETICILER
     # =========================================================
     def _aksiyon(self):
         from app.ui.editor_paketi.aksiyon import AksiyonYoneticisi
+
         return AksiyonYoneticisi()
 
     def _bilesenler(self):
         from app.ui.editor_paketi.bilesenler import BilesenlerYoneticisi
+
         return BilesenlerYoneticisi()
 
     def _bildirim(self):
         from app.ui.editor_paketi.bildirim import BildirimYoneticisi
+
         return BildirimYoneticisi()
 
     def _dogrulama(self):
         from app.ui.editor_paketi.dogrulama import DogrulamaYoneticisi
+
         return DogrulamaYoneticisi()
 
     def _popup(self):
         from app.ui.editor_paketi.popup import PopupYoneticisi
+
         return PopupYoneticisi()
 
     def _yardimci(self):
         from app.ui.editor_paketi.yardimci import YardimciYoneticisi
+
         return YardimciYoneticisi()
 
     # =========================================================
@@ -96,7 +231,7 @@ class EditorPaneli(BoxLayout):
     # =========================================================
     def _build_ui(self) -> None:
         self.path_label = IconluBaslik(
-            text="Seçili fonksiyon: -",
+            text=self._m("selected_function", "Seçili fonksiyon: -"),
             icon_name="edit.png",
             height_dp=38,
             font_size="16sp",
@@ -111,11 +246,14 @@ class EditorPaneli(BoxLayout):
 
         self.add_widget(
             self._build_title_row(
-                title="Mevcut Kod",
+                title_key="current_code",
+                title_default="Mevcut Kod",
                 icon_name="visibility_on.png",
                 action_icon="visibility_on.png",
-                action_text="Aç",
+                action_text_key="open",
+                action_text_default="Aç",
                 callback=self._open_current_code_popup,
+                row_type="current",
             )
         )
 
@@ -127,11 +265,14 @@ class EditorPaneli(BoxLayout):
 
         self.add_widget(
             self._build_title_row(
-                title="Yeni Fonksiyon Kodu",
+                title_key="new_function_code",
+                title_default="Yeni Fonksiyon Kodu",
                 icon_name="edit.png",
                 action_icon="edit.png",
-                action_text="Düzenle",
+                action_text_key="edit",
+                action_text_default="Düzenle",
                 callback=self._open_new_code_editor_popup,
+                row_type="new",
             )
         )
 
@@ -140,7 +281,10 @@ class EditorPaneli(BoxLayout):
 
         self.new_code_area = self._bilesenler().sade_kod_alani_olustur(
             readonly=False,
-            hint_text="Tam fonksiyon kodunu buraya yaz veya yapıştır.",
+            hint_text=self._m(
+                "new_function_hint",
+                "Tam fonksiyon kodunu buraya yaz veya yapıştır.",
+            ),
             size_hint_y=0.66,
         )
         self.add_widget(self.new_code_area)
@@ -149,11 +293,14 @@ class EditorPaneli(BoxLayout):
 
     def _build_title_row(
         self,
-        title: str,
+        title_key: str,
+        title_default: str,
         icon_name: str,
         action_icon: str,
-        action_text: str,
+        action_text_key: str,
+        action_text_default: str,
         callback,
+        row_type: str = "",
     ):
         wrap = BoxLayout(
             orientation="vertical",
@@ -168,24 +315,24 @@ class EditorPaneli(BoxLayout):
             height=dp(38),
             spacing=dp(8),
         )
-        row.add_widget(
-            IconluBaslik(
-                text=title,
-                icon_name=icon_name,
-                height_dp=34,
-                font_size="15sp",
-                color=(0.80, 0.89, 1, 1),
-                size_hint_x=1,
-            )
+
+        title_widget = IconluBaslik(
+            text=self._m(title_key, title_default),
+            icon_name=icon_name,
+            height_dp=34,
+            font_size="15sp",
+            color=(0.80, 0.89, 1, 1),
+            size_hint_x=1,
         )
+        row.add_widget(title_widget)
         wrap.add_widget(row)
 
         toolbar = IconToolbar(spacing_dp=12, padding_dp=0)
         toolbar.size_hint_y = None
         toolbar.height = dp(36)
-        toolbar.add_tool(
+        action_tool = toolbar.add_tool(
             icon_name=action_icon,
-            text=action_text,
+            text=self._m(action_text_key, action_text_default),
             on_release=callback,
             icon_size_dp=34,
             text_size="11sp",
@@ -193,6 +340,14 @@ class EditorPaneli(BoxLayout):
             icon_bg=None,
         )
         wrap.add_widget(toolbar)
+
+        if row_type == "current":
+            self.current_title = title_widget
+            self.current_open_tool = action_tool
+        elif row_type == "new":
+            self.new_title = title_widget
+            self.new_edit_tool = action_tool
+
         return wrap
 
     def _build_action_toolbar(self) -> None:
@@ -200,9 +355,9 @@ class EditorPaneli(BoxLayout):
         self.action_toolbar.size_hint_y = None
         self.action_toolbar.height = dp(84)
 
-        self.action_toolbar.add_tool(
+        self._tool_clear = self.action_toolbar.add_tool(
             icon_name="clear.png",
-            text="Temizle",
+            text=self._m("clear", "Temizle"),
             on_release=self._clear_new_code,
             icon_size_dp=42,
             text_size="12sp",
@@ -210,9 +365,9 @@ class EditorPaneli(BoxLayout):
             icon_bg=None,
         )
 
-        self.action_toolbar.add_tool(
+        self._tool_update = self.action_toolbar.add_tool(
             icon_name="upload.png",
-            text="Güncelle",
+            text=self._m("update", "Güncelle"),
             on_release=self._handle_update,
             icon_size_dp=42,
             text_size="12sp",
@@ -220,9 +375,9 @@ class EditorPaneli(BoxLayout):
             icon_bg=None,
         )
 
-        self.action_toolbar.add_tool(
+        self._tool_check = self.action_toolbar.add_tool(
             icon_name="code_check.png",
-            text="Kontrol Et",
+            text=self._m("check", "Kontrol Et"),
             on_release=self._check_new_code,
             icon_size_dp=42,
             text_size="11sp",
@@ -230,9 +385,9 @@ class EditorPaneli(BoxLayout):
             icon_bg=None,
         )
 
-        self.action_toolbar.add_tool(
+        self._tool_copy = self.action_toolbar.add_tool(
             icon_name="file_copy.png",
-            text="Kopyala",
+            text=self._m("file_copy", "Kopyala"),
             on_release=self._copy_current_to_new,
             icon_size_dp=42,
             text_size="12sp",
@@ -240,9 +395,9 @@ class EditorPaneli(BoxLayout):
             icon_bg=None,
         )
 
-        self.action_toolbar.add_tool(
+        self._tool_restore = self.action_toolbar.add_tool(
             icon_name="geri_yukle.png",
-            text="Geri Yükle",
+            text=self._m("restore", "Geri Yükle"),
             on_release=self._handle_restore,
             icon_size_dp=42,
             text_size="11sp",
@@ -271,7 +426,7 @@ class EditorPaneli(BoxLayout):
 
         try:
             if self.path_label is not None:
-                self.path_label.set_text("Seçili fonksiyon: -")
+                self.path_label.set_text(self._m("selected_function", "Seçili fonksiyon: -"))
         except Exception:
             pass
 
@@ -293,7 +448,7 @@ class EditorPaneli(BoxLayout):
         except Exception:
             pass
 
-        self._set_status_info("Hazır.", 0)
+        self._set_status_info(self._m("app_ready", "Hazır."), 0)
 
     def set_new_code_text(self, text: str) -> None:
         self._set_new_code(text)
@@ -380,6 +535,12 @@ class EditorPaneli(BoxLayout):
             and self.inline_notice is not None
         )
 
+    def _selected_function_prefix(self) -> str:
+        text_value = self._m("selected_function", "Seçili fonksiyon: -")
+        if ":" in text_value:
+            return text_value.split(":", 1)[0].strip()
+        return text_value.strip() or "Seçili fonksiyon"
+
     # =========================================================
     # KOD
     # =========================================================
@@ -417,7 +578,7 @@ class EditorPaneli(BoxLayout):
         except Exception:
             pass
 
-        self._set_status_info("Hazır.", 0)
+        self._set_status_info(self._m("app_ready", "Hazır."), 0)
 
         if item is None:
             try:
@@ -427,7 +588,9 @@ class EditorPaneli(BoxLayout):
 
             try:
                 if self.path_label is not None:
-                    self.path_label.set_text("Seçili fonksiyon: -")
+                    self.path_label.set_text(
+                        self._m("selected_function", "Seçili fonksiyon: -")
+                    )
             except Exception:
                 pass
 
@@ -448,7 +611,9 @@ class EditorPaneli(BoxLayout):
 
         try:
             if self.path_label is not None:
-                self.path_label.set_text(f"Seçili fonksiyon: {yeni_path}")
+                self.path_label.set_text(
+                    f"{self._selected_function_prefix()}: {yeni_path}"
+                )
         except Exception:
             pass
 
