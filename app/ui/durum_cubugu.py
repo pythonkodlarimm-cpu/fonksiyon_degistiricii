@@ -9,6 +9,7 @@ ROL:
 - Detaylı hata metni geldiğinde kopyalanabilir popup açabilir
 - İsteğe bağlı geçici aksiyon butonu gösterebilir
 - Aksiyon butonunu dikkat çekici pulse animasyonu ile gösterebilir
+- Seçilen dilde kullanıcıya metin gösterebilir
 
 MİMARİ:
 - Saf UI bileşenidir
@@ -17,6 +18,7 @@ MİMARİ:
 - Mevcut API korunur, ek olarak detaylı hata metni ve aksiyon butonu desteklenir
 - Pulse animasyonu sadece aksiyon butonu görünürken çalışır
 - Aynı aksiyon altyapısı hem tarama CTA hem güncelleme CTA için kullanılabilir
+- Sabit metinler ServicesYoneticisi -> dil servisi üzerinden çözülebilir
 
 APK / ANDROID UYUMLULUK:
 - İkon değişiminde source güncellendikten sonra reload() çağrılır
@@ -25,7 +27,7 @@ APK / ANDROID UYUMLULUK:
 - API 35 ile güvenli kullanılabilir
 - APK / AAB davranış farkını azaltmak için görsel fallback mantığı korunmuştur
 
-SURUM: 9
+SURUM: 10
 TARIH: 2026-03-23
 IMZA: FY.
 """
@@ -43,6 +45,7 @@ from kivy.uix.label import Label
 from kivy.uix.popup import Popup
 from kivy.uix.scrollview import ScrollView
 
+from app.services.yoneticisi import ServicesYoneticisi
 from app.ui.icon_yardimci import icon_path
 from app.ui.kart import Kart
 from app.ui.tema import TEXT_PRIMARY
@@ -62,7 +65,7 @@ class DurumCubugu(ButtonBehavior, Kart):
     - Aksiyon butonu görünürken pulse animasyonu çalışabilir.
     """
 
-    def __init__(self, **kwargs):
+    def __init__(self, services: ServicesYoneticisi | None = None, **kwargs):
         super().__init__(
             orientation="horizontal",
             spacing=dp(8),
@@ -75,6 +78,8 @@ class DurumCubugu(ButtonBehavior, Kart):
             **kwargs,
         )
 
+        self.services = services or ServicesYoneticisi()
+
         self._bg_info = (0.08, 0.11, 0.16, 1)
         self._bg_success = (0.08, 0.22, 0.14, 1)
         self._bg_warning = (0.24, 0.18, 0.08, 1)
@@ -85,7 +90,7 @@ class DurumCubugu(ButtonBehavior, Kart):
         self._border_warning = (0.36, 0.26, 0.10, 1)
         self._border_error = (0.36, 0.14, 0.14, 1)
 
-        self._popup_title = "Hata Detayı"
+        self._popup_title = self._m("error_title", "Hata Detayı")
         self._detailed_error_text = ""
         self._popup_ref = None
 
@@ -105,7 +110,7 @@ class DurumCubugu(ButtonBehavior, Kart):
         self.add_widget(self.icon)
 
         self.label = Label(
-            text="Hazır",
+            text=self._m("app_ready", "Hazır."),
             size_hint_x=1,
             color=TEXT_PRIMARY,
             halign="left",
@@ -134,6 +139,47 @@ class DurumCubugu(ButtonBehavior, Kart):
         self.add_widget(self.action_button)
 
         self._apply_info_style()
+
+    # =========================================================
+    # LANGUAGE
+    # =========================================================
+    def _m(self, anahtar: str, default: str = "") -> str:
+        try:
+            return str(self.services.metin(anahtar, default) or default or anahtar)
+        except Exception:
+            return str(default or anahtar)
+
+    def refresh_language(self) -> None:
+        try:
+            self._popup_title = self._m("error_title", "Hata Detayı")
+        except Exception:
+            self._popup_title = "Hata Detayı"
+
+        try:
+            mevcut = str(self.label.text or "").strip()
+            if not mevcut or mevcut in {
+                "Hazır",
+                "Hazır.",
+                "Ready",
+                "Ready.",
+                "Bereit",
+                "Bereit.",
+            }:
+                self.label.text = self._m("app_ready", "Hazır.")
+        except Exception:
+            pass
+
+        try:
+            if self._action_visible and self.action_button is not None:
+                mevcut_buton = str(self.action_button.text or "").strip()
+                if mevcut_buton in {
+                    "Devam Et",
+                    "Continue",
+                    "Weiter",
+                }:
+                    self.action_button.text = self._m("continue", "Devam Et")
+        except Exception:
+            pass
 
     # =========================================================
     # INTERNAL
@@ -198,11 +244,12 @@ class DurumCubugu(ButtonBehavior, Kart):
 
     def _clear_detailed_error(self) -> None:
         self._detailed_error_text = ""
-        self._popup_title = "Hata Detayı"
+        self._popup_title = self._m("error_title", "Hata Detayı")
 
-    def _set_detailed_error(self, text: str, title: str = "Hata Detayı") -> None:
+    def _set_detailed_error(self, text: str, title: str = "") -> None:
         self._detailed_error_text = str(text or "").strip()
-        self._popup_title = str(title or "Hata Detayı").strip() or "Hata Detayı"
+        varsayilan = self._m("error_title", "Hata Detayı")
+        self._popup_title = str(title or varsayilan).strip() or varsayilan
 
     def _has_detailed_error(self) -> bool:
         return bool(str(self._detailed_error_text or "").strip())
@@ -235,7 +282,7 @@ class DurumCubugu(ButtonBehavior, Kart):
             )
 
             baslik = Label(
-                text=str(self._popup_title or "Hata Detayı"),
+                text=str(self._popup_title or self._m("error_title", "Hata Detayı")),
                 size_hint_y=None,
                 height=dp(28),
                 font_size="18sp",
@@ -248,7 +295,10 @@ class DurumCubugu(ButtonBehavior, Kart):
             content.add_widget(baslik)
 
             alt = Label(
-                text="Dosya yolu, fonksiyon, satır ve traceback metni kopyalanabilir.",
+                text=self._m(
+                    "error_copy_hint",
+                    "Dosya yolu, fonksiyon, satır ve traceback metni kopyalanabilir.",
+                ),
                 size_hint_y=None,
                 height=dp(20),
                 font_size="11sp",
@@ -295,7 +345,7 @@ class DurumCubugu(ButtonBehavior, Kart):
             )
 
             copy_btn = Button(
-                text="Kopyala",
+                text=self._m("copy", "Kopyala"),
                 background_normal="",
                 background_down="",
                 background_color=(0.18, 0.42, 0.72, 1),
@@ -303,7 +353,7 @@ class DurumCubugu(ButtonBehavior, Kart):
             )
 
             close_btn = Button(
-                text="Kapat",
+                text=self._m("close", "Kapat"),
                 background_normal="",
                 background_down="",
                 background_color=(0.24, 0.24, 0.28, 1),
@@ -385,11 +435,17 @@ class DurumCubugu(ButtonBehavior, Kart):
         self._action_visible = True
 
         try:
-            self.action_button.text = self._safe_text(text, "Devam Et")
+            self.action_button.text = self._safe_text(
+                text,
+                self._m("continue", "Devam Et"),
+            )
             self.action_button.disabled = False
             self.action_button.opacity = 1
             self.action_button.size = (dp(108), dp(30))
-            self.action_button.width = max(dp(108), dp(24) * len(self.action_button.text))
+            self.action_button.width = max(
+                dp(108),
+                dp(24) * len(self.action_button.text),
+            )
         except Exception:
             pass
 
@@ -442,43 +498,55 @@ class DurumCubugu(ButtonBehavior, Kart):
         self._apply_info_style()
 
     def set_ready(self) -> None:
-        self.set_status("Hazır")
+        self.set_status(self._m("app_ready", "Hazır."))
 
-    def set_success(self, text: str = "İşlem başarılı") -> None:
+    def set_success(self, text: str = "") -> None:
         self._clear_detailed_error()
         self._hide_action_button()
-        self.label.text = self._safe_text(text, "İşlem başarılı")
+        self.label.text = self._safe_text(
+            text,
+            self._m("processing_successful", "İşlem başarılı"),
+        )
         self._set_icon("onaylandi.png")
         self._apply_success_style()
 
-    def set_warning(self, text: str = "Uyarı") -> None:
+    def set_warning(self, text: str = "") -> None:
         self._clear_detailed_error()
         self._hide_action_button()
-        self.label.text = self._safe_text(text, "Uyarı")
+        self.label.text = self._safe_text(
+            text,
+            self._m("warning", "Uyarı"),
+        )
         self._set_icon("warning.png")
         self._apply_warning_style()
 
     def set_error(
         self,
-        text: str = "Bir hata oluştu",
+        text: str = "",
         detailed_text: str = "",
-        popup_title: str = "Hata Detayı",
+        popup_title: str = "",
     ) -> None:
         self._hide_action_button()
-        self.label.text = self._safe_text(text, "Bir hata oluştu")
+        self.label.text = self._safe_text(
+            text,
+            self._m("an_error_occurred", "Bir hata oluştu"),
+        )
         self._set_icon("error.png")
         self._apply_error_style()
 
         detay = str(detailed_text or "").strip()
         if detay:
-            self._set_detailed_error(detay, title=popup_title)
+            self._set_detailed_error(
+                detay,
+                title=popup_title or self._m("error_title", "Hata Detayı"),
+            )
         else:
             self._clear_detailed_error()
 
     def set_action(
         self,
         text: str,
-        button_text: str = "Devam Et",
+        button_text: str = "",
         callback=None,
         icon_name: str = "onaylandi.png",
         tone: str = "success",
@@ -508,7 +576,7 @@ class DurumCubugu(ButtonBehavior, Kart):
 
         if callable(callback):
             self._show_action_button(
-                text=button_text,
+                text=button_text or self._m("continue", "Devam Et"),
                 callback=callback,
                 tone=secili_ton,
             )
