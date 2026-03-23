@@ -5,6 +5,7 @@ DOSYA: app/services/sistem/ayar_servisi.py
 ROL:
 - Uygulama ayarlarını yüklemek / kaydetmek
 - Dil ayarını saklamak
+- Desteklenen dil kodlarını merkezi olarak yönetmek
 - Uygulama durumunu (app_state) saklamak
 - Uygulama içi güvenli ayar dosyasını yönetmek
 
@@ -13,14 +14,16 @@ MİMARİ:
 - JSON tabanlı sade ayar yapısı kullanılır
 - Bozuk içerikte kontrollü hata veya güvenli fallback döner
 - Dil ve uygulama durumu aynı settings.json içinde tutulur
+- Dil doğrulama tek merkezde yapılır
+- UI katmanı doğrudan settings.json yapısını bilmez
 
 API UYUMLULUK:
 - API 35 uyumlu
 - Scoped storage dostu
 - Android ve masaüstü ortamlarında güvenli çalışır
 
-SURUM: 4
-TARIH: 2026-03-22
+SURUM: 5
+TARIH: 2026-03-23
 IMZA: FY.
 """
 
@@ -36,6 +39,86 @@ class AyarServisiHatasi(ValueError):
     pass
 
 
+# =========================================================
+# DIL AYARLARI
+# =========================================================
+DEFAULT_LANGUAGE: str = "tr"
+
+SUPPORTED_LANGUAGES: tuple[str, ...] = (
+    "tr",
+    "en",
+    "de",
+    "fr",
+    "es",
+    "it",
+    "pt",
+    "pt-br",
+    "nl",
+    "ru",
+    "uk",
+    "pl",
+    "cs",
+    "sk",
+    "sl",
+    "hr",
+    "sr",
+    "bs",
+    "mk",
+    "bg",
+    "ro",
+    "hu",
+    "el",
+    "sq",
+    "da",
+    "sv",
+    "no",
+    "fi",
+    "is",
+    "et",
+    "lv",
+    "lt",
+    "ga",
+    "mt",
+    "cy",
+    "ca",
+    "eu",
+    "gl",
+    "af",
+    "sw",
+    "zu",
+    "xh",
+    "am",
+    "ar",
+    "fa",
+    "ur",
+    "he",
+    "hi",
+    "bn",
+    "ta",
+    "te",
+    "ml",
+    "kn",
+    "gu",
+    "mr",
+    "pa",
+    "or",
+    "as",
+    "ne",
+    "si",
+    "my",
+    "th",
+    "vi",
+    "id",
+    "ms",
+    "tl",
+    "zh",
+    "zh-cn",
+    "zh-tw",
+    "ja",
+    "ko",
+)
+
+
 def _ayar_dosyasi() -> Path:
     try:
         root = get_app_working_root() / "ayarlar"
@@ -45,6 +128,36 @@ def _ayar_dosyasi() -> Path:
         raise AyarServisiHatasi(
             f"Ayar dosyası yolu hazırlanamadı: {exc}"
         ) from exc
+
+
+def _normalize_language_code(code: str | None, default: str = DEFAULT_LANGUAGE) -> str:
+    temiz = str(code or "").strip().lower()
+    fallback = str(default or DEFAULT_LANGUAGE).strip().lower() or DEFAULT_LANGUAGE
+
+    if not temiz:
+        return fallback
+
+    temiz = temiz.replace("_", "-")
+
+    if temiz in SUPPORTED_LANGUAGES:
+        return temiz
+
+    # dil-bölge kodundan ana dil çıkarımı
+    if "-" in temiz:
+        kok = temiz.split("-", 1)[0].strip()
+        if kok in SUPPORTED_LANGUAGES:
+            return kok
+
+    return fallback
+
+
+def supported_languages() -> list[str]:
+    return list(SUPPORTED_LANGUAGES)
+
+
+def language_supported(code: str) -> bool:
+    temiz = str(code or "").strip().lower().replace("_", "-")
+    return temiz in SUPPORTED_LANGUAGES
 
 
 def ayarlari_yukle() -> dict:
@@ -81,17 +194,19 @@ def ayarlari_kaydet(data: dict) -> None:
         raise AyarServisiHatasi(f"Ayarlar kaydedilemedi: {exc}") from exc
 
 
-def get_language(default: str = "tr") -> str:
+def get_language(default: str = DEFAULT_LANGUAGE) -> str:
+    fallback = _normalize_language_code(default, DEFAULT_LANGUAGE)
+
     try:
         data = ayarlari_yukle()
-        code = str(data.get("language", default) or default).strip().lower()
-        return code or default
+        code = data.get("language", fallback)
+        return _normalize_language_code(str(code or ""), fallback)
     except Exception:
-        return default
+        return fallback
 
 
 def set_language(code: str) -> None:
-    temiz = str(code or "").strip().lower() or "tr"
+    temiz = _normalize_language_code(code, DEFAULT_LANGUAGE)
 
     try:
         data = ayarlari_yukle()
