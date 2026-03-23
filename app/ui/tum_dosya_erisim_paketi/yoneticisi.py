@@ -6,19 +6,21 @@ ROL:
 - Tüm dosya erişim paketi için tek giriş noktası sağlamak
 - Alt paket yöneticilerini merkezileştirmek
 - Üst katmanın iç modül detaylarını bilmesini engellemek
+- Menü popup üzerinden dil seçimi akışına gerekli bağımlılıkları iletmek
 
 MİMARİ:
 - Üst katman sadece bu yöneticiyi bilir
 - Alt paketlere lazy import ile erişir
 - Panel, popup, yedek ve ortak akışları burada toplanır
+- Dil popup akışı popup yöneticisi üzerinden zincir halinde aktarılır
 
 API UYUMLULUK:
 - Platform bağımsızdır
 - Android API 35 ile uyumludur
 - Doğrudan Android bridge çağrısı içermez
 
-SURUM: 3
-TARIH: 2026-03-22
+SURUM: 4
+TARIH: 2026-03-23
 IMZA: FY.
 """
 
@@ -81,9 +83,16 @@ class TumDosyaErisimYoneticisi:
             compact=compact,
         )
 
-    def open_main_menu(self, open_backups_popup):
+    def open_main_menu(
+        self,
+        open_backups_popup,
+        on_language_changed=None,
+        services=None,
+    ):
         return self._popups_yoneticisi().open_main_menu(
             open_backups_popup=open_backups_popup,
+            on_language_changed=on_language_changed,
+            services=services,
         )
 
     def show_confirm_popup(
@@ -171,7 +180,13 @@ class TumDosyaErisimYoneticisi:
     def animated_separator_sinifi(self):
         return self._ortak_yoneticisi().animated_separator_sinifi()
 
-    def start_icon_glow(self, widget, size_small_dp=36, size_big_dp=40, duration=0.60):
+    def start_icon_glow(
+        self,
+        widget,
+        size_small_dp=36,
+        size_big_dp=40,
+        duration=0.60,
+    ):
         return self._ortak_yoneticisi().start_icon_glow(
             widget=widget,
             size_small_dp=size_small_dp,
