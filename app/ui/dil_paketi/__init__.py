@@ -1,27 +1,27 @@
 # -*- coding: utf-8 -*-
 """
-DOSYA: app/ui/dil_paketi/__init__.py
+DOSYA: app/ui/dil_paketi/popup/__init__.py
 
 ROL:
-- Dil UI paketi için dışa açık lazy import giriş noktası sağlar
-- DilYoneticisi sınıfını tek kapıdan erişilebilir hale getirir
-- Import maliyetini azaltır ve modüler yapıyı korur
-- Dil seçim akışını yalnızca yönetici katmanı üzerinden dışa açar
+- Dil popup katmanına lazy erişim sağlar
+- Sadece DilPopupYoneticisi sınıfını dışa açar
+- Import yükünü azaltır
+- Alt popup modülünü kontrollü biçimde sunar
+- Popup sınıfına doğrudan erişimi kapatır
 
 MİMARİ:
-- Dil UI katmanının dış dünyaya açılan yüzüdür
-- Alt modül yollarını dış katmanlardan gizler
+- Popup alt paketinin dışa açılan yüzüdür
 - Lazy import ile gereksiz erken yüklemeyi önler
 - Circular import riskini azaltmaya yardımcı olur
-- Paket dışına yalnızca DilYoneticisi açılır
-- Popup sınıfı ve popup yöneticisi dışarıya doğrudan açılmaz
+- Alt modüller doğrudan import edilmez, __getattr__ üzerinden yüklenir
+- Üst katman sadece yönetici üzerinden popup açar
 
 KULLANIM:
-from app.ui.dil_paketi import DilYoneticisi
+from app.ui.dil_paketi.popup import DilPopupYoneticisi
 
 API UYUMLULUK:
-- Android ve masaüstü çalışma düzeniyle uyumludur
-- Platforma özel kod içermez
+- Android ve masaüstü ile uyumludur
+- Platform bağımsızdır
 
 SURUM: 4
 TARIH: 2026-03-24
@@ -32,13 +32,15 @@ from __future__ import annotations
 
 from typing import Any
 
-__all__ = ["DilYoneticisi"]
+__all__ = [
+    "DilPopupYoneticisi",
+]
 
 
 def __getattr__(name: str) -> Any:
-    if name == "DilYoneticisi":
-        from app.ui.dil_paketi.yoneticisi import DilYoneticisi
-        return DilYoneticisi
+    if name == "DilPopupYoneticisi":
+        from app.ui.dil_paketi.popup.yoneticisi import DilPopupYoneticisi
+        return DilPopupYoneticisi
 
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
