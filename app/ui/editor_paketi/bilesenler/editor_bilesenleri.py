@@ -6,19 +6,23 @@ ROL:
 - Editör paketinin temel görsel bileşenlerini sağlamak
 - Kod editörü, bilgi kutusu ve sade kod alanı bileşenlerini tanımlamak
 - Editör paneli için tekrar kullanılabilir UI yapı taşları üretmek
+- Aktif dile göre görünür metinleri yenileyebilmek
 
 MİMARİ:
 - Bu dosya sadece bileşen tanımlar
 - Üst katman doğrudan bu modüle değil, bilesenler/yoneticisi.py üzerinden erişmelidir
 - Platform bağımsız UI bileşenleri içerir
+- Görünen sabit metinler ServicesYoneticisi üzerinden çözülebilir
+- Dil değişiminde mevcut görünen varsayılan metinler güvenli şekilde yenilenir
+- Hint text güncellemesi doğrudan editör widget'ına da yansıtılır
 
 API UYUMLULUK:
 - Platform bağımsızdır
 - Android API 35 ile uyumludur
 - Doğrudan Android bridge çağrısı içermez
 
-SURUM: 2
-TARIH: 2026-03-19
+SURUM: 4
+TARIH: 2026-03-24
 IMZA: FY.
 """
 
@@ -35,6 +39,7 @@ from kivy.uix.image import Image
 from kivy.uix.label import Label
 from pygments.lexers import PythonLexer
 
+from app.services.yoneticisi import ServicesYoneticisi
 from app.ui.tema import INPUT_BG, RADIUS_MD
 
 
@@ -87,7 +92,9 @@ class KodEditoru(CodeInput):
             _cursor_col, cursor_row = self.cursor
             lines = self.text.split("\n")
             current_line = lines[cursor_row] if 0 <= cursor_row < len(lines) else ""
-            current_indent = current_line[: len(current_line) - len(current_line.lstrip(" "))]
+            current_indent = current_line[
+                : len(current_line) - len(current_line.lstrip(" "))
+            ]
             extra_indent = "    " if current_line.rstrip().endswith(":") else ""
             self.insert_text("\n" + current_indent + extra_indent)
         except Exception:
@@ -121,6 +128,12 @@ class KodEditoru(CodeInput):
         except Exception:
             self.error_line = 0
 
+    def set_hint_text(self, text: str) -> None:
+        try:
+            self.hint_text = str(text or "")
+        except Exception:
+            self.hint_text = ""
+
 
 class KodPaneli(BoxLayout):
     def __init__(self, bg=INPUT_BG, border=(0.18, 0.24, 0.34, 1), **kwargs):
@@ -153,7 +166,11 @@ class KodPaneli(BoxLayout):
 
 
 class BilgiKutusu(BoxLayout):
-    def __init__(self, **kwargs):
+    def __init__(
+        self,
+        services: ServicesYoneticisi | None = None,
+        **kwargs,
+    ):
         super().__init__(
             orientation="horizontal",
             size_hint_y=None,
@@ -163,8 +180,11 @@ class BilgiKutusu(BoxLayout):
             **kwargs,
         )
 
+        self.services = services or ServicesYoneticisi()
+
         self._pulse_anim = None
         self._pulse_stop_event = None
+        self._last_tone = "info"
 
         self._bg_info = (0.10, 0.16, 0.22, 1)
         self._bg_success = (0.08, 0.24, 0.14, 1)
@@ -196,7 +216,7 @@ class BilgiKutusu(BoxLayout):
         self.add_widget(self.status_icon)
 
         self.label = Label(
-            text="Hazır.",
+            text=self._m("app_ready", "Hazır."),
             halign="left",
             valign="middle",
             color=(0.88, 0.94, 1, 1),
@@ -207,6 +227,67 @@ class BilgiKutusu(BoxLayout):
         self.label.bind(size=self._sync_label_size)
         self.add_widget(self.label)
 
+    # =========================================================
+    # DIL
+    # =========================================================
+    def _m(self, anahtar: str, default: str = "") -> str:
+        try:
+            return str(self.services.metin(anahtar, default) or default or anahtar)
+        except Exception:
+            return str(default or anahtar)
+
+    def refresh_language(self) -> None:
+        try:
+            mevcut = str(self.label.text or "").strip()
+
+            info_varsayilanlari = {
+                "Hazır.",
+                "Hazır",
+                "Ready.",
+                "Ready",
+                "Bereit.",
+                "Bereit",
+            }
+            warning_varsayilanlari = {
+                "Uyarı",
+                "Warning",
+                "Warnung",
+            }
+            success_varsayilanlari = {
+                "İşlem başarılı",
+                "Operation successful",
+                "Vorgang erfolgreich",
+            }
+            error_varsayilanlari = {
+                "Bir hata oluştu",
+                "An error occurred",
+                "Ein Fehler ist aufgetreten",
+            }
+
+            if self._last_tone == "info":
+                if not mevcut or mevcut in info_varsayilanlari:
+                    self.label.text = self._m("app_ready", "Hazır.")
+            elif self._last_tone == "warning":
+                if not mevcut or mevcut in warning_varsayilanlari:
+                    self.label.text = self._m("warning", "Uyarı")
+            elif self._last_tone == "success":
+                if not mevcut or mevcut in success_varsayilanlari:
+                    self.label.text = self._m(
+                        "processing_successful",
+                        "İşlem başarılı",
+                    )
+            elif self._last_tone == "error":
+                if not mevcut or mevcut in error_varsayilanlari:
+                    self.label.text = self._m(
+                        "an_error_occurred",
+                        "Bir hata oluştu",
+                    )
+        except Exception:
+            pass
+
+    # =========================================================
+    # INTERNAL
+    # =========================================================
     def _update_canvas(self, *_args):
         self._bg_rect.pos = self.pos
         self._bg_rect.size = self.size
@@ -269,10 +350,14 @@ class BilgiKutusu(BoxLayout):
         self._stop_pulse()
         self.status_icon.opacity = 0
 
+    # =========================================================
+    # PUBLIC
+    # =========================================================
     def set_text(self, text: str):
         self.label.text = str(text or "")
 
     def set_info(self, text: str):
+        self._last_tone = "info"
         self.set_text(text)
         self._hide_icon()
         self._bg_color.rgba = self._bg_info
@@ -280,9 +365,10 @@ class BilgiKutusu(BoxLayout):
         self.label.color = (0.88, 0.94, 1, 1)
 
     def set_neutral(self):
-        self.set_info("Hazır.")
+        self.set_info(self._m("app_ready", "Hazır."))
 
     def set_success(self, text: str, pulse_seconds: float = 6.0):
+        self._last_tone = "success"
         self.set_text(text)
         self._bg_color.rgba = self._bg_success
         self._border_color.rgba = (0.14, 0.30, 0.20, 1)
@@ -290,6 +376,7 @@ class BilgiKutusu(BoxLayout):
         self._start_pulse(seconds=pulse_seconds)
 
     def set_warning(self, text: str):
+        self._last_tone = "warning"
         self.set_text(text)
         self._hide_icon()
         self._bg_color.rgba = self._bg_warning
@@ -297,6 +384,7 @@ class BilgiKutusu(BoxLayout):
         self.label.color = (1.00, 0.92, 0.72, 1)
 
     def set_error(self, text: str):
+        self._last_tone = "error"
         self.set_text(text)
         self._hide_icon()
         self._bg_color.rgba = self._bg_error
@@ -305,7 +393,14 @@ class BilgiKutusu(BoxLayout):
 
 
 class SadeKodAlani(KodPaneli):
-    def __init__(self, readonly=False, hint_text="", **kwargs):
+    def __init__(
+        self,
+        readonly=False,
+        hint_text="",
+        services: ServicesYoneticisi | None = None,
+        hint_text_key: str = "",
+        **kwargs,
+    ):
         super().__init__(
             orientation="vertical",
             padding=dp(4),
@@ -313,9 +408,37 @@ class SadeKodAlani(KodPaneli):
             border=(0.18, 0.24, 0.34, 1),
             **kwargs,
         )
+
+        self.services = services or ServicesYoneticisi()
+        self.hint_text_key = str(hint_text_key or "").strip()
+        self._default_hint_text = str(hint_text or "")
+
         self.editor = KodEditoru(readonly=readonly, hint_text=hint_text)
         self.add_widget(self.editor)
 
+    # =========================================================
+    # DIL
+    # =========================================================
+    def _m(self, anahtar: str, default: str = "") -> str:
+        try:
+            return str(self.services.metin(anahtar, default) or default or anahtar)
+        except Exception:
+            return str(default or anahtar)
+
+    def refresh_language(self) -> None:
+        try:
+            if self.hint_text_key:
+                yeni_hint = self._m(self.hint_text_key, self._default_hint_text)
+            else:
+                yeni_hint = self._default_hint_text
+
+            self.set_hint_text(yeni_hint)
+        except Exception:
+            pass
+
+    # =========================================================
+    # PUBLIC
+    # =========================================================
     @property
     def text(self):
         return self.editor.text
@@ -324,6 +447,16 @@ class SadeKodAlani(KodPaneli):
     def text(self, value):
         self.editor.text = str(value or "")
         self.editor.scroll_to_top()
+
+    def set_hint_text(self, text: str) -> None:
+        self._default_hint_text = str(text or "")
+        try:
+            self.editor.set_hint_text(self._default_hint_text)
+        except Exception:
+            try:
+                self.editor.hint_text = self._default_hint_text
+            except Exception:
+                pass
 
     def scroll_to_top(self):
         self.editor.scroll_to_top()
