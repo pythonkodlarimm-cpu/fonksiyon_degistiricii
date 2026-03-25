@@ -6,19 +6,23 @@ ROL:
 - Seçilen yedek dosyasının içeriğini popup içinde göstermek
 - Yedek adını başlık olarak sunmak
 - Uzun içerikleri kaydırılabilir alanda göstermek
+- Görünen metinlerde services tabanlı dil desteğine hazır olmak
 
 MİMARİ:
 - Doğrudan dosya servisi import etmez
 - DosyaYoneticisi üzerinden erişir
 - Popup yalnızca görüntüleme akışını yönetir
+- services verilirse sabit metinler dil servisi üzerinden alınabilir
+- services verilmezse güvenli fallback ile çalışır
+- Hardcoded kullanıcı metni bırakılmaz
 
 API UYUMLULUK:
 - Platform bağımsızdır
 - Android API 35 ile uyumludur
 - Doğrudan Android bridge çağrısı içermez
 
-SURUM: 2
-TARIH: 2026-03-19
+SURUM: 4
+TARIH: 2026-03-23
 IMZA: FY.
 """
 
@@ -40,11 +44,22 @@ def _dosya_yoneticisi():
     return DosyaYoneticisi()
 
 
-def open_backup_view_popup(yedek: Path):
+def _m(services, anahtar: str, default: str = "") -> str:
+    try:
+        if services is not None:
+            return str(services.metin(anahtar, default) or default or anahtar)
+    except Exception:
+        pass
+    return str(default or anahtar)
+
+
+def open_backup_view_popup(yedek: Path, services=None):
     try:
         icerik = _dosya_yoneticisi().read_text(yedek)
     except Exception as exc:
-        icerik = f"Dosya görüntülenemedi: {exc}"
+        icerik = (
+            f"{_m(services, 'file_could_not_be_viewed', 'Dosya görüntülenemedi:')} {exc}"
+        )
 
     content = BoxLayout(
         orientation="vertical",
@@ -53,7 +68,7 @@ def open_backup_view_popup(yedek: Path):
     )
 
     baslik = Label(
-        text=str(getattr(yedek, "name", "") or ""),
+        text=str(getattr(yedek, "name", "") or _m(services, "backup", "Yedek")),
         color=TEXT_PRIMARY,
         font_size="16sp",
         bold=True,
