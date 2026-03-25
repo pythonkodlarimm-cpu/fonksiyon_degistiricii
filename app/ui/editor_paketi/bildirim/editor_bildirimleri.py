@@ -7,20 +7,22 @@ ROL:
 - Tek dokunma / çift dokunma davranışını yönetmek
 - Başarı, bilgi, uyarı ve hata tonlarında görsel geri bildirim sağlamak
 - Hata durumunda detaylı, kopyalanabilir popup gösterebilmek
+- Aktif dile göre görünür metinleri üretmek ve yenilemek
 
 MİMARİ:
 - Bildirim alt paketinin iç görsel bileşenini içerir
 - Üst katman bu modüle doğrudan değil, bildirim/yoneticisi.py üzerinden erişmelidir
 - Editör içi inline bildirim davranışını UI tarafında izole eder
 - API korunur, hata tonu için detay popup desteği eklenmiştir
+- Kullanıcıya görünen metinler services -> sistem -> dil_servisi zincirinden alınabilir
 
 API UYUMLULUK:
 - Platform bağımsızdır
 - Android API 35 ile uyumludur
 - Doğrudan Android bridge çağrısı içermez
 
-SURUM: 3
-TARIH: 2026-03-20
+SURUM: 4
+TARIH: 2026-03-23
 IMZA: FY.
 """
 
@@ -41,11 +43,18 @@ from kivy.uix.label import Label
 from kivy.uix.popup import Popup
 from kivy.uix.scrollview import ScrollView
 
+from app.services.yoneticisi import ServicesYoneticisi
 from app.ui.icon_yardimci import icon_path
 
 
 class _DokunmatikAksiyonBildirimi(ButtonBehavior, BoxLayout):
-    def __init__(self, on_single_tap=None, on_double_tap=None, **kwargs):
+    def __init__(
+        self,
+        on_single_tap=None,
+        on_double_tap=None,
+        services: ServicesYoneticisi | None = None,
+        **kwargs,
+    ):
         super().__init__(
             orientation="horizontal",
             size_hint_y=None,
@@ -54,6 +63,8 @@ class _DokunmatikAksiyonBildirimi(ButtonBehavior, BoxLayout):
             spacing=dp(10),
             **kwargs,
         )
+
+        self.services = services or ServicesYoneticisi()
 
         self.on_single_tap = on_single_tap
         self.on_double_tap = on_double_tap
@@ -96,7 +107,7 @@ class _DokunmatikAksiyonBildirimi(ButtonBehavior, BoxLayout):
         )
 
         self.title_label = Label(
-            text="Güncelleme tamamlandı",
+            text=self._m("notification", "Bildirim"),
             color=(0.92, 1.0, 0.94, 1),
             font_size="14sp",
             bold=True,
@@ -113,7 +124,7 @@ class _DokunmatikAksiyonBildirimi(ButtonBehavior, BoxLayout):
         self.text_wrap.add_widget(self.title_label)
 
         self.body_label = Label(
-            text="Yeni fonksiyon kaydedildi.",
+            text="",
             color=(0.84, 0.96, 0.88, 1),
             font_size="11sp",
             halign="left",
@@ -129,7 +140,7 @@ class _DokunmatikAksiyonBildirimi(ButtonBehavior, BoxLayout):
         self.add_widget(self.text_wrap)
 
         self.hint_label = Label(
-            text="Dokun",
+            text="",
             color=(0.76, 0.96, 0.82, 0.92),
             font_size="11sp",
             halign="right",
@@ -143,6 +154,25 @@ class _DokunmatikAksiyonBildirimi(ButtonBehavior, BoxLayout):
         self.opacity = 0
         self.disabled = True
 
+    # =========================================================
+    # DIL
+    # =========================================================
+    def _m(self, anahtar: str, default: str = "") -> str:
+        try:
+            return str(self.services.metin(anahtar, default) or default or anahtar)
+        except Exception:
+            return str(default or anahtar)
+
+    def refresh_language(self) -> None:
+        try:
+            if str(self.hint_label.text or "").strip():
+                self.hint_label.text = self._m("tap", "Dokun")
+        except Exception:
+            pass
+
+    # =========================================================
+    # INTERNAL
+    # =========================================================
     def _update_canvas(self, *_args):
         self._bg_rect.pos = self.pos
         self._bg_rect.size = self.size
@@ -189,7 +219,14 @@ class _DokunmatikAksiyonBildirimi(ButtonBehavior, BoxLayout):
         except Exception:
             pass
 
-    def _set_visual(self, tone: str, title: str, text: str, icon_name: str, tappable: bool):
+    def _set_visual(
+        self,
+        tone: str,
+        title: str,
+        text: str,
+        icon_name: str,
+        tappable: bool,
+    ):
         tone_key = str(tone or "success").strip().lower()
 
         if tone_key == "info":
@@ -217,11 +254,13 @@ class _DokunmatikAksiyonBildirimi(ButtonBehavior, BoxLayout):
             body_color = (0.84, 0.96, 0.88, 1)
             hint_color = (0.76, 0.96, 0.82, 0.95)
 
-        self.title_label.text = str(title or "").strip() or "Bildirim"
+        self.title_label.text = (
+            str(title or "").strip() or self._m("notification", "Bildirim")
+        )
         self.title_label.color = title_color
         self.body_label.text = str(text or "").strip() or ""
         self.body_label.color = body_color
-        self.hint_label.text = "Dokun" if tappable else ""
+        self.hint_label.text = self._m("tap", "Dokun") if tappable else ""
         self.hint_label.color = hint_color
 
         resolved = ""
@@ -238,6 +277,9 @@ class _DokunmatikAksiyonBildirimi(ButtonBehavior, BoxLayout):
             except Exception:
                 pass
 
+    # =========================================================
+    # PUBLIC
+    # =========================================================
     def show(
         self,
         title: str,
@@ -330,7 +372,11 @@ class _DokunmatikAksiyonBildirimi(ButtonBehavior, BoxLayout):
 class EditorAksiyonBildirimi(BoxLayout):
     """Yeni kod alanına yakın konumlanan, detaylı ve tıklanabilir bildirim barı."""
 
-    def __init__(self, **kwargs):
+    def __init__(
+        self,
+        services: ServicesYoneticisi | None = None,
+        **kwargs,
+    ):
         super().__init__(
             orientation="vertical",
             size_hint_y=None,
@@ -339,17 +385,45 @@ class EditorAksiyonBildirimi(BoxLayout):
             **kwargs,
         )
 
+        self.services = services or ServicesYoneticisi()
+
         self._on_tap = None
         self._popup_ref = None
         self._detailed_error_text = ""
-        self._popup_title = "Hata Detayı"
+        self._popup_title = self._m("error_title", "Hata Detayı")
 
         self.notice = _DokunmatikAksiyonBildirimi(
             on_single_tap=self._handle_single_tap,
             on_double_tap=self._handle_double_tap,
+            services=self.services,
         )
         self.add_widget(self.notice)
 
+    # =========================================================
+    # DIL
+    # =========================================================
+    def _m(self, anahtar: str, default: str = "") -> str:
+        try:
+            return str(self.services.metin(anahtar, default) or default or anahtar)
+        except Exception:
+            return str(default or anahtar)
+
+    def refresh_language(self) -> None:
+        try:
+            self.notice.refresh_language()
+        except Exception:
+            pass
+
+        try:
+            if not self._has_detailed_error():
+                return
+            self._popup_title = self._m("error_title", "Hata Detayı")
+        except Exception:
+            pass
+
+    # =========================================================
+    # INTERNAL
+    # =========================================================
     def _handle_single_tap(self):
         try:
             if self._has_detailed_error():
@@ -364,13 +438,16 @@ class EditorAksiyonBildirimi(BoxLayout):
     def _handle_double_tap(self):
         self.hide_immediately()
 
-    def _set_detailed_error(self, text: str, title: str = "Hata Detayı") -> None:
+    def _set_detailed_error(self, text: str, title: str = "") -> None:
         self._detailed_error_text = str(text or "").strip()
-        self._popup_title = str(title or "Hata Detayı").strip() or "Hata Detayı"
+        self._popup_title = (
+            str(title or self._m("error_title", "Hata Detayı")).strip()
+            or self._m("error_title", "Hata Detayı")
+        )
 
     def _clear_detailed_error(self) -> None:
         self._detailed_error_text = ""
-        self._popup_title = "Hata Detayı"
+        self._popup_title = self._m("error_title", "Hata Detayı")
 
     def _has_detailed_error(self) -> bool:
         return bool(str(self._detailed_error_text or "").strip())
@@ -388,7 +465,7 @@ class EditorAksiyonBildirimi(BoxLayout):
             )
 
             baslik = Label(
-                text=str(self._popup_title or "Hata Detayı"),
+                text=str(self._popup_title or self._m("error_title", "Hata Detayı")),
                 size_hint_y=None,
                 height=dp(30),
                 font_size="18sp",
@@ -401,7 +478,10 @@ class EditorAksiyonBildirimi(BoxLayout):
             content.add_widget(baslik)
 
             alt = Label(
-                text="Dosya yolu, fonksiyon, satır ve traceback metni kopyalanabilir.",
+                text=self._m(
+                    "error_copy_hint",
+                    "Dosya yolu, fonksiyon, satır ve traceback metni kopyalanabilir.",
+                ),
                 size_hint_y=None,
                 height=dp(20),
                 font_size="11sp",
@@ -444,7 +524,7 @@ class EditorAksiyonBildirimi(BoxLayout):
             )
 
             copy_btn = Button(
-                text="Kopyala",
+                text=self._m("copy", "Kopyala"),
                 background_normal="",
                 background_down="",
                 background_color=(0.18, 0.42, 0.72, 1),
@@ -452,7 +532,7 @@ class EditorAksiyonBildirimi(BoxLayout):
             )
 
             close_btn = Button(
-                text="Kapat",
+                text=self._m("close", "Kapat"),
                 background_normal="",
                 background_down="",
                 background_color=(0.24, 0.24, 0.28, 1),
@@ -486,10 +566,12 @@ class EditorAksiyonBildirimi(BoxLayout):
             try:
                 if popup is not None:
                     popup.dismiss()
-                pass
             except Exception:
                 pass
 
+    # =========================================================
+    # PUBLIC
+    # =========================================================
     def show(
         self,
         title: str,
@@ -508,7 +590,7 @@ class EditorAksiyonBildirimi(BoxLayout):
         if temiz_tone == "error":
             self._set_detailed_error(
                 text=str(text or ""),
-                title=str(title or "Hata Detayı"),
+                title=str(title or self._m("error_title", "Hata Detayı")),
             )
         else:
             self._clear_detailed_error()
