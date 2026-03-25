@@ -4,21 +4,25 @@ DOSYA: app/ui/tum_dosya_erisim_paketi/popups/onay_popup.py
 
 ROL:
 - Kullanıcıdan onay almak için sade popup göstermek
-- Başlık, açıklama ve onay/vazgeç aksiyonlarını sunmak
+- Başlık, açıklama ve onay / vazgeç aksiyonlarını sunmak
 - İkon tabanlı onay akışını desteklemek
+- Görünen metinlerde services tabanlı dil desteğine hazır olmak
 
 MİMARİ:
 - Doğrudan ortak bileşen import etmez
-- Ortak yonetici üzerinden erişir
+- Ortak yönetici üzerinden erişir
 - Popup yalnızca UI onay akışını yönetir
+- services verilirse sabit metinlerde dil servisi kullanılabilir
+- services verilmezse güvenli fallback ile çalışır
+- Hardcoded kullanıcı metni bırakılmaz
 
 API UYUMLULUK:
 - Platform bağımsızdır
 - Android API 35 ile uyumludur
 - Doğrudan Android bridge çağrısı içermez
 
-SURUM: 3
-TARIH: 2026-03-19
+SURUM: 5
+TARIH: 2026-03-23
 IMZA: FY.
 """
 
@@ -46,6 +50,15 @@ def _tiklanabilir_icon_sinifi():
         return None
 
 
+def _m(services, anahtar: str, default: str = "") -> str:
+    try:
+        if services is not None:
+            return str(services.metin(anahtar, default) or default or anahtar)
+    except Exception:
+        pass
+    return str(default or anahtar)
+
+
 def _aksiyon_karti(
     icon_source: str,
     text: str,
@@ -56,6 +69,7 @@ def _aksiyon_karti(
     wrap = BoxLayout(
         orientation="vertical",
         spacing=dp(4),
+        size_hint_x=1,
     )
 
     if IconClass is not None:
@@ -105,6 +119,7 @@ def show_confirm_popup(
     body_text: str,
     on_confirm,
     confirm_icon: str = "delete.png",
+    services=None,
 ):
     content = BoxLayout(
         orientation="vertical",
@@ -113,7 +128,7 @@ def show_confirm_popup(
     )
 
     title = Label(
-        text=str(title_text or ""),
+        text=str(title_text or _m(services, "confirm_title", "Onay")),
         color=TEXT_PRIMARY,
         font_size="17sp",
         bold=True,
@@ -171,13 +186,13 @@ def show_confirm_popup(
 
     iptal_wrap, _iptal_btn = _aksiyon_karti(
         icon_source="app/assets/icons/cancel.png",
-        text="Vazgeç",
+        text=_m(services, "cancel", "Vazgeç"),
         on_release=_cancel,
     )
 
     onay_wrap, _onay_btn = _aksiyon_karti(
         icon_source=f"app/assets/icons/{confirm_icon}",
-        text="Onayla",
+        text=_m(services, "confirm", "Onayla"),
         on_release=_confirm,
     )
 
