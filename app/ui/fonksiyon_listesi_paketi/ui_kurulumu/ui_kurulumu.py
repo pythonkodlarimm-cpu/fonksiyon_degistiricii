@@ -1,6 +1,27 @@
 # -*- coding: utf-8 -*-
 """
 DOSYA: app/ui/fonksiyon_listesi_paketi/ui_kurulumu/ui_kurulumu.py
+
+ROL:
+- Fonksiyon listesi panelinin temel UI kurulumunu yapmak
+- Başlık, arama alanı, liste kutusu ve önizleme kartlarını oluşturmak
+- Aktif dile göre görünür metinleri üretmek
+- Liste görünüm akışı için gerekli widget referanslarını hazırlamak
+
+MİMARİ:
+- Sadece UI kurulum yardımcıları içerir
+- Üst katman bu modüle doğrudan değil, ui_kurulumu/yoneticisi.py üzerinden erişmelidir
+- Görünen metinler owner -> services -> metin servisi zinciriyle çözülebilir
+- Platform bağımsız çalışır
+
+API UYUMLULUK:
+- Platform bağımsızdır
+- Android API 35 ile uyumludur
+- Doğrudan Android bridge çağrısı içermez
+
+SURUM: 3
+TARIH: 2026-03-24
+IMZA: FY.
 """
 
 from __future__ import annotations
@@ -24,6 +45,15 @@ from app.ui.tema import (
 )
 
 
+def _m(owner, anahtar: str, default: str = "") -> str:
+    try:
+        if owner is not None and hasattr(owner, "_m"):
+            return str(owner._m(anahtar, default) or default or anahtar)
+    except Exception:
+        pass
+    return str(default or anahtar)
+
+
 def build_ui(owner) -> None:
     owner._ui_kurulumu_yoneticisi.build_header_row(owner)
     owner._ui_kurulumu_yoneticisi.build_search_box(owner)
@@ -45,7 +75,7 @@ def build_header_row(owner) -> None:
     )
 
     owner.header = IconluBaslik(
-        text="Fonksiyonlar",
+        text=_m(owner, "function_list_title", "Fonksiyon Listesi"),
         icon_name="layers.png",
         height_dp=32,
         font_size="16sp",
@@ -64,8 +94,9 @@ def build_header_row(owner) -> None:
         valign="middle",
     )
     owner.count_label.bind(size=lambda inst, size: setattr(inst, "text_size", size))
-    owner.add_widget(row)
+
     row.add_widget(owner.count_label)
+    owner.add_widget(row)
 
     owner.header_toolbar = IconToolbar(
         spacing_dp=12,
@@ -74,7 +105,7 @@ def build_header_row(owner) -> None:
 
     owner.toggle_button = owner.header_toolbar.add_tool(
         icon_name="visibility_on.png",
-        text="Liste",
+        text=_m(owner, "list", "Liste"),
         on_release=owner._toggle_list_visibility,
         icon_size_dp=32,
         text_size="10sp",
@@ -96,7 +127,11 @@ def build_search_box(owner) -> None:
     )
 
     owner.search_input = TextInput(
-        hint_text="Tüm fonksiyonları görüntüleyebilir ve arayabilirsiniz...",
+        hint_text=_m(
+            owner,
+            "function_search_hint",
+            "Fonksiyon ara...",
+        ),
         multiline=False,
         size_hint=(1, 1),
         background_normal="",
@@ -141,7 +176,11 @@ def build_list_box(owner) -> None:
     )
 
     owner.list_info_label = Label(
-        text="Tüm fonksiyonları görüntüleyebilir ve arayabilirsiniz.",
+        text=_m(
+            owner,
+            "function_list_searchable_info",
+            "Tüm fonksiyonları görüntüleyebilir ve arayabilirsiniz.",
+        ),
         size_hint_y=None,
         height=dp(22),
         color=TEXT_MUTED,
@@ -165,16 +204,32 @@ def build_list_box(owner) -> None:
     )
 
     owner.table_header.add_widget(
-        owner._ui_kurulumu_yoneticisi.build_table_header_label(owner, "Fonksiyon", 0.46)
+        owner._ui_kurulumu_yoneticisi.build_table_header_label(
+            owner,
+            _m(owner, "function", "Fonksiyon"),
+            0.46,
+        )
     )
     owner.table_header.add_widget(
-        owner._ui_kurulumu_yoneticisi.build_table_header_label(owner, "Tür", 0.14)
+        owner._ui_kurulumu_yoneticisi.build_table_header_label(
+            owner,
+            _m(owner, "type", "Tür"),
+            0.14,
+        )
     )
     owner.table_header.add_widget(
-        owner._ui_kurulumu_yoneticisi.build_table_header_label(owner, "Satır", 0.16)
+        owner._ui_kurulumu_yoneticisi.build_table_header_label(
+            owner,
+            _m(owner, "line", "Satır"),
+            0.16,
+        )
     )
     owner.table_header.add_widget(
-        owner._ui_kurulumu_yoneticisi.build_table_header_label(owner, "İmza", 0.24)
+        owner._ui_kurulumu_yoneticisi.build_table_header_label(
+            owner,
+            _m(owner, "signature", "İmza"),
+            0.24,
+        )
     )
 
     owner.list_wrap.add_widget(owner.table_header)
@@ -203,14 +258,14 @@ def build_list_box(owner) -> None:
 def build_preview_boxes(owner) -> None:
     owner.selected_preview_card = owner._ui_kurulumu_yoneticisi.build_preview_card(
         owner,
-        title="Seçilen Kod Önizleme",
+        title=_m(owner, "selected_code_preview", "Seçilen Kod Önizleme"),
         icon_name="visibility_on.png",
     )
     owner.add_widget(owner.selected_preview_card)
 
     owner.new_preview_card = owner._ui_kurulumu_yoneticisi.build_preview_card(
         owner,
-        title="Yeni Kod Önizleme",
+        title=_m(owner, "new_code_preview", "Yeni Kod Önizleme"),
         icon_name="edit.png",
     )
     owner.add_widget(owner.new_preview_card)
@@ -238,7 +293,7 @@ def build_preview_card(owner, title: str, icon_name: str):
     card.add_widget(head)
 
     label = Label(
-        text="Henüz önizleme yok.",
+        text=_m(owner, "preview_empty", "Henüz önizleme yok."),
         color=TEXT_MUTED,
         font_size="13sp",
         halign="left",
@@ -248,5 +303,6 @@ def build_preview_card(owner, title: str, icon_name: str):
     label.bind(size=lambda inst, size: setattr(inst, "text_size", size))
     card.add_widget(label)
 
+    card._preview_head = head
     card._preview_label = label
     return card
