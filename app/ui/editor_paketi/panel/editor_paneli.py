@@ -26,8 +26,8 @@ API UYUMLULUK:
 - Android API 35 ile uyumludur
 - Doğrudan Android bridge çağrısı içermez
 
-SURUM: 30
-TARIH: 2026-03-23
+SURUM: 33
+TARIH: 2026-03-24
 IMZA: FY.
 """
 
@@ -83,6 +83,7 @@ class EditorPaneli(BoxLayout):
         self._set_item_serial = 0
 
         self._build_ui()
+        self.refresh_language()
         self._set_status_info(self._m("app_ready", "Hazır."), 0)
 
     # =========================================================
@@ -117,24 +118,46 @@ class EditorPaneli(BoxLayout):
     def refresh_language(self) -> None:
         try:
             if self.path_label is not None:
-                self.path_label.set_text(
-                    f"{self._m('selected_function', 'Seçili fonksiyon: -').split(':')[0]}: "
-                    f"{self._item_path_text(self.current_item) if self.current_item is not None else '-'}"
-                )
+                if self.current_item is None:
+                    self.path_label.set_text(
+                        self._m("selected_function", "Seçili fonksiyon: -")
+                    )
+                else:
+                    self.path_label.set_text(
+                        f"{self._selected_function_prefix()}: {self._item_path_text(self.current_item)}"
+                    )
         except Exception:
             pass
 
         try:
             if self.current_title is not None:
-                self.current_title.set_text(self._m("current_code", "Mevcut Kod"))
+                if hasattr(self.current_title, "set_text") and callable(
+                    self.current_title.set_text
+                ):
+                    self.current_title.set_text(
+                        self._m("current_code", "Mevcut Kod")
+                    )
+                elif hasattr(self.current_title, "text"):
+                    self.current_title.text = self._m(
+                        "current_code",
+                        "Mevcut Kod",
+                    )
         except Exception:
             pass
 
         try:
             if self.new_title is not None:
-                self.new_title.set_text(
-                    self._m("new_function_code", "Yeni Fonksiyon Kodu")
-                )
+                if hasattr(self.new_title, "set_text") and callable(
+                    self.new_title.set_text
+                ):
+                    self.new_title.set_text(
+                        self._m("new_function_code", "Yeni Fonksiyon Kodu")
+                    )
+                elif hasattr(self.new_title, "text"):
+                    self.new_title.text = self._m(
+                        "new_function_code",
+                        "Yeni Fonksiyon Kodu",
+                    )
         except Exception:
             pass
 
@@ -161,22 +184,74 @@ class EditorPaneli(BoxLayout):
             pass
 
         try:
-            if self.new_code_area is not None and hasattr(self.new_code_area, "hint_text"):
-                self.new_code_area.hint_text = self._m(
-                    "new_function_hint",
-                    "Tam fonksiyon kodunu buraya yaz veya yapıştır.",
-                )
+            if self.current_code_area is not None:
+                if hasattr(self.current_code_area, "refresh_language") and callable(
+                    self.current_code_area.refresh_language
+                ):
+                    self.current_code_area.refresh_language()
+                elif hasattr(self.current_code_area, "set_hint_text") and callable(
+                    self.current_code_area.set_hint_text
+                ):
+                    self.current_code_area.set_hint_text(
+                        self._m("preview_empty", "Henüz önizleme yok.")
+                    )
+                elif hasattr(self.current_code_area, "hint_text"):
+                    self.current_code_area.hint_text = self._m(
+                        "preview_empty",
+                        "Henüz önizleme yok.",
+                    )
         except Exception:
             pass
 
-        self._refresh_action_toolbar_language()
+        try:
+            if self.new_code_area is not None:
+                if hasattr(self.new_code_area, "refresh_language") and callable(
+                    self.new_code_area.refresh_language
+                ):
+                    self.new_code_area.refresh_language()
+                elif hasattr(self.new_code_area, "set_hint_text") and callable(
+                    self.new_code_area.set_hint_text
+                ):
+                    self.new_code_area.set_hint_text(
+                        self._m(
+                            "new_function_hint",
+                            "Tam fonksiyon kodunu buraya yaz veya yapıştır.",
+                        )
+                    )
+                elif hasattr(self.new_code_area, "hint_text"):
+                    self.new_code_area.hint_text = self._m(
+                        "new_function_hint",
+                        "Tam fonksiyon kodunu buraya yaz veya yapıştır.",
+                    )
+        except Exception:
+            pass
+
+        try:
+            if self.error_box is not None and hasattr(self.error_box, "refresh_language"):
+                self.error_box.refresh_language()
+        except Exception:
+            pass
+
+        try:
+            if self.inline_notice is not None and hasattr(
+                self.inline_notice,
+                "refresh_language",
+            ):
+                self.inline_notice.refresh_language()
+        except Exception:
+            pass
+
+        try:
+            self._refresh_action_toolbar_language()
+        except Exception:
+            pass
 
     def _refresh_action_toolbar_language(self) -> None:
         tool_map = [
             (self._tool_clear, "clear", "Temizle"),
             (self._tool_update, "update", "Güncelle"),
             (self._tool_check, "check", "Kontrol Et"),
-            (self._tool_copy, "file_copy", "Kopyala"),
+            (self._tool_copy, "copy", "Kopyala"),
             (self._tool_restore, "restore", "Geri Yükle"),
         ]
 
@@ -184,46 +259,38 @@ class EditorPaneli(BoxLayout):
             try:
                 if tool is None:
                     continue
-
-                text_value = self._m(key, default)
                 if hasattr(tool, "set_text") and callable(tool.set_text):
-                    tool.set_text(text_value)
+                    tool.set_text(self._m(key, default))
                 elif hasattr(tool, "text"):
-                    tool.text = text_value
+                    tool.text = self._m(key, default)
             except Exception:
-                continue
+                pass
 
     # =========================================================
     # YONETICILER
     # =========================================================
     def _aksiyon(self):
         from app.ui.editor_paketi.aksiyon import AksiyonYoneticisi
-
         return AksiyonYoneticisi()
 
     def _bilesenler(self):
         from app.ui.editor_paketi.bilesenler import BilesenlerYoneticisi
-
         return BilesenlerYoneticisi()
 
     def _bildirim(self):
         from app.ui.editor_paketi.bildirim import BildirimYoneticisi
-
         return BildirimYoneticisi()
 
     def _dogrulama(self):
         from app.ui.editor_paketi.dogrulama import DogrulamaYoneticisi
-
         return DogrulamaYoneticisi()
 
     def _popup(self):
         from app.ui.editor_paketi.popup import PopupYoneticisi
-
         return PopupYoneticisi()
 
     def _yardimci(self):
         from app.ui.editor_paketi.yardimci import YardimciYoneticisi
-
         return YardimciYoneticisi()
 
     # =========================================================
@@ -241,7 +308,9 @@ class EditorPaneli(BoxLayout):
         self.path_label.height = dp(38)
         self.add_widget(self.path_label)
 
-        self.error_box = self._bilesenler().bilgi_kutusu_olustur()
+        self.error_box = self._bilesenler().bilgi_kutusu_olustur(
+            services=self._get_services()
+        )
         self.add_widget(self.error_box)
 
         self.add_widget(
@@ -259,6 +328,9 @@ class EditorPaneli(BoxLayout):
 
         self.current_code_area = self._bilesenler().sade_kod_alani_olustur(
             readonly=True,
+            hint_text=self._m("preview_empty", "Henüz önizleme yok."),
+            hint_text_key="preview_empty",
+            services=self._get_services(),
             size_hint_y=0.34,
         )
         self.add_widget(self.current_code_area)
@@ -285,6 +357,8 @@ class EditorPaneli(BoxLayout):
                 "new_function_hint",
                 "Tam fonksiyon kodunu buraya yaz veya yapıştır.",
             ),
+            hint_text_key="new_function_hint",
+            services=self._get_services(),
             size_hint_y=0.66,
         )
         self.add_widget(self.new_code_area)
@@ -387,7 +461,7 @@ class EditorPaneli(BoxLayout):
 
         self._tool_copy = self.action_toolbar.add_tool(
             icon_name="file_copy.png",
-            text=self._m("file_copy", "Kopyala"),
+            text=self._m("copy", "Kopyala"),
             on_release=self._copy_current_to_new,
             icon_size_dp=42,
             text_size="12sp",
@@ -426,7 +500,9 @@ class EditorPaneli(BoxLayout):
 
         try:
             if self.path_label is not None:
-                self.path_label.set_text(self._m("selected_function", "Seçili fonksiyon: -"))
+                self.path_label.set_text(
+                    self._m("selected_function", "Seçili fonksiyon: -")
+                )
         except Exception:
             pass
 
@@ -448,6 +524,7 @@ class EditorPaneli(BoxLayout):
         except Exception:
             pass
 
+        self.refresh_language()
         self._set_status_info(self._m("app_ready", "Hazır."), 0)
 
     def set_new_code_text(self, text: str) -> None:
@@ -539,7 +616,7 @@ class EditorPaneli(BoxLayout):
         text_value = self._m("selected_function", "Seçili fonksiyon: -")
         if ":" in text_value:
             return text_value.split(":", 1)[0].strip()
-        return text_value.strip() or "Seçili fonksiyon"
+        return text_value.strip() or self._m("selected_prefix", "Seçildi")
 
     # =========================================================
     # KOD
@@ -607,6 +684,7 @@ class EditorPaneli(BoxLayout):
                 pass
 
             self._new_code_buffer = ""
+            self.refresh_language()
             return
 
         try:
@@ -684,6 +762,11 @@ class EditorPaneli(BoxLayout):
                     self.new_code_area.scroll_y = 1
                 except Exception:
                     pass
+
+            try:
+                self.refresh_language()
+            except Exception:
+                pass
 
             self._pending_set_item_event = None
 
