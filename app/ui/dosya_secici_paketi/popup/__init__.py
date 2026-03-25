@@ -6,9 +6,22 @@ ROL:
 - Popup yöneticisine lazy erişim sağlar
 - Import yükünü azaltır
 - Circular import riskini minimize eder
+- Popup alt paketini dış dünyaya yalnızca yönetici üzerinden açar
 
-SURUM: 1
-TARIH: 2026-03-19
+MİMARİ:
+- Alt popup modülleri doğrudan dışa açılmaz
+- Erişim sadece PopupYoneticisi üzerinden sağlanır
+- Lazy import ile gereksiz erken yükleme engellenir
+
+KULLANIM:
+from app.ui.dosya_secici_paketi.popup import PopupYoneticisi
+
+API UYUMLULUK:
+- Platform bağımsızdır
+- Android API 35 ile uyumludur
+
+SURUM: 2
+TARIH: 2026-03-23
 IMZA: FY.
 """
 
