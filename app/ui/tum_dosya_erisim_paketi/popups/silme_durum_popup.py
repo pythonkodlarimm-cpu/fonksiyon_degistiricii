@@ -7,19 +7,23 @@ ROL:
 - İlerleme çubuğu ile işlem durumunu yansıtmak
 - Başarı durumunda ikon ve pulse animasyonu göstermek
 - İşlem sonunda otomatik kapanabilmek
+- Görünen metinlerde services tabanlı dil desteğine hazır olmak
 
 MİMARİ:
 - Doğrudan ortak bileşen import etmez
-- Ortak yonetici üzerinden AnimatedSeparator erişimi alır
+- Ortak yönetici üzerinden AnimatedSeparator erişimi alır
 - Popup yalnızca UI durum akışını yönetir
+- services verilirse sabit metinlerde dil servisi kullanılabilir
+- services verilmezse güvenli fallback ile çalışır
+- Hardcoded kullanıcı metni bırakılmaz
 
 API UYUMLULUK:
 - Platform bağımsızdır
 - Android API 35 ile uyumludur
 - Doğrudan Android bridge çağrısı içermez
 
-SURUM: 3
-TARIH: 2026-03-19
+SURUM: 5
+TARIH: 2026-03-23
 IMZA: FY.
 """
 
@@ -48,6 +52,15 @@ def _animated_separator_widget():
         return sinif()
     except Exception:
         return None
+
+
+def _m(services, anahtar: str, default: str = "") -> str:
+    try:
+        if services is not None:
+            return str(services.metin(anahtar, default) or default or anahtar)
+    except Exception:
+        pass
+    return str(default or anahtar)
 
 
 class RenkliIlerlemeCubugu(Widget):
@@ -97,14 +110,23 @@ def _interpolate_rgba(start_rgba, end_rgba, t: float):
 class SilmeDurumPopup:
     def __init__(
         self,
-        title_text="Silme İşlemi",
-        body_text="Silme işlemi başlatılıyor...",
-        success_text="Silme tamamlandı.",
+        title_text="",
+        body_text="",
+        success_text="",
         icon_name="onaylandi.png",
+        services=None,
     ):
-        self.title_text = str(title_text or "")
-        self.body_text = str(body_text or "")
-        self.success_text = str(success_text or "")
+        self.services = services
+        self.title_text = str(
+            title_text or _m(services, "delete_process_title", "Silme İşlemi")
+        )
+        self.body_text = str(
+            body_text
+            or _m(services, "delete_process_starting", "Silme işlemi başlatılıyor...")
+        )
+        self.success_text = str(
+            success_text or _m(services, "delete_completed", "Silme tamamlandı.")
+        )
         self.icon_name = str(icon_name or "onaylandi.png")
 
         self.popup = None
@@ -207,7 +229,11 @@ class SilmeDurumPopup:
         if text is not None and self.status_label is not None:
             self.status_label.text = str(text or "")
 
-    def finish_success(self, text: str | None = None, auto_close_seconds: float = 1.6):
+    def finish_success(
+        self,
+        text: str | None = None,
+        auto_close_seconds: float = 1.6,
+    ):
         self.set_progress(1.0)
 
         if self.status_label is not None:
