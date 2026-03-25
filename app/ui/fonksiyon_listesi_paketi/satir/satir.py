@@ -8,19 +8,22 @@ ROL:
 - Tıklanınca üst katmana seçilen item'ı iletmek
 - Hata durumunda detaylı bilgi üretmek
 - Oluşum ve görünürlük için debug desteği sağlamak
+- Aktif dile göre görünen metinleri üretebilmek
 
 MİMARİ:
 - Sadece satır bileşenidir
 - Panel doğrudan bu sınıfı değil, satır yöneticisini kullanmalıdır
 - Hata popup açmaz, üst katmana detaylı hata metni gönderir
+- Görünen metinler services -> metin servisi zinciriyle çözülebilir
+- Fail-soft yaklaşım korunur
 
 API UYUMLULUK:
 - Doğrudan Android API çağrısı yapmaz
 - Kivy tabanlıdır
 - API 35 ile güvenle kullanılabilir
 
-SURUM: 2
-TARIH: 2026-03-20
+SURUM: 3
+TARIH: 2026-03-23
 IMZA: FY.
 """
 
@@ -34,11 +37,20 @@ from kivy.uix.behaviors import ButtonBehavior
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.label import Label
 
+from app.services.yoneticisi import ServicesYoneticisi
 from app.ui.tema import CARD_BG, RADIUS_MD, TEXT_MUTED, TEXT_PRIMARY
 
 
 class FonksiyonSatiri(ButtonBehavior, BoxLayout):
-    def __init__(self, item, on_press_row, on_error=None, is_selected=False, **kwargs):
+    def __init__(
+        self,
+        item,
+        on_press_row,
+        on_error=None,
+        is_selected=False,
+        services: ServicesYoneticisi | None = None,
+        **kwargs,
+    ):
         super().__init__(
             orientation="horizontal",
             size_hint_y=None,
@@ -53,6 +65,12 @@ class FonksiyonSatiri(ButtonBehavior, BoxLayout):
         self.on_press_row = on_press_row
         self.on_error = on_error
         self.is_selected = bool(is_selected)
+        self.services = services
+
+        self.name_label = None
+        self.kind_label = None
+        self.line_label = None
+        self.signature_label = None
 
         with self.canvas.before:
             self._bg_color = Color(
@@ -65,6 +83,42 @@ class FonksiyonSatiri(ButtonBehavior, BoxLayout):
 
         self._build_ui()
         self._debug_row_created()
+
+    # =========================================================
+    # DIL
+    # =========================================================
+    def _m(self, anahtar: str, default: str = "") -> str:
+        try:
+            if self.services is not None:
+                return str(self.services.metin(anahtar, default) or default or anahtar)
+        except Exception:
+            pass
+        return str(default or anahtar)
+
+    def refresh_language(self) -> None:
+        try:
+            if self.name_label is not None:
+                self.name_label.text = self._short_text(self._display_name(), 22)
+        except Exception:
+            pass
+
+        try:
+            if self.kind_label is not None:
+                self.kind_label.text = self._kind_text()
+        except Exception:
+            pass
+
+        try:
+            if self.line_label is not None:
+                self.line_label.text = self._line_text()
+        except Exception:
+            pass
+
+        try:
+            if self.signature_label is not None:
+                self.signature_label.text = self._signature_text()
+        except Exception:
+            pass
 
     # =========================================================
     # DEBUG
@@ -129,11 +183,15 @@ class FonksiyonSatiri(ButtonBehavior, BoxLayout):
         return str(getattr(self.item, "name", "") or "-")
 
     def _kind_text(self) -> str:
-        kind = str(getattr(self.item, "kind", "") or "").strip()
+        kind = str(getattr(self.item, "kind", "") or "").strip().lower()
         if not kind:
             return "-"
         if kind == "function":
-            return "func"
+            return self._m("function_short", "func")
+        if kind == "asyncfunction":
+            return self._m("async_function_short", "async")
+        if kind == "method":
+            return self._m("method_short", "method")
         return kind
 
     def _line_text(self) -> str:
@@ -158,39 +216,44 @@ class FonksiyonSatiri(ButtonBehavior, BoxLayout):
 
     def _format_exception_details_local(self, exc: Exception, title: str) -> str:
         exc_type = type(exc).__name__
-        dosya = "bilinmiyor"
-        fonksiyon = "bilinmiyor"
-        satir = "bilinmiyor"
+        dosya = self._m("unknown", "bilinmiyor")
+        fonksiyon = self._m("unknown", "bilinmiyor")
+        satir = self._m("unknown", "bilinmiyor")
         kaynak_satir = ""
 
         try:
             tb_list = traceback.extract_tb(exc.__traceback__)
             if tb_list:
                 son = tb_list[-1]
-                dosya = str(getattr(son, "filename", "bilinmiyor") or "bilinmiyor")
-                fonksiyon = str(getattr(son, "name", "bilinmiyor") or "bilinmiyor")
-                satir = str(getattr(son, "lineno", "bilinmiyor") or "bilinmiyor")
+                dosya = str(getattr(son, "filename", dosya) or dosya)
+                fonksiyon = str(getattr(son, "name", fonksiyon) or fonksiyon)
+                satir = str(getattr(son, "lineno", satir) or satir)
                 kaynak_satir = str(getattr(son, "line", "") or "").strip()
         except Exception:
             pass
 
         parcalar = [
-            f"BASLIK:\n{title}",
-            f"HATA TÜRÜ:\n{exc_type}",
-            f"DOSYA:\n{dosya}",
-            f"FONKSİYON:\n{fonksiyon}",
-            f"SATIR:\n{satir}",
+            f"{self._m('title', 'BASLIK')}:\n{title}",
+            f"{self._m('error_type', 'HATA TÜRÜ')}:\n{exc_type}",
+            f"{self._m('file', 'DOSYA')}:\n{dosya}",
+            f"{self._m('function', 'FONKSİYON')}:\n{fonksiyon}",
+            f"{self._m('line', 'SATIR')}:\n{satir}",
         ]
 
         if kaynak_satir:
-            parcalar.append(f"KAYNAK SATIR:\n{kaynak_satir}")
+            parcalar.append(
+                f"{self._m('source_line', 'KAYNAK SATIR')}:\n{kaynak_satir}"
+            )
 
-        parcalar.append(f"DETAY:\n{str(exc or '').strip() or 'Ayrıntı alınamadı.'}")
+        parcalar.append(
+            f"{self._m('detail', 'DETAY')}:\n"
+            f"{str(exc or '').strip() or self._m('detail_unavailable', 'Ayrıntı alınamadı.')}"
+        )
 
         try:
             tb_text = traceback.format_exc().strip()
             if tb_text and tb_text != "NoneType: None":
-                parcalar.append(f"TRACEBACK:\n{tb_text}")
+                parcalar.append(f"{self._m('traceback', 'TRACEBACK')}:\n{tb_text}")
         except Exception:
             pass
 
@@ -200,7 +263,7 @@ class FonksiyonSatiri(ButtonBehavior, BoxLayout):
     # UI
     # =========================================================
     def _build_ui(self):
-        ad = self._bind_label_size(
+        self.name_label = self._bind_label_size(
             Label(
                 text=self._short_text(self._display_name(), 22),
                 size_hint_x=0.46,
@@ -214,9 +277,9 @@ class FonksiyonSatiri(ButtonBehavior, BoxLayout):
                 max_lines=2,
             )
         )
-        self.add_widget(ad)
+        self.add_widget(self.name_label)
 
-        tur = self._bind_label_size(
+        self.kind_label = self._bind_label_size(
             Label(
                 text=self._kind_text(),
                 size_hint_x=0.14,
@@ -230,9 +293,9 @@ class FonksiyonSatiri(ButtonBehavior, BoxLayout):
                 max_lines=1,
             )
         )
-        self.add_widget(tur)
+        self.add_widget(self.kind_label)
 
-        satir = self._bind_label_size(
+        self.line_label = self._bind_label_size(
             Label(
                 text=self._line_text(),
                 size_hint_x=0.16,
@@ -244,9 +307,9 @@ class FonksiyonSatiri(ButtonBehavior, BoxLayout):
                 max_lines=1,
             )
         )
-        self.add_widget(satir)
+        self.add_widget(self.line_label)
 
-        imza = self._bind_label_size(
+        self.signature_label = self._bind_label_size(
             Label(
                 text=self._signature_text(),
                 size_hint_x=0.24,
@@ -260,7 +323,7 @@ class FonksiyonSatiri(ButtonBehavior, BoxLayout):
                 max_lines=2,
             )
         )
-        self.add_widget(imza)
+        self.add_widget(self.signature_label)
 
     # =========================================================
     # PUBLIC
@@ -298,12 +361,16 @@ class FonksiyonSatiri(ButtonBehavior, BoxLayout):
         except Exception as exc:
             try:
                 if self.on_error is not None:
+                    hata_baslik = self._m(
+                        "function_row_selection_error",
+                        "Fonksiyon Satırı Seçim Hatası",
+                    )
                     self.on_error(
                         exc,
-                        title="Fonksiyon Satırı Seçim Hatası",
+                        title=hata_baslik,
                         detailed_text=self._format_exception_details_local(
                             exc,
-                            title="Fonksiyon Satırı Seçim Hatası",
+                            title=hata_baslik,
                         ),
                     )
             except Exception:
