@@ -3,330 +3,415 @@
 DOSYA: app/services/sistem/dil_servisi.py
 
 ROL:
-- Uygulama içi çok dilli metin altyapısını merkezi olarak yönetmek
-- Aktif dili ayar_servisi üzerinden okuyup uygulama metinlerini üretmek
-- Desteklenen dil listesini dış katmanlara sunmak
-- Eksik çeviri durumunda güvenli fallback zinciri uygulamak
+- Uygulamanın dil yükleme ve metin çözümleme akışını yönetmek
+- diller/ klasörü içindeki json dosyalarını otomatik algılamak
+- Aktif dili bellekte tutmak ve ilgili sözlüğü yüklemek
+- Aktif dili ayarlardan yüklemek ve değişince ayarlara kaydetmek
+- UI katmanına mevcut diller listesini sunmak
+- Eksik anahtarlar için güvenli fallback sağlamak
 
 MİMARİ:
-- Aktif dil bilgisi ayar_servisi içindeki language alanından okunur
-- Tüm dil meta verileri ve uygulama içi metin anahtarları bu dosyada tutulur
-- UI katmanı sabit metin yazmak yerine bu servis üzerinden metin alır
-- Çeviri eksikse önce İngilizceye, sonra Türkçeye, sonra anahtar adına fallback yapılır
-- Büyük ölçekli dil desteğine uygun genişletilebilir sözlük yapısı kullanılır
-- ayar_servisi ile desteklenen dil kodları senkron tutulur
+- Dil dosyaları app/services/sistem/diller/ klasöründen otomatik keşfedilir
+- Dosya adı dil kodu kabul edilir (tr.json -> tr, en.json -> en)
+- Geçersiz / bozuk json dosyaları sessizce atlanır
+- Aktif dil yüklenemezse varsayılan dil fallback olarak kullanılır
+- Kullanıcıya görünen dil adı önce json meta alanından, sonra iç tablodan çözülür
+- Ayar servisi ile aktif dil kalıcı olarak saklanır
 
-FALLBACK STRATEJİSİ:
-- secili_dil -> en -> tr -> anahtar
-- Böylece eksik çeviri uygulamayı bozmaz
-- Yeni dil eklenirken sadece eksik anahtarlar sonradan doldurulabilir
+JSON NOTLARI:
+- Her dil dosyası bir dict/json object olmalıdır
+- İsteğe bağlı meta anahtarları:
+  - _meta_language_name
+  - _meta_language_code
 
 API UYUMLULUK:
 - Platform bağımsızdır
-- Android API 35 uyumludur
-- Android ve masaüstü ortamlarda güvenli çalışır
-- UI yenileme akışları için okunabilir ve deterministik sonuç döndürür
-
-GENISLEME NOTLARI:
-- Şimdilik çekirdek metinler az sayıda tutulur
-- Ancak dil kayıt yapısı Play Store'da yaygın kullanılan geniş dil ağını destekleyecek
-- İleride yeni dil eklemek için:
-  1) DIL_BILGILERI içine dil meta verisi eklenir
-  2) METINLER içine ilgili dil sözlüğü eklenir
-  3) Eksik anahtarlar fallback ile güvenli şekilde çalışmaya devam eder
+- Android API 35 ile uyumludur
+- Doğrudan Android bridge çağrısı içermez
 
 SURUM: 2
-TARIH: 2026-03-23
+TARIH: 2026-03-24
 IMZA: FY.
 """
 
 from __future__ import annotations
 
-from app.services.sistem.ayar_servisi import (
-    DEFAULT_LANGUAGE,
-    get_language,
-    supported_languages,
-)
+import json
+from pathlib import Path
 
 
-# =========================================================
-# DIL META BILGILERI
-# =========================================================
-DIL_BILGILERI: dict[str, dict[str, object]] = {
-    "tr": {"ad": "Türkçe", "yerel_ad": "Türkçe", "aktif": True},
-    "en": {"ad": "İngilizce", "yerel_ad": "English", "aktif": True},
-    "de": {"ad": "Almanca", "yerel_ad": "Deutsch", "aktif": True},
-    "fr": {"ad": "Fransızca", "yerel_ad": "Français", "aktif": False},
-    "es": {"ad": "İspanyolca", "yerel_ad": "Español", "aktif": False},
-    "it": {"ad": "İtalyanca", "yerel_ad": "Italiano", "aktif": False},
-    "pt": {"ad": "Portekizce", "yerel_ad": "Português", "aktif": False},
-    "pt-br": {
-        "ad": "Portekizce (Brezilya)",
-        "yerel_ad": "Português (Brasil)",
-        "aktif": False,
-    },
-    "nl": {"ad": "Felemenkçe", "yerel_ad": "Nederlands", "aktif": False},
-    "ru": {"ad": "Rusça", "yerel_ad": "Русский", "aktif": False},
-    "uk": {"ad": "Ukraynaca", "yerel_ad": "Українська", "aktif": False},
-    "pl": {"ad": "Lehçe", "yerel_ad": "Polski", "aktif": False},
-    "cs": {"ad": "Çekçe", "yerel_ad": "Čeština", "aktif": False},
-    "sk": {"ad": "Slovakça", "yerel_ad": "Slovenčina", "aktif": False},
-    "sl": {"ad": "Slovence", "yerel_ad": "Slovenščina", "aktif": False},
-    "hr": {"ad": "Hırvatça", "yerel_ad": "Hrvatski", "aktif": False},
-    "sr": {"ad": "Sırpça", "yerel_ad": "Српски", "aktif": False},
-    "bg": {"ad": "Bulgarca", "yerel_ad": "Български", "aktif": False},
-    "ro": {"ad": "Romence", "yerel_ad": "Română", "aktif": False},
-    "hu": {"ad": "Macarca", "yerel_ad": "Magyar", "aktif": False},
-    "el": {"ad": "Yunanca", "yerel_ad": "Ελληνικά", "aktif": False},
-    "da": {"ad": "Danca", "yerel_ad": "Dansk", "aktif": False},
-    "sv": {"ad": "İsveççe", "yerel_ad": "Svenska", "aktif": False},
-    "no": {"ad": "Norveççe", "yerel_ad": "Norsk", "aktif": False},
-    "fi": {"ad": "Fince", "yerel_ad": "Suomi", "aktif": False},
-    "et": {"ad": "Estonca", "yerel_ad": "Eesti", "aktif": False},
-    "lv": {"ad": "Letonca", "yerel_ad": "Latviešu", "aktif": False},
-    "lt": {"ad": "Litvanca", "yerel_ad": "Lietuvių", "aktif": False},
-    "ga": {"ad": "İrlandaca", "yerel_ad": "Gaeilge", "aktif": False},
-    "mt": {"ad": "Maltaca", "yerel_ad": "Malti", "aktif": False},
-    "cy": {"ad": "Galce", "yerel_ad": "Cymraeg", "aktif": False},
-    "ca": {"ad": "Katalanca", "yerel_ad": "Català", "aktif": False},
-    "eu": {"ad": "Baskça", "yerel_ad": "Euskara", "aktif": False},
-    "gl": {"ad": "Galiçyaca", "yerel_ad": "Galego", "aktif": False},
-    "af": {"ad": "Afrikaanca", "yerel_ad": "Afrikaans", "aktif": False},
-    "sw": {"ad": "Svahili", "yerel_ad": "Kiswahili", "aktif": False},
-    "zu": {"ad": "Zulu", "yerel_ad": "isiZulu", "aktif": False},
-    "xh": {"ad": "Xhosa", "yerel_ad": "isiXhosa", "aktif": False},
-    "am": {"ad": "Amharca", "yerel_ad": "አማርኛ", "aktif": False},
-    "ar": {"ad": "Arapça", "yerel_ad": "العربية", "aktif": False},
-    "fa": {"ad": "Farsça", "yerel_ad": "فارسی", "aktif": False},
-    "ur": {"ad": "Urduca", "yerel_ad": "اردو", "aktif": False},
-    "he": {"ad": "İbranice", "yerel_ad": "עברית", "aktif": False},
-    "hi": {"ad": "Hintçe", "yerel_ad": "हिन्दी", "aktif": False},
-    "bn": {"ad": "Bengalce", "yerel_ad": "বাংলা", "aktif": False},
-    "ta": {"ad": "Tamilce", "yerel_ad": "தமிழ்", "aktif": False},
-    "te": {"ad": "Telugu", "yerel_ad": "తెలుగు", "aktif": False},
-    "ml": {"ad": "Malayalam", "yerel_ad": "മലയാളം", "aktif": False},
-    "kn": {"ad": "Kannada", "yerel_ad": "ಕನ್ನಡ", "aktif": False},
-    "gu": {"ad": "Gujarati", "yerel_ad": "ગુજરાતી", "aktif": False},
-    "mr": {"ad": "Marathi", "yerel_ad": "मराठी", "aktif": False},
-    "pa": {"ad": "Pencapça", "yerel_ad": "ਪੰਜਾਬੀ", "aktif": False},
-    "or": {"ad": "Odia", "yerel_ad": "ଓଡ଼ିଆ", "aktif": False},
-    "as": {"ad": "Assamca", "yerel_ad": "অসমীয়া", "aktif": False},
-    "ne": {"ad": "Nepalce", "yerel_ad": "नेपाली", "aktif": False},
-    "si": {"ad": "Sinhalaca", "yerel_ad": "සිංහල", "aktif": False},
-    "my": {"ad": "Burmaca", "yerel_ad": "မြန်မာ", "aktif": False},
-    "th": {"ad": "Tayca", "yerel_ad": "ไทย", "aktif": False},
-    "vi": {"ad": "Vietnamca", "yerel_ad": "Tiếng Việt", "aktif": False},
-    "id": {"ad": "Endonezce", "yerel_ad": "Bahasa Indonesia", "aktif": False},
-    "ms": {"ad": "Malayca", "yerel_ad": "Bahasa Melayu", "aktif": False},
-    "tl": {"ad": "Tagalog", "yerel_ad": "Tagalog", "aktif": False},
-    "zh": {"ad": "Çince", "yerel_ad": "中文", "aktif": False},
-    "zh-cn": {
-        "ad": "Çince (Basitleştirilmiş)",
-        "yerel_ad": "简体中文",
-        "aktif": False,
-    },
-    "zh-tw": {
-        "ad": "Çince (Geleneksel)",
-        "yerel_ad": "繁體中文",
-        "aktif": False,
-    },
-    "ja": {"ad": "Japonca", "yerel_ad": "日本語", "aktif": False},
-    "ko": {"ad": "Korece", "yerel_ad": "한국어", "aktif": False},
-}
+class DilServisi:
+    VARSAYILAN_DIL = "tr"
 
+    def __init__(self) -> None:
+        self._aktif_dil = self.VARSAYILAN_DIL
+        self._aktif_sozluk: dict[str, object] = {}
+        self._cache: dict[str, dict[str, object]] = {}
 
-# =========================================================
-# METIN SOZLUKLERI
-# =========================================================
-METINLER: dict[str, dict[str, str]] = {
-    "tr": {
-        "app_ready": "Hazır.",
-        "settings": "Ayarlar",
-        "language": "Dil",
-        "select_language": "Dil Seç",
-        "language_saved": "Dil kaydedildi.",
-        "language_updated": "Dil güncellendi.",
-        "file_not_selected": "Dosya seçilmedi",
-        "file_info_placeholder": "Seçilen belge bilgisi burada görünür.",
-        "file_waiting": "Belge seçmeniz bekleniyor.",
-        "file_selected_auto_scan": "Belge seçildi • Tarama otomatik başlatılır.",
-        "select_file": "Dosya Seç",
-        "test": "Test",
-        "scan_completed": "Tarama tamamlandı.",
-        "update": "Güncelle",
-        "new_version_available": "Yeni sürüm mevcut.",
-        "open_list": "Listeyi Aç",
-        "session_restored": "Oturum geri yüklendi.",
-        "previous_session_restored": "Önceki oturum geri yüklendi.",
-        "all_files_access_open": "Tüm dosya erişimi açık.",
-        "all_files_access_closed": "Tüm dosya erişimi kapalı.",
-        "all_files_access_on": "Tüm dosya erişimi açık.",
-        "all_files_access_off": "Tüm dosya erişimi kapalı.",
-        "play_store_open_failed": "Play Store açılamadı.",
-        "settings_open_failed": "Ayarlar açılamadı.",
-    },
-    "en": {
-        "app_ready": "Ready.",
-        "settings": "Settings",
-        "language": "Language",
-        "select_language": "Select Language",
-        "language_saved": "Language saved.",
-        "language_updated": "Language updated.",
-        "file_not_selected": "No file selected",
-        "file_info_placeholder": "Selected document details will appear here.",
-        "file_waiting": "Please select a document.",
-        "file_selected_auto_scan": "Document selected • Scan starts automatically.",
-        "select_file": "Select File",
-        "test": "Test",
-        "scan_completed": "Scan completed.",
-        "update": "Update",
-        "new_version_available": "A new version is available.",
-        "open_list": "Open List",
-        "session_restored": "Session restored.",
-        "previous_session_restored": "Previous session restored.",
-        "all_files_access_open": "All files access is enabled.",
-        "all_files_access_closed": "All files access is disabled.",
-        "all_files_access_on": "All files access is enabled.",
-        "all_files_access_off": "All files access is disabled.",
-        "play_store_open_failed": "Play Store could not be opened.",
-        "settings_open_failed": "Settings could not be opened.",
-    },
-    "de": {
-        "app_ready": "Bereit.",
-        "settings": "Einstellungen",
-        "language": "Sprache",
-        "select_language": "Sprache auswählen",
-        "language_saved": "Sprache gespeichert.",
-        "language_updated": "Sprache aktualisiert.",
-        "file_not_selected": "Keine Datei ausgewählt",
-        "file_info_placeholder": (
-            "Informationen zum ausgewählten Dokument werden hier angezeigt."
-        ),
-        "file_waiting": "Bitte wählen Sie ein Dokument aus.",
-        "file_selected_auto_scan": "Dokument ausgewählt • Scan startet automatisch.",
-        "select_file": "Datei auswählen",
-        "test": "Test",
-        "scan_completed": "Scan abgeschlossen.",
-        "update": "Aktualisieren",
-        "new_version_available": "Eine neue Version ist verfügbar.",
-        "open_list": "Liste öffnen",
-        "session_restored": "Sitzung wiederhergestellt.",
-        "previous_session_restored": "Vorherige Sitzung wiederhergestellt.",
-        "all_files_access_open": "Zugriff auf alle Dateien ist aktiviert.",
-        "all_files_access_closed": "Zugriff auf alle Dateien ist deaktiviert.",
-        "all_files_access_on": "Zugriff auf alle Dateien ist aktiviert.",
-        "all_files_access_off": "Zugriff auf alle Dateien ist deaktiviert.",
-        "play_store_open_failed": "Play Store konnte nicht geöffnet werden.",
-        "settings_open_failed": "Einstellungen konnten nicht geöffnet werden.",
-    },
-}
+        self._gorunen_dil_adlari = {
+            "tr": "Türkçe",
+            "en": "English",
+            "de": "Deutsch",
+            "fr": "Français",
+            "es": "Español",
+            "it": "Italiano",
+            "pt": "Português",
+            "pt-br": "Português (Brasil)",
+            "nl": "Nederlands",
+            "ru": "Русский",
+            "uk": "Українська",
+            "pl": "Polski",
+            "cs": "Čeština",
+            "sk": "Slovenčina",
+            "sl": "Slovenščina",
+            "hr": "Hrvatski",
+            "sr": "Srpski",
+            "bs": "Bosanski",
+            "mk": "Македонски",
+            "bg": "Български",
+            "ro": "Română",
+            "hu": "Magyar",
+            "el": "Ελληνικά",
+            "sq": "Shqip",
+            "da": "Dansk",
+            "sv": "Svenska",
+            "no": "Norsk",
+            "fi": "Suomi",
+            "ar": "العربية",
+            "fa": "فارسی",
+            "ur": "اردو",
+            "he": "עברית",
+            "hi": "हिन्दी",
+            "bn": "বাংলা",
+            "ja": "日本語",
+            "ko": "한국어",
+            "zh": "中文",
+            "zh-cn": "简体中文",
+            "zh-tw": "繁體中文",
+            "id": "Bahasa Indonesia",
+            "ms": "Bahasa Melayu",
+            "vi": "Tiếng Việt",
+            "th": "ไทย",
+        }
 
-
-# =========================================================
-# INTERNAL HELPERS
-# =========================================================
-def _normalize_language_code(code: str | None) -> str:
-    temiz = str(code or "").strip().lower()
-    if not temiz:
-        return DEFAULT_LANGUAGE
-
-    temiz = temiz.replace("_", "-")
-
-    if temiz in DIL_BILGILERI:
-        return temiz
-
-    if "-" in temiz:
-        temel = temiz.split("-", 1)[0].strip()
-        if temel in DIL_BILGILERI:
-            return temel
-
-    return DEFAULT_LANGUAGE
-
-
-def _aktif_metin_sozlugu() -> dict[str, str]:
-    kod = aktif_dil()
-    data = METINLER.get(kod)
-    return data if isinstance(data, dict) else {}
-
-
-def _ingilizce_sozluk() -> dict[str, str]:
-    data = METINLER.get("en")
-    return data if isinstance(data, dict) else {}
-
-
-def _turkce_sozluk() -> dict[str, str]:
-    data = METINLER.get("tr")
-    return data if isinstance(data, dict) else {}
-
-
-# =========================================================
-# PUBLIC API
-# =========================================================
-def aktif_dil() -> str:
-    kod = str(get_language(default=DEFAULT_LANGUAGE) or DEFAULT_LANGUAGE).strip()
-    return _normalize_language_code(kod)
-
-
-def desteklenen_diller(
-    sadece_aktifler: bool = False,
-) -> dict[str, dict[str, object]]:
-    desteklenen = set(supported_languages())
-    sonuc: dict[str, dict[str, object]] = {}
-
-    for kod in desteklenen:
-        bilgi = DIL_BILGILERI.get(
-            kod,
-            {
-                "ad": kod,
-                "yerel_ad": kod,
-                "aktif": False,
-            },
-        )
+        self._aktif_sozluk = self._load_language_dict_with_fallback(self._aktif_dil)
 
         try:
-            if sadece_aktifler and not bool(bilgi.get("aktif", False)):
-                continue
+            self.aktif_dili_ayardan_yukle(default=self.VARSAYILAN_DIL)
         except Exception:
-            if sadece_aktifler:
-                continue
+            pass
 
-        sonuc[kod] = dict(bilgi)
+    # =========================================================
+    # PATH
+    # =========================================================
+    def _base_dir(self) -> Path:
+        return Path(__file__).resolve().parent
 
-    return sonuc
+    def _languages_dir(self) -> Path:
+        return self._base_dir() / "diller"
 
+    # =========================================================
+    # AYAR SERVISI
+    # =========================================================
+    def _ayar_get_language(self, default: str | None = None) -> str:
+        try:
+            from app.services.sistem.ayar_servisi import get_language
+            return str(get_language(default=default or self.VARSAYILAN_DIL) or "")
+        except Exception:
+            return str(default or self.VARSAYILAN_DIL)
 
-def dil_var_mi(code: str) -> bool:
-    kod = _normalize_language_code(code)
-    return kod in desteklenen_diller(sadece_aktifler=False)
+    def _ayar_set_language(self, code: str) -> None:
+        try:
+            from app.services.sistem.ayar_servisi import set_language
+            set_language(code)
+        except Exception:
+            pass
 
+    # =========================================================
+    # NORMALIZE
+    # =========================================================
+    def _normalize_code(self, code: str) -> str:
+        temiz = str(code or "").strip().lower()
+        temiz = temiz.replace("\\", "").replace("/", "")
+        temiz = temiz.replace(".json", "")
+        temiz = temiz.replace("_", "-")
+        return temiz
 
-def dil_adi(code: str, default: str = "") -> str:
-    kod = _normalize_language_code(code)
-    try:
-        bilgiler = desteklenen_diller(sadece_aktifler=False)
-        return str(bilgiler[kod].get("yerel_ad") or default or kod)
-    except Exception:
-        return str(default or kod)
+    def _language_file_path(self, code: str) -> Path:
+        return self._languages_dir() / f"{self._normalize_code(code)}.json"
 
+    # =========================================================
+    # JSON LOAD
+    # =========================================================
+    def _safe_read_json(self, path: Path) -> dict[str, object]:
+        try:
+            if not path.is_file():
+                return {}
 
-def metin(anahtar: str, default: str = "") -> str:
-    key = str(anahtar or "").strip()
-    if not key:
-        return str(default or "")
+            raw = path.read_text(encoding="utf-8")
+            data = json.loads(raw)
 
-    try:
-        aktif_sozluk = _aktif_metin_sozlugu()
-        if key in aktif_sozluk:
-            return str(aktif_sozluk[key])
+            if isinstance(data, dict):
+                return data
 
-        en_sozluk = _ingilizce_sozluk()
-        if key in en_sozluk:
-            return str(en_sozluk[key])
+            return {}
+        except Exception:
+            return {}
 
-        tr_sozluk = _turkce_sozluk()
-        if key in tr_sozluk:
-            return str(tr_sozluk[key])
+    def _is_valid_language_dict(self, data) -> bool:
+        return isinstance(data, dict) and len(data) > 0
 
-        return str(default or key)
-    except Exception:
-        return str(default or key)
+    def _load_language_dict(self, code: str) -> dict[str, object]:
+        temiz_kod = self._normalize_code(code)
+        if not temiz_kod:
+            return {}
+
+        if temiz_kod in self._cache:
+            return dict(self._cache[temiz_kod])
+
+        path = self._language_file_path(temiz_kod)
+        data = self._safe_read_json(path)
+
+        if not self._is_valid_language_dict(data):
+            self._cache[temiz_kod] = {}
+            return {}
+
+        self._cache[temiz_kod] = dict(data)
+        return dict(data)
+
+    def _load_language_dict_with_fallback(self, code: str) -> dict[str, object]:
+        data = self._load_language_dict(code)
+        if data:
+            return data
+
+        if self._normalize_code(code) != self.VARSAYILAN_DIL:
+            fallback = self._load_language_dict(self.VARSAYILAN_DIL)
+            if fallback:
+                return fallback
+
+        return {}
+
+    # =========================================================
+    # META
+    # =========================================================
+    def _extract_language_name(self, code: str, data: dict[str, object]) -> str:
+        try:
+            meta_name = str(data.get("_meta_language_name", "") or "").strip()
+            if meta_name:
+                return meta_name
+        except Exception:
+            pass
+
+        temiz_kod = self._normalize_code(code)
+
+        try:
+            tablo_adi = str(self._gorunen_dil_adlari.get(temiz_kod, "") or "").strip()
+            if tablo_adi:
+                return tablo_adi
+        except Exception:
+            pass
+
+        return temiz_kod.upper() if temiz_kod else "UNKNOWN"
+
+    def _extract_language_code(self, path: Path, data: dict[str, object]) -> str:
+        try:
+            meta_code = self._normalize_code(
+                str(data.get("_meta_language_code", "") or "")
+            )
+            if meta_code:
+                return meta_code
+        except Exception:
+            pass
+
+        return self._normalize_code(path.stem)
+
+    # =========================================================
+    # PUBLIC - ACTIVE LANGUAGE
+    # =========================================================
+    def aktif_dil(self) -> str:
+        return str(self._aktif_dil or self.VARSAYILAN_DIL)
+
+    def aktif_dili_ayardan_yukle(self, default: str = "") -> str:
+        varsayilan = self._normalize_code(default or self.VARSAYILAN_DIL) or self.VARSAYILAN_DIL
+        ayar_kodu = self._normalize_code(self._ayar_get_language(varsayilan))
+
+        if self.set_active_language(ayar_kodu, save_to_settings=False):
+            return self._aktif_dil
+
+        self.set_active_language(varsayilan, save_to_settings=False)
+        return self._aktif_dil
+
+    def set_active_language(self, code: str, save_to_settings: bool = True) -> bool:
+        temiz_kod = self._normalize_code(code)
+        if not temiz_kod:
+            return False
+
+        data = self._load_language_dict(temiz_kod)
+        if not data:
+            return False
+
+        self._aktif_dil = temiz_kod
+        self._aktif_sozluk = dict(data)
+
+        if save_to_settings:
+            self._ayar_set_language(temiz_kod)
+
+        return True
+
+    def dil_degistir(self, code: str) -> bool:
+        return self.set_active_language(code, save_to_settings=True)
+
+    def dil_destekleniyor_mu(self, code: str) -> bool:
+        temiz_kod = self._normalize_code(code)
+        if not temiz_kod:
+            return False
+
+        return bool(self._load_language_dict(temiz_kod))
+
+    def dil_var_mi(self, code: str) -> bool:
+        return self.dil_destekleniyor_mu(code)
+
+    # =========================================================
+    # PUBLIC - TEXT
+    # =========================================================
+    def metin(self, anahtar: str, varsayilan: str = "") -> str:
+        key = str(anahtar or "").strip()
+        if not key:
+            return str(varsayilan or "")
+
+        try:
+            value = self._aktif_sozluk.get(key, None)
+            if value is not None:
+                return str(value)
+        except Exception:
+            pass
+
+        try:
+            if self._aktif_dil != self.VARSAYILAN_DIL:
+                fallback_dict = self._load_language_dict(self.VARSAYILAN_DIL)
+                fallback_value = fallback_dict.get(key, None)
+                if fallback_value is not None:
+                    return str(fallback_value)
+        except Exception:
+            pass
+
+        return str(varsayilan or key)
+
+    # =========================================================
+    # PUBLIC - LANGUAGE LIST
+    # =========================================================
+    def mevcut_dilleri_listele(self) -> list[dict[str, str]]:
+        sonuc: list[dict[str, str]] = []
+        gorulen_kodlar: set[str] = set()
+
+        try:
+            diller_klasoru = self._languages_dir()
+            if not diller_klasoru.is_dir():
+                return sonuc
+
+            for path in sorted(diller_klasoru.glob("*.json")):
+                data = self._safe_read_json(path)
+                if not self._is_valid_language_dict(data):
+                    continue
+
+                kod = self._extract_language_code(path, data)
+                if not kod or kod in gorulen_kodlar:
+                    continue
+
+                gorulen_kodlar.add(kod)
+
+                dil_adi = self._extract_language_name(kod, data)
+
+                sonuc.append(
+                    {
+                        "code": kod,
+                        "name": dil_adi,
+                        "local_name": dil_adi,
+                        "file": path.name,
+                        "selected": "1" if kod == self.aktif_dil() else "0",
+                        "active": "1",
+                    }
+                )
+        except Exception:
+            return []
+
+        return sonuc
+
+    def mevcut_dil_kodlari(self) -> list[str]:
+        try:
+            return [item["code"] for item in self.mevcut_dilleri_listele()]
+        except Exception:
+            return []
+
+    def desteklenen_diller(self, sadece_aktifler: bool = False) -> dict[str, dict[str, object]]:
+        sonuc: dict[str, dict[str, object]] = {}
+
+        try:
+            for item in self.mevcut_dilleri_listele():
+                kod = str(item.get("code", "") or "").strip()
+                if not kod:
+                    continue
+
+                aktif = str(item.get("active", "1")) == "1"
+                if sadece_aktifler and not aktif:
+                    continue
+
+                yerel_ad = str(item.get("local_name", "") or item.get("name", "") or kod)
+                ad = str(item.get("name", "") or yerel_ad or kod)
+
+                sonuc[kod] = {
+                    "ad": ad,
+                    "yerel_ad": yerel_ad,
+                    "aktif": aktif,
+                    "secili": kod == self.aktif_dil(),
+                }
+        except Exception:
+            return {}
+
+        return sonuc
+
+    def dil_adi(self, code: str, default: str = "") -> str:
+        temiz = self._normalize_code(code)
+        if not temiz:
+            return str(default or "")
+
+        try:
+            bilgiler = self.desteklenen_diller(sadece_aktifler=False)
+            bilgi = bilgiler.get(temiz, {})
+            ad = str(bilgi.get("yerel_ad", "") or bilgi.get("ad", "") or "").strip()
+            if ad:
+                return ad
+        except Exception:
+            pass
+
+        try:
+            tablo_adi = str(self._gorunen_dil_adlari.get(temiz, "") or "").strip()
+            if tablo_adi:
+                return tablo_adi
+        except Exception:
+            pass
+
+        return str(default or temiz.upper())
+
+    # =========================================================
+    # CACHE
+    # =========================================================
+    def cache_temizle(self) -> None:
+        self._cache = {}
+
+    def dilleri_yeniden_tara(self) -> list[dict[str, str]]:
+        aktif = self.aktif_dil()
+        self.cache_temizle()
+
+        yeni_liste = self.mevcut_dilleri_listele()
+
+        if self.dil_destekleniyor_mu(aktif):
+            self._aktif_dil = aktif
+            self._aktif_sozluk = self._load_language_dict_with_fallback(aktif)
+        else:
+            self._aktif_dil = self.VARSAYILAN_DIL
+            self._aktif_sozluk = self._load_language_dict_with_fallback(
+                self.VARSAYILAN_DIL
+            )
+
+        return yeni_liste
