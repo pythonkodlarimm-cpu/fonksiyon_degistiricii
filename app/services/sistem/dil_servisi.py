@@ -9,6 +9,7 @@ ROL:
 - Aktif dili ayarlardan yüklemek ve değişince ayarlara kaydetmek
 - UI katmanına mevcut diller listesini sunmak
 - Eksik anahtarlar için güvenli fallback sağlamak
+- Android / APK / AAB ortamında da dil dosyalarını güvenli biçimde bulmak
 
 MİMARİ:
 - Dil dosyaları app/services/sistem/diller/ klasöründen otomatik keşfedilir
@@ -17,6 +18,7 @@ MİMARİ:
 - Aktif dil yüklenemezse varsayılan dil fallback olarak kullanılır
 - Kullanıcıya görünen dil adı önce json meta alanından, sonra iç tablodan çözülür
 - Ayar servisi ile aktif dil kalıcı olarak saklanır
+- Android paketleme farklarına karşı dil klasörü için çoklu aday yol çözümleme uygulanır
 
 JSON NOTLARI:
 - Her dil dosyası bir dict/json object olmalıdır
@@ -28,8 +30,9 @@ API UYUMLULUK:
 - Platform bağımsızdır
 - Android API 35 ile uyumludur
 - Doğrudan Android bridge çağrısı içermez
+- APK / AAB içinde paketlenmiş json dosyalarının erişimine uygun yol çözümleme içerir
 
-SURUM: 2
+SURUM: 3
 TARIH: 2026-03-24
 IMZA: FY.
 """
@@ -47,6 +50,7 @@ class DilServisi:
         self._aktif_dil = self.VARSAYILAN_DIL
         self._aktif_sozluk: dict[str, object] = {}
         self._cache: dict[str, dict[str, object]] = {}
+        self._languages_dir_cache: Path | None = None
 
         self._gorunen_dil_adlari = {
             "tr": "Türkçe",
@@ -107,8 +111,61 @@ class DilServisi:
     def _base_dir(self) -> Path:
         return Path(__file__).resolve().parent
 
+    def _candidate_languages_dirs(self) -> list[Path]:
+        """
+        Dil klasörü için olası aday yolları döndürür.
+
+        Android/AAB ortamında yol çözümleme bazen farklı davranabildiği için
+        birden fazla güvenli aday kontrol edilir.
+        """
+        base_dir = self._base_dir()
+
+        adaylar = [
+            base_dir / "diller",
+            Path(__file__).resolve().parent / "diller",
+            Path(__file__).parent / "diller",
+        ]
+
+        sonuc: list[Path] = []
+        gorulen: set[str] = set()
+
+        for path in adaylar:
+            try:
+                key = str(path.resolve())
+            except Exception:
+                key = str(path)
+
+            if key in gorulen:
+                continue
+
+            gorulen.add(key)
+            sonuc.append(path)
+
+        return sonuc
+
     def _languages_dir(self) -> Path:
-        return self._base_dir() / "diller"
+        """
+        Kullanılabilir ilk dil klasörünü bulur.
+
+        Hiçbiri bulunamazsa varsayılan ana klasör döner.
+        """
+        try:
+            if self._languages_dir_cache is not None:
+                return self._languages_dir_cache
+        except Exception:
+            self._languages_dir_cache = None
+
+        for path in self._candidate_languages_dirs():
+            try:
+                if path.is_dir():
+                    self._languages_dir_cache = path
+                    return path
+            except Exception:
+                continue
+
+        varsayilan = self._base_dir() / "diller"
+        self._languages_dir_cache = varsayilan
+        return varsayilan
 
     # =========================================================
     # AYAR SERVISI
@@ -116,6 +173,7 @@ class DilServisi:
     def _ayar_get_language(self, default: str | None = None) -> str:
         try:
             from app.services.sistem.ayar_servisi import get_language
+
             return str(get_language(default=default or self.VARSAYILAN_DIL) or "")
         except Exception:
             return str(default or self.VARSAYILAN_DIL)
@@ -123,6 +181,7 @@ class DilServisi:
     def _ayar_set_language(self, code: str) -> None:
         try:
             from app.services.sistem.ayar_servisi import set_language
+
             set_language(code)
         except Exception:
             pass
@@ -166,8 +225,12 @@ class DilServisi:
         if not temiz_kod:
             return {}
 
-        if temiz_kod in self._cache:
-            return dict(self._cache[temiz_kod])
+        try:
+            cached = self._cache.get(temiz_kod, None)
+            if cached is not None:
+                return dict(cached)
+        except Exception:
+            pass
 
         path = self._language_file_path(temiz_kod)
         data = self._safe_read_json(path)
@@ -232,7 +295,9 @@ class DilServisi:
         return str(self._aktif_dil or self.VARSAYILAN_DIL)
 
     def aktif_dili_ayardan_yukle(self, default: str = "") -> str:
-        varsayilan = self._normalize_code(default or self.VARSAYILAN_DIL) or self.VARSAYILAN_DIL
+        varsayilan = (
+            self._normalize_code(default or self.VARSAYILAN_DIL) or self.VARSAYILAN_DIL
+        )
         ayar_kodu = self._normalize_code(self._ayar_get_language(varsayilan))
 
         if self.set_active_language(ayar_kodu, save_to_settings=False):
@@ -343,7 +408,10 @@ class DilServisi:
         except Exception:
             return []
 
-    def desteklenen_diller(self, sadece_aktifler: bool = False) -> dict[str, dict[str, object]]:
+    def desteklenen_diller(
+        self,
+        sadece_aktifler: bool = False,
+    ) -> dict[str, dict[str, object]]:
         sonuc: dict[str, dict[str, object]] = {}
 
         try:
@@ -356,7 +424,9 @@ class DilServisi:
                 if sadece_aktifler and not aktif:
                     continue
 
-                yerel_ad = str(item.get("local_name", "") or item.get("name", "") or kod)
+                yerel_ad = str(
+                    item.get("local_name", "") or item.get("name", "") or kod
+                )
                 ad = str(item.get("name", "") or yerel_ad or kod)
 
                 sonuc[kod] = {
@@ -378,7 +448,9 @@ class DilServisi:
         try:
             bilgiler = self.desteklenen_diller(sadece_aktifler=False)
             bilgi = bilgiler.get(temiz, {})
-            ad = str(bilgi.get("yerel_ad", "") or bilgi.get("ad", "") or "").strip()
+            ad = str(
+                bilgi.get("yerel_ad", "") or bilgi.get("ad", "") or ""
+            ).strip()
             if ad:
                 return ad
         except Exception:
@@ -398,6 +470,7 @@ class DilServisi:
     # =========================================================
     def cache_temizle(self) -> None:
         self._cache = {}
+        self._languages_dir_cache = None
 
     def dilleri_yeniden_tara(self) -> list[dict[str, str]]:
         aktif = self.aktif_dil()
