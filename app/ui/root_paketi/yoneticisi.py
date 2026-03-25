@@ -3,99 +3,199 @@
 DOSYA: app/ui/root_paketi/yoneticisi.py
 
 ROL:
-- root_paketi için tek giriş noktası sağlamak
-- Alt root paket yöneticilerine erişimi merkezileştirmek
-- RootWidget ve root akışlarını dış dünyaya kontrollü açmak
+- Root katmanı için tek noktadan erişim sağlayan yönetici sınıfıdır
+- RootWidget sınıfını güvenli biçimde döndürür
+- Lazy import mantığıyla modülü ihtiyaç halinde yükler
+- İlk yüklenen modül ve sınıf referanslarını cache içinde tutar
+- Gerekirse RootWidget örneği oluşturur
+- Fail-soft yaklaşım uygular; hata durumunda çökmez, log basar
 
 MİMARİ:
-- Alt paket yöneticilerine lazy import ile erişir
-- Dış dünya root_paketi içindeki dosya yollarını bilmek zorunda kalmaz
-- RootWidget oluşturma ve mixin erişimi tek kapıdan yönetilir
+- Yönetici sınıfı modül seviyesinde zorunlu import yapmaz
+- __import__ ile hedef modül çalışma anında yüklenir
+- Modül ve sınıf referansları instance cache içinde saklanır
+- Paket erişim yapısı ileride genişletilebilir
+- Root modülü gerçek klasör yapısına göre root/root.py içinden yüklenir
 
-API UYUMLULUK:
-- Android ve masaüstü ortamlarıyla uyumludur
-- Doğrudan Android bridge çağrısı yapmaz
+GERÇEK DOSYA YOLU:
+- app/ui/root_paketi/root/root.py
 
-SURUM: 1
-TARIH: 2026-03-20
+KULLANIM:
+- yonetici = RootYoneticisi()
+- root_sinifi = yonetici.root_sinifi()
+- root_widget = yonetici.root_olustur()
+
+NOT:
+- Bu dosya doğrudan UI çizmez
+- Root örneği oluşturmayı kolaylaştırır
+- İlk başarılı import sonrası tekrar import maliyeti oluşmaz
+- APK build sırasında path hatası yaşamamak için modul_yolu kesin olarak
+  app.ui.root_paketi.root.root şeklinde ayarlanmıştır
+
+SURUM: 3
+TARIH: 2026-03-24
 IMZA: FY.
 """
 
 from __future__ import annotations
 
+import traceback
 
-class RootPaketiYoneticisi:
-    # =========================================================
-    # ALT YONETICILER
-    # =========================================================
-    def _dosya_akisi_yoneticisi(self):
-        from app.ui.root_paketi.akisi_dosya import RootDosyaAkisiYoneticisi
-        return RootDosyaAkisiYoneticisi()
 
-    def _secim_akisi_yoneticisi(self):
-        from app.ui.root_paketi.akisi_secim import RootSecimAkisiYoneticisi
-        return RootSecimAkisiYoneticisi()
+class RootYoneticisi:
+    """
+    Root modülü için merkezi erişim yöneticisi.
+    """
 
-    def _guncelleme_akisi_yoneticisi(self):
-        from app.ui.root_paketi.akisi_guncelleme import RootGuncellemeAkisiYoneticisi
-        return RootGuncellemeAkisiYoneticisi()
+    modul_yolu = "app.ui.root_paketi.root.root"
+    sinif_adi = "RootWidget"
 
-    def _geri_yukleme_akisi_yoneticisi(self):
-        from app.ui.root_paketi.akisi_geri_yukleme import RootGeriYuklemeAkisiYoneticisi
-        return RootGeriYuklemeAkisiYoneticisi()
-
-    def _durum_yoneticisi(self):
-        from app.ui.root_paketi.durum import RootDurumYoneticisi
-        return RootDurumYoneticisi()
-
-    def _kaydirma_yoneticisi(self):
-        from app.ui.root_paketi.kaydirma import RootKaydirmaYoneticisi
-        return RootKaydirmaYoneticisi()
-
-    def _yardimci_yoneticisi(self):
-        from app.ui.root_paketi.yardimci import RootYardimciYoneticisi
-        return RootYardimciYoneticisi()
-
-    def _bagimlilik_yoneticisi(self):
-        from app.ui.root_paketi.bagimlilik import RootBagimlilikYoneticisi
-        return RootBagimlilikYoneticisi()
-
-    def _root_yoneticisi(self):
-        from app.ui.root_paketi.root import RootWidgetYoneticisi
-        return RootWidgetYoneticisi()
+    def __init__(self) -> None:
+        self._cached_module = None
+        self._cached_class = None
 
     # =========================================================
-    # ROOT
+    # INTERNAL
     # =========================================================
-    def root_widget_sinifi(self):
-        return self._root_yoneticisi().root_widget_sinifi()
+    def _modul_cache_var_mi(self) -> bool:
+        """
+        Modül cache'inin dolu olup olmadığını kontrol eder.
 
-    def root_widget_olustur(self, **kwargs):
-        return self._root_yoneticisi().root_widget_olustur(**kwargs)
+        Returns:
+            bool
+        """
+        try:
+            return self._cached_module is not None
+        except Exception:
+            return False
+
+    def _sinif_cache_var_mi(self) -> bool:
+        """
+        Sınıf cache'inin dolu olup olmadığını kontrol eder.
+
+        Returns:
+            bool
+        """
+        try:
+            return self._cached_class is not None
+        except Exception:
+            return False
+
+    def _modul_cache_temizle(self) -> None:
+        """
+        Modül cache'ini temizler.
+        """
+        try:
+            self._cached_module = None
+        except Exception:
+            pass
+
+    def _sinif_cache_temizle(self) -> None:
+        """
+        Sınıf cache'ini temizler.
+        """
+        try:
+            self._cached_class = None
+        except Exception:
+            pass
+
+    def cache_temizle(self) -> None:
+        """
+        Yönetici içindeki modül ve sınıf cache'lerini temizler.
+        """
+        self._sinif_cache_temizle()
+        self._modul_cache_temizle()
+
+    def _yukle_modul(self):
+        """
+        Hedef modülü lazy import + cache ile güvenli biçimde yükler.
+
+        Returns:
+            module | None
+        """
+        try:
+            if self._modul_cache_var_mi():
+                return self._cached_module
+        except Exception:
+            self._modul_cache_temizle()
+
+        try:
+            module = __import__(self.modul_yolu, fromlist=[self.sinif_adi])
+            self._cached_module = module
+            return module
+        except Exception:
+            print(f"[ROOT_YONETICISI] Modül yüklenemedi: {self.modul_yolu}")
+            print(traceback.format_exc())
+            self._modul_cache_temizle()
+            return None
+
+    def _yukle_sinif(self):
+        """
+        Hedef root sınıfını lazy import + cache ile güvenli biçimde yükler.
+
+        Returns:
+            type | None
+        """
+        try:
+            if self._sinif_cache_var_mi():
+                return self._cached_class
+        except Exception:
+            self._sinif_cache_temizle()
+
+        module = self._yukle_modul()
+        if module is None:
+            return None
+
+        try:
+            cls = getattr(module, self.sinif_adi, None)
+            if cls is None:
+                print(f"[ROOT_YONETICISI] Sınıf bulunamadı: {self.sinif_adi}")
+                self._sinif_cache_temizle()
+                return None
+
+            self._cached_class = cls
+            return cls
+        except Exception:
+            print(f"[ROOT_YONETICISI] Sınıf alınamadı: {self.sinif_adi}")
+            print(traceback.format_exc())
+            self._sinif_cache_temizle()
+            return None
 
     # =========================================================
-    # MIXIN SINIFLARI
+    # PUBLIC
     # =========================================================
-    def root_dosya_akisi_mixin(self):
-        return self._dosya_akisi_yoneticisi().mixin_sinifi()
+    def modul(self):
+        """
+        Root modül nesnesini döndürür.
 
-    def root_secim_akisi_mixin(self):
-        return self._secim_akisi_yoneticisi().mixin_sinifi()
+        Returns:
+            module | None
+        """
+        return self._yukle_modul()
 
-    def root_guncelleme_akisi_mixin(self):
-        return self._guncelleme_akisi_yoneticisi().mixin_sinifi()
+    def root_sinifi(self):
+        """
+        RootWidget sınıfını döndürür.
 
-    def root_geri_yukleme_akisi_mixin(self):
-        return self._geri_yukleme_akisi_yoneticisi().mixin_sinifi()
+        Returns:
+            type | None
+        """
+        return self._yukle_sinif()
 
-    def root_durum_mixin(self):
-        return self._durum_yoneticisi().mixin_sinifi()
+    def root_olustur(self, *args, **kwargs):
+        """
+        RootWidget örneği oluşturmaya çalışır.
 
-    def root_kaydirma_mixin(self):
-        return self._kaydirma_yoneticisi().mixin_sinifi()
+        Returns:
+            object | None
+        """
+        cls = self.root_sinifi()
+        if cls is None:
+            return None
 
-    def root_yardimci_mixin(self):
-        return self._yardimci_yoneticisi().mixin_sinifi()
-
-    def root_lazy_imports_mixin(self):
-        return self._bagimlilik_yoneticisi().mixin_sinifi()
+        try:
+            return cls(*args, **kwargs)
+        except Exception:
+            print("[ROOT_YONETICISI] Root örneği oluşturulamadı.")
+            print(traceback.format_exc())
+            return None
