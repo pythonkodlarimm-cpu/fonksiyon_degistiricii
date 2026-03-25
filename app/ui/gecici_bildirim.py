@@ -10,6 +10,7 @@ ROL:
 - Çift dokunma ile hemen kapanır
 - Konuma göre gösterilebilir (alt, orta, üst)
 - Hata durumunda kopyalanabilir detay popup gösterebilir
+- Seçilen dilde kullanıcıya metin gösterebilir
 
 MİMARİ:
 - Sadece görünüm ve animasyon içerir
@@ -17,6 +18,7 @@ MİMARİ:
 - Root içine overlay olarak eklenir
 - Konum ve aksiyon parametreyle dışarıdan yönetilir
 - Hata popup akışı aynı katman içinde güvenli fallback ile çalışır
+- Sabit metinler ServicesYoneticisi -> dil servisi üzerinden çözülebilir
 
 API UYUMLULUK:
 - Doğrudan Android API çağrısı yapmaz
@@ -24,8 +26,8 @@ API UYUMLULUK:
 - Android API 35 ile güvenli kullanılabilir
 - APK / AAB davranış farkını azaltmak için animasyon ve ikon fallback mantığı korunur
 
-SURUM: 6
-TARIH: 2026-03-20
+SURUM: 7
+TARIH: 2026-03-23
 IMZA: FY.
 """
 
@@ -45,6 +47,7 @@ from kivy.uix.label import Label
 from kivy.uix.popup import Popup
 from kivy.uix.scrollview import ScrollView
 
+from app.services.yoneticisi import ServicesYoneticisi
 from app.ui.icon_yardimci import icon_path
 from app.ui.kart import Kart
 from app.ui.tema import TEXT_MUTED, TEXT_PRIMARY
@@ -210,13 +213,15 @@ class GeciciBildirimKatmani(BoxLayout):
       toast yerine detaylı popup açılır
     """
 
-    def __init__(self, **kwargs):
+    def __init__(self, services: ServicesYoneticisi | None = None, **kwargs):
         super().__init__(
             orientation="vertical",
             size_hint=(1, 1),
             padding=(dp(10), dp(10), dp(10), dp(10)),
             **kwargs,
         )
+
+        self.services = services or ServicesYoneticisi()
 
         self._hide_event = None
         self._current_anim = None
@@ -251,6 +256,15 @@ class GeciciBildirimKatmani(BoxLayout):
         self.toast.disabled = True
 
         self._rebuild_anchor("bottom")
+
+    # =========================================================
+    # LANGUAGE
+    # =========================================================
+    def _m(self, anahtar: str, default: str = "") -> str:
+        try:
+            return str(self.services.metin(anahtar, default) or default or anahtar)
+        except Exception:
+            return str(default or anahtar)
 
     # =========================================================
     # INTERNAL
@@ -306,7 +320,7 @@ class GeciciBildirimKatmani(BoxLayout):
         except Exception:
             pass
 
-    def _show_error_popup(self, text: str, title: str = "Hata Oluştu"):
+    def _show_error_popup(self, text: str, title: str = ""):
         popup = None
         try:
             content = BoxLayout(
@@ -316,7 +330,7 @@ class GeciciBildirimKatmani(BoxLayout):
             )
 
             baslik = Label(
-                text=str(title or "Hata Oluştu"),
+                text=str(title or self._m("error_occurred", "Hata Oluştu")),
                 color=(1, 0.42, 0.42, 1),
                 font_size="18sp",
                 bold=True,
@@ -329,7 +343,10 @@ class GeciciBildirimKatmani(BoxLayout):
             content.add_widget(baslik)
 
             alt_baslik = Label(
-                text="Detaylı hata bilgisi aşağıdadır. Kopyalayabilirsiniz.",
+                text=self._m(
+                    "error_detail_copy_hint",
+                    "Detaylı hata bilgisi aşağıdadır. Kopyalayabilirsiniz.",
+                ),
                 color=TEXT_MUTED if TEXT_MUTED else TEXT_PRIMARY,
                 font_size="11sp",
                 size_hint_y=None,
@@ -372,7 +389,7 @@ class GeciciBildirimKatmani(BoxLayout):
             )
 
             copy_btn = Button(
-                text="Kopyala",
+                text=self._m("copy", "Kopyala"),
                 background_normal="",
                 background_down="",
                 background_color=(0.18, 0.42, 0.72, 1),
@@ -380,7 +397,7 @@ class GeciciBildirimKatmani(BoxLayout):
             )
 
             close_btn = Button(
-                text="Kapat",
+                text=self._m("close", "Kapat"),
                 background_normal="",
                 background_down="",
                 background_color=(0.24, 0.24, 0.28, 1),
@@ -433,7 +450,7 @@ class GeciciBildirimKatmani(BoxLayout):
         if temiz_icon in {"error", "warning_error", "hata"}:
             self._show_error_popup(
                 text=str(text or ""),
-                title=str(title or "Hata Oluştu"),
+                title=str(title or self._m("error_occurred", "Hata Oluştu")),
             )
             return
 
