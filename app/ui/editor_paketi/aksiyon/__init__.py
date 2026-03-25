@@ -6,9 +6,22 @@ ROL:
 - Aksiyon yöneticisine lazy erişim sağlar
 - Import yükünü azaltır
 - Circular import riskini minimize eder
+- Aksiyon alt paketini dış dünyaya yalnızca yönetici üzerinden açar
 
-SURUM: 1
-TARIH: 2026-03-19
+MİMARİ:
+- Doğrudan aksiyon fonksiyonları dışa açılmaz
+- Erişim sadece yoneticisi.py üzerinden sağlanır
+- Lazy import ile gereksiz erken yükleme önlenir
+
+KULLANIM:
+from app.ui.editor_paketi.aksiyon import AksiyonYoneticisi
+
+API UYUMLULUK:
+- Platform bağımsızdır
+- Android API 35 ile uyumludur
+
+SURUM: 2
+TARIH: 2026-03-23
 IMZA: FY.
 """
 
