@@ -1,12 +1,27 @@
 # -*- coding: utf-8 -*-
 """
 DOSYA: app/ui/icon_toolbar.py
+
 ROL:
 - Büyük ikonlu, yazısı altta olan sade toolbar bileşenleri
 - Arka plan kutusunu minimumda tutar
 - Mobil görünüm için ikonları belirgin yapar
+- Toolbar buton metnini çalışma anında güncelleyebilmeyi destekler
 
-SURUM: 1
+MİMARİ:
+- Görsel çizim burada tutulur
+- İkon yolu güvenli fallback ile çözülür
+- Buton metni set_text ile dışarıdan güncellenebilir
+- Toolbar yalnızca butonları düzenler, iş akışı taşımaz
+
+API UYUMLULUK:
+- Platform bağımsızdır
+- Android API 35 ile uyumludur
+- Doğrudan Android bridge çağrısı içermez
+
+SURUM: 2
+TARIH: 2026-03-23
+IMZA: FY.
 """
 
 from __future__ import annotations
@@ -21,9 +36,7 @@ from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.image import Image
 from kivy.uix.label import Label
 
-from app.ui.tema import CARD_BG_SOFT
 from app.ui.tema import TEXT_MUTED
-from app.ui.tema import TEXT_PRIMARY
 
 
 def _icon_path(icon_name: str) -> str:
@@ -32,9 +45,9 @@ def _icon_path(icon_name: str) -> str:
     icon_name doğrudan dosya adı olarak verilir.
     """
     adaylar = [
-        Path("icons") / icon_name,
-        Path("app") / "assets" / "icons" / icon_name,
-        Path(icon_name),
+        Path("icons") / str(icon_name or ""),
+        Path("app") / "assets" / "icons" / str(icon_name or ""),
+        Path(str(icon_name or "")),
     ]
 
     for aday in adaylar:
@@ -103,7 +116,7 @@ class IconToolbarButton(ButtonBehavior, BoxLayout):
         self.icon_box.add_widget(self.icon)
 
         self.label = Label(
-            text=text,
+            text=str(text or ""),
             color=color,
             font_size=text_size,
             size_hint_y=None,
@@ -117,6 +130,28 @@ class IconToolbarButton(ButtonBehavior, BoxLayout):
             size=lambda inst, size: setattr(inst, "text_size", (size[0], size[1]))
         )
         self.add_widget(self.label)
+
+    def set_text(self, text: str) -> None:
+        try:
+            self.label.text = str(text or "")
+        except Exception:
+            pass
+
+    def get_text(self) -> str:
+        try:
+            return str(self.label.text or "")
+        except Exception:
+            return ""
+
+    def set_icon(self, icon_name: str) -> None:
+        try:
+            self.icon.source = _icon_path(icon_name)
+            self.icon.reload()
+        except Exception:
+            try:
+                self.icon.source = _icon_path(icon_name)
+            except Exception:
+                pass
 
     def _update_canvas(self, *_args):
         self._bg_rect.pos = self.pos
