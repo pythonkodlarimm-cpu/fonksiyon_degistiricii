@@ -7,19 +7,21 @@ ROL:
 - Menü ikonunu sunmak
 - Ana menü ve yedek popup akışını başlatmak
 - Dil popup akışına giriş için gerekli callback ve servis bağlantısını taşımak
+- Popup açılışlarında services zincirini aşağı katmana iletmek
 
 MİMARİ:
 - Alt modülleri doğrudan import etmez
 - TumDosyaErisimYoneticisi üzerinden erişir
 - Panel yalnızca UI davranışını yönetir
 - Menü popup'a servis ve dil değişim callback'i güvenli şekilde iletilir
+- Yedek popup ve hata popup çağrılarında services parametresi aşağı geçirilir
 
 API UYUMLULUK:
 - Platform bağımsızdır
 - Android API 35 ile uyumludur
 - Doğrudan Android bridge çağrısı içermez
 
-SURUM: 4
+SURUM: 5
 TARIH: 2026-03-23
 IMZA: FY.
 """
@@ -67,6 +69,15 @@ class TumDosyaErisimPaneli(Kart):
         return TumDosyaErisimYoneticisi()
 
     # =========================================================
+    # DIL
+    # =========================================================
+    def _m(self, anahtar: str, default: str = "") -> str:
+        try:
+            return str(self.services.metin(anahtar, default) or default or anahtar)
+        except Exception:
+            return str(default or anahtar)
+
+    # =========================================================
     # DEBUG
     # =========================================================
     def _debug(self, message: str) -> None:
@@ -80,8 +91,8 @@ class TumDosyaErisimPaneli(Kart):
     # =========================================================
     def _build_ui(self):
         try:
-            IconSinifi = self._yonetici().tiklanabilir_icon_sinifi()
-            self.menu_icon = IconSinifi(
+            icon_sinifi = self._yonetici().tiklanabilir_icon_sinifi()
+            self.menu_icon = icon_sinifi(
                 source="app/assets/icons/menu.png",
                 size_hint=(None, None),
                 size=(dp(36), dp(36)),
@@ -142,22 +153,31 @@ class TumDosyaErisimPaneli(Kart):
         except Exception as exc:
             self._debug(f"ana menü açılamadı: {exc}")
             self._yonetici().show_simple_popup(
-                title_text="Menü Hatası",
-                body_text=f"Menü açılamadı:\n{exc}",
+                title_text=self._m("menu_error_title", "Menü Hatası"),
+                body_text=(
+                    f"{self._m('menu_open_failed', 'Menü açılamadı:')}\n{exc}"
+                ),
                 icon_name="warning.png",
                 auto_close_seconds=1.8,
                 compact=True,
+                services=self.services,
             )
 
     def _open_backups_popup(self):
         try:
-            self._yonetici().open_backups_popup(debug=self._debug)
+            self._yonetici().open_backups_popup(
+                debug=self._debug,
+                services=self.services,
+            )
         except Exception as exc:
             self._debug(f"yedek popup açılamadı: {exc}")
             self._yonetici().show_simple_popup(
-                title_text="Yedek Hatası",
-                body_text=f"Yedek ekranı açılamadı:\n{exc}",
+                title_text=self._m("backup_error_title", "Yedek Hatası"),
+                body_text=(
+                    f"{self._m('backup_screen_open_failed', 'Yedek ekranı açılamadı:')}\n{exc}"
+                ),
                 icon_name="warning.png",
                 auto_close_seconds=1.8,
                 compact=True,
-        )
+                services=self.services,
+                )
