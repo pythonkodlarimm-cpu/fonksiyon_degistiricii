@@ -6,19 +6,21 @@ ROL:
 - Editör paneli için yardımcı UI akışlarını toplamak
 - Toast, inline notice, popup kapatma ve durum metni işlemlerini yönetmek
 - Panel üzerinde seçili öğe ve hata satırı gibi ortak yardımcı davranışları sağlamak
+- Aktif dile göre kullanıcıya görünen metinleri üretmek
 
 MİMARİ:
 - Üst katman bu modüle doğrudan değil, yardimci/yoneticisi.py üzerinden erişmelidir
 - Sistem bildirim servisine yönetici üzerinden erişilir
 - Editör panelindeki ortak yardımcı davranışlar burada merkezileştirilir
+- Görünen metinler panel/services üzerinden çözülebilir
 
 API UYUMLULUK:
 - Platform bağımsızdır
 - Android API 35 ile uyumludur
 - Doğrudan Android bridge çağrısı içermez
 
-SURUM: 2
-TARIH: 2026-03-19
+SURUM: 3
+TARIH: 2026-03-23
 IMZA: FY.
 """
 
@@ -28,6 +30,15 @@ from __future__ import annotations
 def _sistem():
     from app.services.sistem import SistemYoneticisi
     return SistemYoneticisi()
+
+
+def _m(panel, anahtar: str, default: str = "") -> str:
+    try:
+        if panel is not None and hasattr(panel, "_m"):
+            return str(panel._m(anahtar, default) or default or anahtar)
+    except Exception:
+        pass
+    return str(default or anahtar)
 
 
 def toast(text: str, icon_name: str = "", duration: float = 2.2) -> None:
@@ -55,15 +66,17 @@ def close_popups(panel) -> None:
 def current_item_display(panel) -> str:
     try:
         if panel.current_item is None:
-            return "Fonksiyon"
+            return _m(panel, "function_generic", "Fonksiyon")
 
         path = str(getattr(panel.current_item, "path", "") or "").strip()
         if path:
             return path
 
-        return str(getattr(panel.current_item, "name", "") or "Fonksiyon")
+        return str(
+            getattr(panel.current_item, "name", "") or _m(panel, "function_generic", "Fonksiyon")
+        )
     except Exception:
-        return "Fonksiyon"
+        return _m(panel, "function_generic", "Fonksiyon")
 
 
 def show_inline_notice(
@@ -89,7 +102,7 @@ def show_inline_notice(
 
 
 def set_status_info(panel, message="", line_no=0):
-    temiz = str(message or "").strip() or "Hazır."
+    temiz = str(message or "").strip() or _m(panel, "app_ready", "Hazır.")
     panel.error_box.set_info(temiz)
 
     try:
@@ -99,7 +112,7 @@ def set_status_info(panel, message="", line_no=0):
 
 
 def set_status_warning(panel, message="", line_no=0):
-    temiz = str(message or "").strip() or "Uyarı."
+    temiz = str(message or "").strip() or _m(panel, "warning", "Uyarı.")
     panel.error_box.set_warning(temiz)
 
     try:
@@ -109,7 +122,7 @@ def set_status_warning(panel, message="", line_no=0):
 
 
 def set_status_error(panel, message="", line_no=0):
-    temiz = str(message or "").strip() or "Hata oluştu."
+    temiz = str(message or "").strip() or _m(panel, "an_error_occurred", "Hata oluştu.")
     panel.error_box.set_error(temiz)
 
     try:
@@ -119,7 +132,7 @@ def set_status_error(panel, message="", line_no=0):
 
 
 def set_status_success(panel, message="", line_no=0):
-    temiz = str(message or "").strip() or "Doğrulama doğru."
+    temiz = str(message or "").strip() or _m(panel, "validation_correct", "Doğrulama doğru.")
     panel.error_box.set_success(temiz, pulse_seconds=6.0)
 
     try:
