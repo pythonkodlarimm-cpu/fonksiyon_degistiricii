@@ -1,4 +1,30 @@
 # -*- coding: utf-8 -*-
+"""
+DOSYA: app/ui/fonksiyon_listesi_paketi/render_akisi/__init__.py
+
+ROL:
+- Render akışı yöneticisine lazy erişim sağlar
+- Import yükünü azaltır
+- Circular import riskini minimize eder
+- Render akışı alt paketini dış dünyaya yalnızca yönetici üzerinden açar
+
+MİMARİ:
+- Doğrudan render_akisi modülü dışa açılmaz
+- Erişim sadece yoneticisi.py üzerinden sağlanır
+- Lazy import ile gereksiz erken yükleme önlenir
+
+KULLANIM:
+from app.ui.fonksiyon_listesi_paketi.render_akisi import RenderAkisiYoneticisi
+
+API UYUMLULUK:
+- Platform bağımsızdır
+- Android API 35 ile uyumludur
+
+SURUM: 2
+TARIH: 2026-03-23
+IMZA: FY.
+"""
+
 from __future__ import annotations
 
 from typing import Any
