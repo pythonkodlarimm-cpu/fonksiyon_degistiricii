@@ -7,19 +7,22 @@ ROL:
 - Alt paket yöneticilerini merkezileştirmek
 - Üst katmanın iç modül detaylarını bilmesini engellemek
 - Menü popup üzerinden dil seçimi akışına gerekli bağımlılıkları iletmek
+- Popup katmanına services bağımlılığını kontrollü biçimde aktarmak
 
 MİMARİ:
 - Üst katman sadece bu yöneticiyi bilir
 - Alt paketlere lazy import ile erişir
 - Panel, popup, yedek ve ortak akışları burada toplanır
 - Dil popup akışı popup yöneticisi üzerinden zincir halinde aktarılır
+- Basit popup, onay popup, indirme sonuç popup, yedek görüntüleme popup
+  ve yedekler popup çağrılarında services parametresi aşağı geçirilebilir
 
 API UYUMLULUK:
 - Platform bağımsızdır
 - Android API 35 ile uyumludur
 - Doğrudan Android bridge çağrısı içermez
 
-SURUM: 4
+SURUM: 6
 TARIH: 2026-03-23
 IMZA: FY.
 """
@@ -74,6 +77,7 @@ class TumDosyaErisimYoneticisi:
         icon_name: str = "onaylandi.png",
         auto_close_seconds: float | None = 1.8,
         compact: bool = True,
+        services=None,
     ):
         return self._popups_yoneticisi().show_simple_popup(
             title_text=title_text,
@@ -81,6 +85,7 @@ class TumDosyaErisimYoneticisi:
             icon_name=icon_name,
             auto_close_seconds=auto_close_seconds,
             compact=compact,
+            services=services,
         )
 
     def open_main_menu(
@@ -101,22 +106,26 @@ class TumDosyaErisimYoneticisi:
         body_text: str,
         on_confirm,
         confirm_icon: str = "delete.png",
+        services=None,
     ):
         return self._popups_yoneticisi().show_confirm_popup(
             title_text=title_text,
             body_text=body_text,
             on_confirm=on_confirm,
             confirm_icon=confirm_icon,
+            services=services,
         )
 
     def show_download_result_popup(
         self,
         saved_path,
         selected_by_user: bool = False,
+        services=None,
     ):
         return self._popups_yoneticisi().show_download_result_popup(
             saved_path=saved_path,
             selected_by_user=selected_by_user,
+            services=services,
         )
 
     def silme_durum_popup_sinifi(self):
@@ -124,23 +133,31 @@ class TumDosyaErisimYoneticisi:
 
     def silme_durum_popup_olustur(
         self,
-        title_text="Silme İşlemi",
-        body_text="Silme işlemi başlatılıyor...",
-        success_text="Silme tamamlandı.",
-        icon_name="onaylandi.png",
+        title_text: str = "Silme İşlemi",
+        body_text: str = "Silme işlemi başlatılıyor...",
+        success_text: str = "Silme tamamlandı.",
+        icon_name: str = "onaylandi.png",
+        services=None,
     ):
         return self._popups_yoneticisi().silme_durum_popup_olustur(
             title_text=title_text,
             body_text=body_text,
             success_text=success_text,
             icon_name=icon_name,
+            services=services,
         )
 
-    def open_backup_view_popup(self, yedek):
-        return self._popups_yoneticisi().open_backup_view_popup(yedek)
+    def open_backup_view_popup(self, yedek, services=None):
+        return self._popups_yoneticisi().open_backup_view_popup(
+            yedek=yedek,
+            services=services,
+        )
 
-    def open_backups_popup(self, debug=None):
-        return self._popups_yoneticisi().open_backups_popup(debug=debug)
+    def open_backups_popup(self, debug=None, services=None):
+        return self._popups_yoneticisi().open_backups_popup(
+            debug=debug,
+            services=services,
+        )
 
     # =========================================================
     # YEDEK
@@ -183,9 +200,9 @@ class TumDosyaErisimYoneticisi:
     def start_icon_glow(
         self,
         widget,
-        size_small_dp=36,
-        size_big_dp=40,
-        duration=0.60,
+        size_small_dp: float = 36,
+        size_big_dp: float = 40,
+        duration: float = 0.60,
     ):
         return self._ortak_yoneticisi().start_icon_glow(
             widget=widget,
