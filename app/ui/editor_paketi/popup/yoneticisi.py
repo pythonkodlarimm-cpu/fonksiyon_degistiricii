@@ -6,19 +6,22 @@ ROL:
 - Popup alt paketine tek giriş noktası sağlamak
 - Editör popup akışını merkezileştirmek
 - Üst katmanın popup modülü detaylarını bilmesini engellemek
+- Popup metinlerinin seçili dile göre çalışacağı akışı korumak
 
 MİMARİ:
 - Üst katman sadece bu yöneticiyi bilir
 - Alt popup modülü doğrudan dışarı açılmaz
 - Mevcut kod ve yeni kod düzenleme popup akışları burada toplanır
+- Popup içerikleri editor_popuplari.py içinde tutulur
+- Lazy import korunur
 
 API UYUMLULUK:
 - Platform bağımsızdır
 - Android API 35 ile uyumludur
 - Doğrudan Android bridge çağrısı içermez
 
-SURUM: 1
-TARIH: 2026-03-19
+SURUM: 2
+TARIH: 2026-03-23
 IMZA: FY.
 """
 
