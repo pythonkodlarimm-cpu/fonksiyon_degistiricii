@@ -27,7 +27,7 @@ APK / ANDROID UYUMLULUK:
 - API 35 ile güvenli kullanılabilir
 - APK / AAB davranış farkını azaltmak için görsel fallback mantığı korunmuştur
 
-SURUM: 10
+SURUM: 11
 TARIH: 2026-03-23
 IMZA: FY.
 """
@@ -98,6 +98,7 @@ class DurumCubugu(ButtonBehavior, Kart):
         self._action_visible = False
         self._action_pulse_anim = None
         self._action_tone = "info"
+        self._last_status_kind = "info"
 
         self.icon = Image(
             source="",
@@ -156,27 +157,21 @@ class DurumCubugu(ButtonBehavior, Kart):
             self._popup_title = "Hata Detayı"
 
         try:
-            mevcut = str(self.label.text or "").strip()
-            if not mevcut or mevcut in {
-                "Hazır",
-                "Hazır.",
-                "Ready",
-                "Ready.",
-                "Bereit",
-                "Bereit.",
-            }:
+            if self._last_status_kind == "ready":
                 self.label.text = self._m("app_ready", "Hazır.")
+            elif self._last_status_kind == "success" and not str(self.label.text or "").strip():
+                self.label.text = self._m("processing_successful", "İşlem başarılı")
+            elif self._last_status_kind == "warning" and not str(self.label.text or "").strip():
+                self.label.text = self._m("warning", "Uyarı")
+            elif self._last_status_kind == "error" and not str(self.label.text or "").strip():
+                self.label.text = self._m("an_error_occurred", "Bir hata oluştu")
         except Exception:
             pass
 
         try:
             if self._action_visible and self.action_button is not None:
                 mevcut_buton = str(self.action_button.text or "").strip()
-                if mevcut_buton in {
-                    "Devam Et",
-                    "Continue",
-                    "Weiter",
-                }:
+                if not mevcut_buton:
                     self.action_button.text = self._m("continue", "Devam Et")
         except Exception:
             pass
@@ -491,6 +486,7 @@ class DurumCubugu(ButtonBehavior, Kart):
     # PUBLIC API
     # =========================================================
     def set_status(self, text: str, icon_name: str = "") -> None:
+        self._last_status_kind = "info"
         self._clear_detailed_error()
         self._hide_action_button()
         self.label.text = self._safe_text(text, " ")
@@ -498,9 +494,11 @@ class DurumCubugu(ButtonBehavior, Kart):
         self._apply_info_style()
 
     def set_ready(self) -> None:
+        self._last_status_kind = "ready"
         self.set_status(self._m("app_ready", "Hazır."))
 
     def set_success(self, text: str = "") -> None:
+        self._last_status_kind = "success"
         self._clear_detailed_error()
         self._hide_action_button()
         self.label.text = self._safe_text(
@@ -511,6 +509,7 @@ class DurumCubugu(ButtonBehavior, Kart):
         self._apply_success_style()
 
     def set_warning(self, text: str = "") -> None:
+        self._last_status_kind = "warning"
         self._clear_detailed_error()
         self._hide_action_button()
         self.label.text = self._safe_text(
@@ -526,6 +525,7 @@ class DurumCubugu(ButtonBehavior, Kart):
         detailed_text: str = "",
         popup_title: str = "",
     ) -> None:
+        self._last_status_kind = "error"
         self._hide_action_button()
         self.label.text = self._safe_text(
             text,
@@ -557,6 +557,7 @@ class DurumCubugu(ButtonBehavior, Kart):
         güncelleme akışında 'Güncelle' gibi CTA'lar için kullanılır.
         """
         secili_ton = str(tone or "success").strip().lower() or "success"
+        self._last_status_kind = f"action:{secili_ton}"
 
         self._clear_detailed_error()
         self.label.text = self._safe_text(text, " ")
