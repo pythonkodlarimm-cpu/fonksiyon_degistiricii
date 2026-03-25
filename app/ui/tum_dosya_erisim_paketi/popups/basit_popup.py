@@ -6,14 +6,23 @@ ROL:
 - Küçük ve sade bilgi popup'ları göstermek
 - Başarı / bilgi / hata mesajlarını kısa ve okunaklı biçimde sunmak
 - İstenirse otomatik kapanmak
+- Görünen metinlerde services tabanlı dil desteğine hazır olmak
 
 MİMARİ:
-- Doğrudan bilesen import etmez
-- Ortak yonetici üzerinden erişir
+- Doğrudan bileşen import etmez
+- Ortak yönetici üzerinden erişir
 - UI bağımlılıkları minimize edilmiştir
+- services verilirse metinler dil servisi üzerinden alınabilir
+- services verilmezse güvenli fallback ile çalışır
+- Hardcoded kullanıcı metni bırakılmaz
 
-SURUM: 3
-TARIH: 2026-03-19
+API UYUMLULUK:
+- Platform bağımsızdır
+- Android API 35 ile uyumludur
+- Doğrudan Android bridge çağrısı içermez
+
+SURUM: 5
+TARIH: 2026-03-23
 IMZA: FY.
 """
 
@@ -38,15 +47,27 @@ def _tiklanabilir_icon():
         return None
 
 
+def _m(services, anahtar: str, default: str = "") -> str:
+    try:
+        if services is not None:
+            return str(services.metin(anahtar, default) or default or anahtar)
+    except Exception:
+        pass
+    return str(default or anahtar)
+
+
 def show_simple_popup(
     title_text: str,
     body_text: str,
     icon_name: str = "onaylandi.png",
     auto_close_seconds: float | None = 1.8,
     compact: bool = True,
+    services=None,
 ):
     """
     Küçük, sade popup gösterir.
+    title_text veya body_text dışarıdan doğrudan verilir.
+    services parametresi sabit metinlerde dil desteği için kullanılır.
     """
 
     content = BoxLayout(
@@ -55,9 +76,6 @@ def show_simple_popup(
         spacing=dp(10),
     )
 
-    # =========================================================
-    # ICON
-    # =========================================================
     icon_row = BoxLayout(
         orientation="horizontal",
         size_hint_y=None,
@@ -67,7 +85,7 @@ def show_simple_popup(
 
     IconClass = _tiklanabilir_icon()
 
-    if IconClass:
+    if IconClass is not None:
         try:
             icon = IconClass(
                 source=f"app/assets/icons/{icon_name}",
@@ -85,11 +103,8 @@ def show_simple_popup(
     icon_row.add_widget(Label(size_hint_x=1))
     content.add_widget(icon_row)
 
-    # =========================================================
-    # TITLE
-    # =========================================================
     title = Label(
-        text=str(title_text or ""),
+        text=str(title_text or _m(services, "notification", "Bildirim")),
         color=TEXT_PRIMARY,
         font_size="16sp",
         bold=True,
@@ -101,9 +116,6 @@ def show_simple_popup(
     title.bind(size=lambda inst, size: setattr(inst, "text_size", size))
     content.add_widget(title)
 
-    # =========================================================
-    # BODY
-    # =========================================================
     body = Label(
         text=str(body_text or ""),
         color=TEXT_MUTED if TEXT_MUTED else TEXT_PRIMARY,
@@ -114,9 +126,6 @@ def show_simple_popup(
     body.bind(size=lambda inst, size: setattr(inst, "text_size", (size[0], None)))
     content.add_widget(body)
 
-    # =========================================================
-    # POPUP
-    # =========================================================
     popup = Popup(
         title="",
         content=content,
@@ -126,9 +135,6 @@ def show_simple_popup(
         separator_height=0,
     )
 
-    # =========================================================
-    # AUTO CLOSE
-    # =========================================================
     if auto_close_seconds is not None:
 
         def _close(*_args):
