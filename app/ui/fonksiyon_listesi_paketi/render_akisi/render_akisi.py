@@ -1,6 +1,30 @@
 # -*- coding: utf-8 -*-
 """
 DOSYA: app/ui/fonksiyon_listesi_paketi/render_akisi/render_akisi.py
+
+ROL:
+- Fonksiyon listesi panelinin render akışını yönetmek
+- Boş liste etiketi üretmek
+- Satırları güvenli biçimde oluşturup listeye basmak
+- Render sonrası görünüm ve scroll tazelemesini yürütmek
+- Seçili öğeyi görünür tutmak
+- Aktif dile göre görünür metinleri üretmek
+
+MİMARİ:
+- Render akışı burada tutulur
+- Üst katman bu modüle doğrudan değil, render_akisi/yoneticisi.py üzerinden erişmelidir
+- Satır üretimi doğrudan sınıf çağrısı ile değil, satır yöneticisi üzerinden yapılır
+- Görünen metinler owner._m(...) üzerinden çözülür
+- Fail-soft yaklaşım korunur
+
+API UYUMLULUK:
+- Platform bağımsızdır
+- Android API 35 ile uyumludur
+- Doğrudan Android bridge çağrısı içermez
+
+SURUM: 3
+TARIH: 2026-03-24
+IMZA: FY.
 """
 
 from __future__ import annotations
@@ -12,7 +36,7 @@ from kivy.uix.label import Label
 
 def make_empty_label(owner) -> Label:
     bos = Label(
-        text="Gösterilecek fonksiyon yok.",
+        text=owner._m("function_list_empty", "Gösterilecek fonksiyon yok."),
         size_hint_y=None,
         height=dp(56),
         halign="left",
@@ -24,7 +48,7 @@ def make_empty_label(owner) -> Label:
         size=lambda inst, size: setattr(
             inst,
             "text_size",
-            (size[0] - dp(8), size[1]),
+            (max(0, size[0] - dp(8)), size[1]),
         )
     )
     return bos
@@ -59,43 +83,79 @@ def refresh_trigger(owner, *_args):
 
 
 def render_items(owner, items, keep_scroll: bool = False) -> None:
-    print("_render_items CALISTI =", len(items))
+    try:
+        print("_render_items CALISTI =", len(list(items or [])))
+    except Exception:
+        pass
 
     owner.clear_items()
     count = 0
 
-    SatirSinifi = owner._satir_yoneticisi.satir_sinifi()
-    print("SATIR SINIFI =", SatirSinifi)
+    for item in list(items or []):
+        try:
+            count += 1
 
-    for item in items:
-        count += 1
-        is_selected = (
-            owner.selected_item is not None
-            and owner._item_key(item) == owner._item_key(owner.selected_item)
-        )
+            is_selected = (
+                owner.selected_item is not None
+                and owner._item_key(item) == owner._item_key(owner.selected_item)
+            )
 
-        row = SatirSinifi(
-            item=item,
-            on_press_row=owner._select,
-            on_error=owner._report_error,
-            is_selected=is_selected,
-        )
-        owner.container.add_widget(row)
+            row = owner._satir_yoneticisi.satir_olustur(
+                item=item,
+                on_press_row=owner._select,
+                on_error=owner._report_error,
+                is_selected=is_selected,
+                services=getattr(owner, "services", None),
+            )
 
-    if count == 0:
-        owner.container.add_widget(owner._render_akisi_yoneticisi.make_empty_label(owner))
+            if row is not None and owner.container is not None:
+                owner.container.add_widget(row)
+        except Exception as exc:
+            try:
+                owner._report_error(
+                    exc,
+                    title=owner._m(
+                        "function_list_render_error",
+                        "Fonksiyon Listesi Render Hatası",
+                    ),
+                )
+            except Exception:
+                pass
+
+    if count == 0 and owner.container is not None:
+        try:
+            owner.container.add_widget(
+                owner._render_akisi_yoneticisi.make_empty_label(owner)
+            )
+        except Exception:
+            pass
 
     try:
-        owner.container.height = max(owner.container.minimum_height, dp(1))
+        if owner.container is not None:
+            owner.container.height = max(owner.container.minimum_height, dp(1))
     except Exception:
         pass
 
-    toplam = len(owner.all_items)
-    if owner.count_label is not None:
-        owner.count_label.text = f"{count} / {toplam}"
+    try:
+        owner._refresh_count_label()
+    except Exception:
+        try:
+            toplam = len(owner.all_items or [])
+            if owner.count_label is not None:
+                text_value = owner._m(
+                    "function_count_filtered",
+                    "{filtered} / {total} fonksiyon",
+                )
+                owner.count_label.text = (
+                    text_value.replace("{filtered}", str(count))
+                    .replace("{total}", str(toplam))
+                )
+        except Exception:
+            pass
 
     try:
-        owner.container.do_layout()
+        if owner.container is not None:
+            owner.container.do_layout()
     except Exception:
         pass
 
@@ -110,13 +170,19 @@ def render_items(owner, items, keep_scroll: bool = False) -> None:
     except Exception:
         pass
 
-    if keep_scroll and owner.selected_item is not None:
-        Clock.schedule_once(owner._selected_itemi_gorunur_tut, 0)
-    else:
-        Clock.schedule_once(owner._scroll_top, 0)
+    try:
+        if keep_scroll and owner.selected_item is not None:
+            Clock.schedule_once(owner._selected_itemi_gorunur_tut, 0)
+        else:
+            Clock.schedule_once(owner._scroll_top, 0)
+    except Exception:
+        pass
 
-    Clock.schedule_once(owner._refresh_trigger, 0)
-    Clock.schedule_once(owner._refresh_trigger, 0.05)
+    try:
+        Clock.schedule_once(owner._refresh_trigger, 0)
+        Clock.schedule_once(owner._refresh_trigger, 0.05)
+    except Exception:
+        pass
 
 
 def scroll_top(owner, *_args):
@@ -124,7 +190,16 @@ def scroll_top(owner, *_args):
         if owner.scroll is not None:
             owner.scroll.scroll_y = 1
     except Exception as exc:
-        owner._report_error(exc, title="Fonksiyon Listesi Scroll Hatası")
+        try:
+            owner._report_error(
+                exc,
+                title=owner._m(
+                    "function_list_scroll_error",
+                    "Fonksiyon Listesi Scroll Hatası",
+                ),
+            )
+        except Exception:
+            pass
 
 
 def selected_itemi_gorunur_tut(owner, *_args):
@@ -140,9 +215,12 @@ def selected_itemi_gorunur_tut(owner, *_args):
         hedef_key = owner._item_key(owner.selected_item)
 
         for i, item in enumerate(owner.filtered_items):
-            if owner._item_key(item) == hedef_key:
-                hedef_index = i
-                break
+            try:
+                if owner._item_key(item) == hedef_key:
+                    hedef_index = i
+                    break
+            except Exception:
+                continue
 
         if hedef_index < 0:
             owner.scroll.scroll_y = 1
