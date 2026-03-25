@@ -10,16 +10,19 @@ ROL:
 
 MİMARİ:
 - Doğrudan ortak bileşen import etmez
-- Ortak yonetici üzerinden erişir
+- Ortak yönetici üzerinden erişir
 - Dil popup akışını kendi yöneticisi üzerinden açar
 - Popup sadece UI akışını yönetir
+- Görünen metinler services üzerinden alınabilir
+- Services verilmezse güvenli fallback ile çalışır
+- Hardcoded kullanıcı metni bırakılmaz
 
 API UYUMLULUK:
 - Platform bağımsızdır
 - Android API 35 ile uyumludur
 - Doğrudan Android bridge çağrısı içermez
 
-SURUM: 5
+SURUM: 7
 TARIH: 2026-03-23
 IMZA: FY.
 """
@@ -33,7 +36,7 @@ from kivy.uix.popup import Popup
 
 from app.services.yoneticisi import ServicesYoneticisi
 from app.ui.dil_paketi.popup.yoneticisi import DilPopupYoneticisi
-from app.ui.tema import TEXT_PRIMARY
+from app.ui.tema import TEXT_MUTED, TEXT_PRIMARY
 from app.ui.tum_dosya_erisim_paketi.ortak.yoneticisi import (
     TumDosyaErisimOrtakYoneticisi,
 )
@@ -43,7 +46,7 @@ def _ortak_yonetici():
     return TumDosyaErisimOrtakYoneticisi()
 
 
-def _services():
+def _varsayilan_services():
     return ServicesYoneticisi()
 
 
@@ -62,11 +65,13 @@ def _animated_separator_widget():
         return None
 
 
-def _m(anahtar: str, default: str = "") -> str:
+def _m(services, anahtar: str, default: str = "") -> str:
     try:
-        return str(_services().metin(anahtar, default) or default or anahtar)
+        if services is not None:
+            return str(services.metin(anahtar, default) or default or anahtar)
     except Exception:
-        return str(default or anahtar)
+        pass
+    return str(default or anahtar)
 
 
 def _ikonlu_aksiyon_karti(
@@ -79,6 +84,7 @@ def _ikonlu_aksiyon_karti(
     wrap = BoxLayout(
         orientation="vertical",
         spacing=dp(6),
+        size_hint_x=1,
     )
 
     if IconClass is not None:
@@ -91,9 +97,19 @@ def _ikonlu_aksiyon_karti(
                 keep_ratio=True,
             )
         except Exception:
-            btn = Label(size_hint=(None, None), size=(dp(58), dp(58)))
+            btn = Label(
+                text="•",
+                size_hint=(None, None),
+                size=(dp(58), dp(58)),
+                color=TEXT_PRIMARY,
+            )
     else:
-        btn = Label(size_hint=(None, None), size=(dp(58), dp(58)))
+        btn = Label(
+            text="•",
+            size_hint=(None, None),
+            size=(dp(58), dp(58)),
+            color=TEXT_PRIMARY,
+        )
 
     lbl = Label(
         text=str(text or ""),
@@ -101,6 +117,8 @@ def _ikonlu_aksiyon_karti(
         font_size="12sp",
         halign="center",
         valign="middle",
+        size_hint_y=None,
+        height=dp(32),
     )
     lbl.bind(size=lambda inst, size: setattr(inst, "text_size", (size[0], None)))
 
@@ -128,7 +146,7 @@ def open_main_menu(
     on_language_changed=None,
     services=None,
 ):
-    servisler = services or _services()
+    servisler = services or _varsayilan_services()
 
     content = BoxLayout(
         orientation="vertical",
@@ -137,7 +155,7 @@ def open_main_menu(
     )
 
     title = Label(
-        text=_m("settings", "Menü İşlemleri"),
+        text=_m(servisler, "settings", "Ayarlar"),
         color=TEXT_PRIMARY,
         font_size="19sp",
         bold=True,
@@ -149,6 +167,18 @@ def open_main_menu(
     title.bind(size=lambda inst, size: setattr(inst, "text_size", size))
     content.add_widget(title)
 
+    subtitle = Label(
+        text=_m(servisler, "menu_subtitle", "İşlem seçin"),
+        color=TEXT_MUTED,
+        font_size="11sp",
+        size_hint_y=None,
+        height=dp(18),
+        halign="center",
+        valign="middle",
+    )
+    subtitle.bind(size=lambda inst, size: setattr(inst, "text_size", size))
+    content.add_widget(subtitle)
+
     separator = _animated_separator_widget()
     if separator is not None:
         content.add_widget(separator)
@@ -156,7 +186,7 @@ def open_main_menu(
     buttons = BoxLayout(
         orientation="horizontal",
         size_hint_y=None,
-        height=dp(100),
+        height=dp(108),
         spacing=dp(18),
     )
 
@@ -164,7 +194,7 @@ def open_main_menu(
         title="",
         content=content,
         size_hint=(0.92, None),
-        height=dp(220),
+        height=dp(240),
         auto_dismiss=True,
         separator_height=0,
     )
@@ -195,25 +225,21 @@ def open_main_menu(
         except Exception:
             pass
 
-    buttons.add_widget(Label(size_hint_x=1))
-
-    buttons.add_widget(
-        _ikonlu_aksiyon_karti(
-            icon_source="app/assets/icons/yedeklenen_dosyalar.png",
-            text="Yedeklenen Dosyalar",
-            on_release=_open_backups,
-        )
-    )
-
     buttons.add_widget(
         _ikonlu_aksiyon_karti(
             icon_source="app/assets/icons/dil.png",
-            text=servisler.metin("language", "Dil"),
+            text=_m(servisler, "language", "Dil"),
             on_release=_open_language_popup,
         )
     )
 
-    buttons.add_widget(Label(size_hint_x=1))
+    buttons.add_widget(
+        _ikonlu_aksiyon_karti(
+            icon_source="app/assets/icons/yedeklenen_dosyalar.png",
+            text=_m(servisler, "backup_files", "Yedeklenen Dosyalar"),
+            on_release=_open_backups,
+        )
+    )
 
     content.add_widget(buttons)
 
