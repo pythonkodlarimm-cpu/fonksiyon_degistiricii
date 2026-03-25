@@ -3,36 +3,57 @@
 DOSYA: app/ui/root_paketi/__init__.py
 
 ROL:
-- root_paketi için dışa açık API sağlar
-- RootPaketiYoneticisi ve RootWidget erişimini tek noktadan verir
-- Lazy import ile bağımlılıkları geciktirir
+- root_paketi paketinin dışa açılan ana giriş noktasıdır
+- RootWidget ve RootYoneticisi sınıflarını lazy import ile erişilebilir kılar
+- İlk erişimden sonra import sonucunu cache içinde tutar
+- Paket import edildiğinde alt modülleri gereksiz yere yüklemez
 
-SURUM: 1
-TARIH: 2026-03-20
+MİMARİ:
+- __getattr__ ile attribute bazlı lazy load uygulanır
+- İlk yüklenen nesne globals() içine yazılarak cache'lenir
+- Sonraki erişimlerde tekrar import yapılmaz
+- __all__ ile public API sabit tutulur
+- APK/build sürecinde gereksiz import yükünü azaltır
+- Gerçek klasör yapısı root/root.py olacak şekilde düzenlenmiştir
+
+KULLANIM:
+- from app.ui.root_paketi import RootWidget
+- from app.ui.root_paketi import RootYoneticisi
+
+SURUM: 3
+TARIH: 2026-03-24
 IMZA: FY.
 """
 
 from __future__ import annotations
 
-from typing import Any
-
-__all__ = [
-    "RootPaketiYoneticisi",
-    "RootWidget",
-]
+__all__ = ["RootWidget", "RootYoneticisi"]
 
 
-def __getattr__(name: str) -> Any:
-    if name == "RootPaketiYoneticisi":
-        from app.ui.root_paketi.yoneticisi import RootPaketiYoneticisi
-        return RootPaketiYoneticisi
+def __getattr__(name: str):
+    """
+    Lazy import + cache mekanizması.
 
+    İstenen attribute ilk kez erişildiğinde ilgili modül yüklenir.
+    Yüklenen nesne globals() içine yazılarak cache'lenir.
+    """
     if name == "RootWidget":
-        from app.ui.root_paketi.root.root import RootWidget
+        from .root.root import RootWidget
+
+        globals()["RootWidget"] = RootWidget
         return RootWidget
 
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    if name == "RootYoneticisi":
+        from .yoneticisi import RootYoneticisi
+
+        globals()["RootYoneticisi"] = RootYoneticisi
+        return RootYoneticisi
+
+    raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
 
 
-def __dir__() -> list[str]:
-    return sorted(__all__)
+def __dir__():
+    """
+    IDE / introspection tarafında public API görünürlüğünü korur.
+    """
+    return sorted(set(globals().keys()) | set(__all__))
