@@ -32,7 +32,7 @@ API UYUMLULUK:
 - API 35 uyumludur
 - Çoklu otomatik tetikleme kaldırılmıştır, tek güvenli tetikleme korunur
 
-SURUM: 38
+SURUM: 40
 TARIH: 2026-03-23
 IMZA: FY.
 """
@@ -137,39 +137,35 @@ class DosyaSecici(Kart):
     def apply_language(self) -> None:
         try:
             if self.header is not None:
+                yeni_baslik = self._m("file_document_title", "Belge / Kod Dosyası")
                 if hasattr(self.header, "set_text") and callable(self.header.set_text):
-                    self.header.set_text(
-                        self._m("file_document_title", "Belge / Kod Dosyası")
-                    )
+                    self.header.set_text(yeni_baslik)
                 elif hasattr(self.header, "text"):
-                    self.header.text = self._m(
-                        "file_document_title",
-                        "Belge / Kod Dosyası",
-                    )
+                    self.header.text = yeni_baslik
         except Exception:
             pass
 
         try:
             if self.select_tool is not None:
+                yeni_metin = self._m("select_file", "Dosya Seç")
                 if hasattr(self.select_tool, "set_text") and callable(
                     self.select_tool.set_text
                 ):
-                    self.select_tool.set_text(
-                        self._m("select_file", "Dosya Seç")
-                    )
+                    self.select_tool.set_text(yeni_metin)
                 elif hasattr(self.select_tool, "text"):
-                    self.select_tool.text = self._m("select_file", "Dosya Seç")
+                    self.select_tool.text = yeni_metin
         except Exception:
             pass
 
         try:
             if self.test_tool is not None:
+                yeni_test_metni = self._m("test", "Test")
                 if hasattr(self.test_tool, "set_text") and callable(
                     self.test_tool.set_text
                 ):
-                    self.test_tool.set_text(self._m("test", "Test"))
+                    self.test_tool.set_text(yeni_test_metni)
                 elif hasattr(self.test_tool, "text"):
-                    self.test_tool.text = self._m("test", "Test")
+                    self.test_tool.text = yeni_test_metni
         except Exception:
             pass
 
@@ -329,7 +325,10 @@ class DosyaSecici(Kart):
     def _show_scan_error_popup(self, message: str) -> None:
         self._show_info_popup(
             self._m("scan_error_title", "Tarama Hatası"),
-            str(message or self._m("scan_error_message", "Tarama sırasında hata oluştu.")),
+            str(
+                message
+                or self._m("scan_error_message", "Tarama sırasında hata oluştu.")
+            ),
         )
 
     # =========================================================
