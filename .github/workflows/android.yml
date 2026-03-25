@@ -652,9 +652,9 @@ jobs:
           temiz = []
           gorulen = set()
           for line in secilen:
-            if line and line not in gorulen:
-              gorulen.add(line)
-              temiz.append(line)
+              if line and line not in gorulen:
+                  gorulen.add(line)
+                  temiz.append(line)
 
           bolumler = []
 
