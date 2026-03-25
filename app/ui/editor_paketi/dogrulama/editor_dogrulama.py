@@ -4,23 +4,23 @@ DOSYA: app/ui/editor_paketi/dogrulama/editor_dogrulama.py
 
 ROL:
 - Yeni fonksiyon kodunu normalize etmek
-- Fonksiyon gövdesinin temel sözdizimi doğrulamasını yapmak
-- Tek fonksiyon kuralını kontrol etmek
-- Hata satırı bilgisini çıkarmak
+- İlk anlamlı satır ve tam fonksiyon görünümünü kontrol etmek
+- AST ile sözdizimi ve yapı doğrulaması yapmak
+- Doğrulama sonucunu UI katmanının çevirebileceği anahtarlarla döndürmek
 
 MİMARİ:
-- Saf doğrulama yardımcıları içerir
-- Üst katman doğrudan bu modüle değil, dogrulama/yoneticisi.py üzerinden erişmelidir
-- Platform bağımsızdır
-- Editör aksiyon akışına temel doğrulama desteği sağlar
+- Bu katman kullanıcı dili üretmez
+- Kullanıcıya gösterilecek nihai metin UI katmanında çözülmelidir
+- Low-level doğrulama bu dosyada sade ve platform bağımsız kalır
+- Fail-soft yaklaşımı korunur
 
 API UYUMLULUK:
 - Platform bağımsızdır
 - Android API 35 ile uyumludur
 - Doğrudan Android bridge çağrısı içermez
 
-SURUM: 2
-TARIH: 2026-03-19
+SURUM: 4
+TARIH: 2026-03-23
 IMZA: FY.
 """
 
@@ -29,41 +29,70 @@ from __future__ import annotations
 import ast
 
 
-def normalize_code_text(text, trim_outer_blank_lines=False) -> str:
-    metin = str(text or "").replace("\r\n", "\n").replace("\r", "\n").replace("\t", "    ")
+# =========================================================
+# NORMALIZE
+# =========================================================
+def normalize_code_text(text, trim_outer_blank_lines: bool = False) -> str:
+    metin = str(text or "")
+    metin = metin.replace("\r\n", "\n").replace("\r", "\n").replace("\t", "    ")
 
     if trim_outer_blank_lines:
         satirlar = metin.split("\n")
+
         while satirlar and not satirlar[0].strip():
             satirlar.pop(0)
+
         while satirlar and not satirlar[-1].strip():
             satirlar.pop()
+
         metin = "\n".join(satirlar)
 
     return metin
 
 
+# =========================================================
+# ANALIZ
+# =========================================================
 def first_meaningful_line(text: str) -> str:
     for line in normalize_code_text(text, trim_outer_blank_lines=True).split("\n"):
         satir = line.strip()
-        if satir and not satir.startswith("#"):
-            return satir
+
+        if not satir:
+            continue
+
+        if satir.startswith("#"):
+            continue
+
+        return satir
+
     return ""
 
 
 def looks_like_full_function(text: str) -> bool:
     line = first_meaningful_line(text)
+
+    if line.startswith("@"):
+        return True
+
     return line.startswith("def ") or line.startswith("async def ")
 
 
+# =========================================================
+# AST KONTROL
+# =========================================================
 def basic_parse_check(text: str) -> None:
     mod = ast.parse(text)
 
-    if len(mod.body) != 1:
-        raise ValueError("Yeni kod tam olarak tek bir fonksiyon içermelidir.")
+    if not mod.body:
+        raise ValueError("validation_error_code_empty")
 
-    if not isinstance(mod.body[0], (ast.FunctionDef, ast.AsyncFunctionDef)):
-        raise ValueError("Yeni kod yalnızca tek bir def veya async def içermelidir.")
+    if len(mod.body) != 1:
+        raise ValueError("validation_error_single_function_required")
+
+    node = mod.body[0]
+
+    if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        raise ValueError("validation_error_only_def_allowed")
 
 
 def extract_line_number(exc) -> int:
@@ -75,29 +104,43 @@ def extract_line_number(exc) -> int:
     return 0
 
 
+# =========================================================
+# ANA VALIDATE
+# =========================================================
 def validate_new_code(text: str) -> tuple[bool, str, int]:
     yeni = normalize_code_text(text, trim_outer_blank_lines=True)
 
     if not yeni.strip():
-        return False, "Yeni kod alanı boş bırakılamaz.", 0
+        return False, "validation_error_new_code_empty", 0
 
     ilk_satir = yeni.split("\n")[0].strip() if yeni else ""
-    if not (ilk_satir.startswith("def ") or ilk_satir.startswith("async def ")):
-        return False, "Fonksiyon tanımı 1. satırda başlamalıdır.", 1
+
+    if not (
+        ilk_satir.startswith("def ")
+        or ilk_satir.startswith("async def ")
+        or ilk_satir.startswith("@")
+    ):
+        return False, "validation_error_function_must_start_first_line", 1
 
     if not looks_like_full_function(yeni):
-        return False, "Kodun ilk anlamlı satırı 'def' veya 'async def' olmalıdır.", 1
+        return False, "validation_error_first_meaningful_line_must_be_def", 1
 
     try:
         basic_parse_check(yeni)
+
     except SyntaxError as exc:
+        satir = int(getattr(exc, "lineno", 0) or 0)
+        sutun = int(getattr(exc, "offset", 0) or 0)
+        mesaj = str(getattr(exc, "msg", "") or "").strip() or "syntax error"
         return (
             False,
-            f"Sözdizimi hatası: satır {exc.lineno}, sütun {exc.offset} -> {exc.msg}",
+            f"validation_error_syntax|line={satir}|column={sutun}|message={mesaj}",
             extract_line_number(exc),
         )
+
     except ValueError as exc:
         return False, str(exc), 1
+
     except Exception as exc:
         return False, str(exc), extract_line_number(exc)
 
