@@ -7,20 +7,23 @@ ROL:
 - Alt paket yöneticilerini merkezileştirmek
 - Üst katmanın editor paketi iç yapısını bilmesini engellemek
 - Panel, root, aksiyon, popup, doğrulama, bildirim, bileşen ve yardımcı akışları tek yerden sunmak
+- Editör popup ve panel akışlarında seçili dil destekli metinlerin aşağı katmanda korunmasına aracılık etmek
 
 MİMARİ:
 - Üst katman sadece bu yöneticiyi bilir
-- Alt paketlere doğrudan erişim yerine ilgili yonetici sınıfları kullanılır
+- Alt paketlere doğrudan erişim yerine ilgili yönetici sınıfları kullanılır
 - Lazy import korunur
 - Paket dışına iç modül detayları sızdırılmaz
+- Editor paneli oluşturma akışı üst katmandan gelen callback'leri bozmadan aşağı taşır
+- Popup ve yardımcı akışlar ilgili alt yöneticiler üzerinden merkezi biçimde yürütülür
 
 API UYUMLULUK:
 - Platform bağımsızdır
 - Android API 35 ile uyumludur
 - Doğrudan Android bridge çağrısı içermez
 
-SURUM: 1
-TARIH: 2026-03-19
+SURUM: 3
+TARIH: 2026-03-23
 IMZA: FY.
 """
 
@@ -114,7 +117,7 @@ class EditorYoneticisi:
     # =========================================================
     # DOGRULAMA
     # =========================================================
-    def normalize_code_text(self, text, trim_outer_blank_lines=False) -> str:
+    def normalize_code_text(self, text, trim_outer_blank_lines: bool = False) -> str:
         return self._dogrulama_yoneticisi().normalize_code_text(
             text,
             trim_outer_blank_lines=trim_outer_blank_lines,
@@ -201,19 +204,25 @@ class EditorYoneticisi:
             on_tap=on_tap,
         )
 
-    def set_status_info(self, panel, message="", line_no=0):
+    def set_status_info(self, panel, message: str = "", line_no: int = 0):
         return self._yardimci_yoneticisi().set_status_info(panel, message, line_no)
 
-    def set_status_warning(self, panel, message="", line_no=0):
+    def set_status_warning(self, panel, message: str = "", line_no: int = 0):
         return self._yardimci_yoneticisi().set_status_warning(panel, message, line_no)
 
-    def set_status_error(self, panel, message="", line_no=0):
+    def set_status_error(self, panel, message: str = "", line_no: int = 0):
         return self._yardimci_yoneticisi().set_status_error(panel, message, line_no)
 
-    def set_status_success(self, panel, message="", line_no=0):
+    def set_status_success(self, panel, message: str = "", line_no: int = 0):
         return self._yardimci_yoneticisi().set_status_success(panel, message, line_no)
 
-    def set_popup_error(self, label, editor_area, message="", line_no=0):
+    def set_popup_error(
+        self,
+        label,
+        editor_area,
+        message: str = "",
+        line_no: int = 0,
+    ):
         return self._yardimci_yoneticisi().set_popup_error(
             label,
             editor_area,
