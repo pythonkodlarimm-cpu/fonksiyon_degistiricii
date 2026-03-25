@@ -6,20 +6,22 @@ ROL:
 - Bilgi mesajlarını basit bir popup içinde göstermek
 - Sahip widget varsa debug log bırakmak
 - Dosya seçici paketinin popup katmanında sade bilgi iletişimi sağlamak
+- Aktif dile göre görünür buton metnini üretmek
 
 MİMARİ:
 - Doğrudan Android API çağrısı yapmaz
 - Kivy Popup tabanlıdır
 - Güvenli metin ve popup akışı korunur
 - Üst katman popup/yoneticisi.py üzerinden erişmelidir
+- Görünen metinler owner._m(...) üzerinden çözülebilir
 
 API UYUMLULUK:
 - Android 14 / API 34+ uyumlu
 - Özel izin veya bridge bağımlılığı yoktur
 - Platform bağımsız güvenli yardımcı UI katmanıdır
 
-SURUM: 2
-TARIH: 2026-03-19
+SURUM: 3
+TARIH: 2026-03-23
 IMZA: FY.
 """
 
@@ -32,6 +34,15 @@ from kivy.uix.label import Label
 from kivy.uix.popup import Popup
 
 from app.ui.tema import TEXT_PRIMARY
+
+
+def _m(owner, anahtar: str, default: str = "") -> str:
+    try:
+        if owner is not None and hasattr(owner, "_m"):
+            return str(owner._m(anahtar, default) or default or anahtar)
+    except Exception:
+        pass
+    return str(default or anahtar)
 
 
 def show_info_popup(owner, title: str, message: str):
@@ -57,7 +68,7 @@ def show_info_popup(owner, title: str, message: str):
     icerik.add_widget(lbl)
 
     btn = Button(
-        text="Tamam",
+        text=_m(owner, "close", "Kapat"),
         size_hint_y=None,
         height=dp(42),
         background_normal="",
