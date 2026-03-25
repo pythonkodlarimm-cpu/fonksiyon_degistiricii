@@ -22,7 +22,7 @@ API UYUMLULUK:
 - Android ve masaüstü ortamlarında güvenli çalışır
 - Doğrudan Android bridge çağrısı yapmaz
 
-SURUM: 5
+SURUM: 6
 TARIH: 2026-03-23
 IMZA: FY.
 """
@@ -77,14 +77,16 @@ class RootStatusMixin:
         self,
         text: str,
         detailed_text: str = "",
-        popup_title: str = "Hata Detayı",
+        popup_title: str = "",
     ) -> None:
         try:
             if self.status is not None:
                 self.status.set_error(
                     str(text or ""),
                     detailed_text=str(detailed_text or ""),
-                    popup_title=str(popup_title or "Hata Detayı"),
+                    popup_title=str(
+                        popup_title or self._m("error_title", "Hata Detayı")
+                    ),
                 )
         except Exception:
             pass
