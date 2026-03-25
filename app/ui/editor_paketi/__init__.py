@@ -7,9 +7,22 @@ ROL:
 - Import yükünü azaltır
 - Circular import riskini minimize eder
 - Editor paketini dış dünyaya kontrollü şekilde açar
+- Üst katmanın yalnızca EditorYoneticisi üzerinden erişmesini garanti eder
 
-SURUM: 1
-TARIH: 2026-03-19
+MİMARİ:
+- __getattr__ ile lazy import yapılır
+- Paket dışına yalnızca EditorYoneticisi açılır
+- Alt modüller doğrudan import edilmez
+
+KULLANIM:
+from app.ui.editor_paketi import EditorYoneticisi
+
+API UYUMLULUK:
+- Platform bağımsızdır
+- Android API 35 ile uyumludur
+
+SURUM: 3
+TARIH: 2026-03-23
 IMZA: FY.
 """
 
