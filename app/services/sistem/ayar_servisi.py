@@ -5,7 +5,7 @@ DOSYA: app/services/sistem/ayar_servisi.py
 ROL:
 - Uygulama ayarlarını yüklemek / kaydetmek
 - Dil ayarını saklamak
-- Desteklenen dil kodlarını merkezi olarak yönetmek
+- diller/ klasöründeki kullanılabilir dil kodlarını otomatik algılamak
 - Uygulama durumunu (app_state) saklamak
 - Uygulama içi güvenli ayar dosyasını yönetmek
 
@@ -16,14 +16,16 @@ MİMARİ:
 - Dil ve uygulama durumu aynı settings.json içinde tutulur
 - Dil doğrulama tek merkezde yapılır
 - UI katmanı doğrudan settings.json yapısını bilmez
+- Desteklenen diller sabit tuple ile değil, diller klasöründen otomatik keşfedilir
+- Yeni bir dil json dosyası eklendiğinde sistem kod değişmeden onu görebilir
 
 API UYUMLULUK:
 - API 35 uyumlu
 - Scoped storage dostu
 - Android ve masaüstü ortamlarında güvenli çalışır
 
-SURUM: 5
-TARIH: 2026-03-23
+SURUM: 6
+TARIH: 2026-03-24
 IMZA: FY.
 """
 
@@ -44,79 +46,46 @@ class AyarServisiHatasi(ValueError):
 # =========================================================
 DEFAULT_LANGUAGE: str = "tr"
 
-SUPPORTED_LANGUAGES: tuple[str, ...] = (
-    "tr",
-    "en",
-    "de",
-    "fr",
-    "es",
-    "it",
-    "pt",
-    "pt-br",
-    "nl",
-    "ru",
-    "uk",
-    "pl",
-    "cs",
-    "sk",
-    "sl",
-    "hr",
-    "sr",
-    "bs",
-    "mk",
-    "bg",
-    "ro",
-    "hu",
-    "el",
-    "sq",
-    "da",
-    "sv",
-    "no",
-    "fi",
-    "is",
-    "et",
-    "lv",
-    "lt",
-    "ga",
-    "mt",
-    "cy",
-    "ca",
-    "eu",
-    "gl",
-    "af",
-    "sw",
-    "zu",
-    "xh",
-    "am",
-    "ar",
-    "fa",
-    "ur",
-    "he",
-    "hi",
-    "bn",
-    "ta",
-    "te",
-    "ml",
-    "kn",
-    "gu",
-    "mr",
-    "pa",
-    "or",
-    "as",
-    "ne",
-    "si",
-    "my",
-    "th",
-    "vi",
-    "id",
-    "ms",
-    "tl",
-    "zh",
-    "zh-cn",
-    "zh-tw",
-    "ja",
-    "ko",
-)
+
+def _diller_klasoru() -> Path:
+    """
+    Bu dosyayla aynı klasördeki diller/ dizinini döndürür.
+    """
+    return Path(__file__).resolve().parent / "diller"
+
+
+def _mevcut_dil_kodlarini_tara() -> list[str]:
+    """
+    diller/ klasöründeki *.json dosyalarından dil kodlarını çıkarır.
+    Geçerli json olmayan dosyalar da dosya adı seviyesinde listeye alınır;
+    gerçek içerik kontrolü dil_servisi tarafında ayrıca yapılabilir.
+    """
+    sonuc: list[str] = []
+    gorulen: set[str] = set()
+
+    try:
+        klasor = _diller_klasoru()
+        if not klasor.is_dir():
+            return [DEFAULT_LANGUAGE]
+
+        for path in sorted(klasor.glob("*.json")):
+            try:
+                kod = str(path.stem or "").strip().lower().replace("_", "-")
+                if not kod:
+                    continue
+
+                if kod not in gorulen:
+                    gorulen.add(kod)
+                    sonuc.append(kod)
+            except Exception:
+                continue
+    except Exception:
+        return [DEFAULT_LANGUAGE]
+
+    if DEFAULT_LANGUAGE not in sonuc:
+        sonuc.insert(0, DEFAULT_LANGUAGE)
+
+    return sonuc or [DEFAULT_LANGUAGE]
 
 
 def _ayar_dosyasi() -> Path:
@@ -130,7 +99,10 @@ def _ayar_dosyasi() -> Path:
         ) from exc
 
 
-def _normalize_language_code(code: str | None, default: str = DEFAULT_LANGUAGE) -> str:
+def _normalize_language_code(
+    code: str | None,
+    default: str = DEFAULT_LANGUAGE,
+) -> str:
     temiz = str(code or "").strip().lower()
     fallback = str(default or DEFAULT_LANGUAGE).strip().lower() or DEFAULT_LANGUAGE
 
@@ -139,27 +111,34 @@ def _normalize_language_code(code: str | None, default: str = DEFAULT_LANGUAGE) 
 
     temiz = temiz.replace("_", "-")
 
-    if temiz in SUPPORTED_LANGUAGES:
+    mevcut_diller = supported_languages()
+
+    if temiz in mevcut_diller:
         return temiz
 
     # dil-bölge kodundan ana dil çıkarımı
     if "-" in temiz:
         kok = temiz.split("-", 1)[0].strip()
-        if kok in SUPPORTED_LANGUAGES:
+        if kok in mevcut_diller:
             return kok
 
     return fallback
 
 
 def supported_languages() -> list[str]:
-    return list(SUPPORTED_LANGUAGES)
+    return _mevcut_dil_kodlarini_tara()
 
 
 def language_supported(code: str) -> bool:
     temiz = str(code or "").strip().lower().replace("_", "-")
-    return temiz in SUPPORTED_LANGUAGES
+    if not temiz:
+        return False
+    return temiz in supported_languages()
 
 
+# =========================================================
+# AYAR OKU / YAZ
+# =========================================================
 def ayarlari_yukle() -> dict:
     path = _ayar_dosyasi()
 
@@ -194,6 +173,9 @@ def ayarlari_kaydet(data: dict) -> None:
         raise AyarServisiHatasi(f"Ayarlar kaydedilemedi: {exc}") from exc
 
 
+# =========================================================
+# DIL
+# =========================================================
 def get_language(default: str = DEFAULT_LANGUAGE) -> str:
     fallback = _normalize_language_code(default, DEFAULT_LANGUAGE)
 
@@ -217,6 +199,9 @@ def set_language(code: str) -> None:
     ayarlari_kaydet(data)
 
 
+# =========================================================
+# APP STATE
+# =========================================================
 def get_app_state(default: dict | None = None) -> dict:
     try:
         data = ayarlari_yukle()
