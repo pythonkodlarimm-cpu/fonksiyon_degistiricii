@@ -10,16 +10,22 @@ ROL:
 - Canvas, layout ve bağlı alt widget güncellemelerini sırayla tetikler
 
 EKSTRA (OPTIMIZATION):
-- Çeviri metinleri cache’lenir (hot path optimize)
+- Çeviri metinleri cache’lenir
 - Widget method lookup cache uygulanır
 - getattr maliyeti minimize edilir
+- Çeviri cache anahtarına aktif dil eklenir
+- Dil değiştiğinde çeviri cache’i güvenli biçimde temizlenebilir
+- Widget method cache bozulursa kendini toparlayabilir
 
 MİMARİ:
 - Mixin yapısı korunur
 - Lazy import zaten üst katmanda (yonetici / init)
 - Bu dosya runtime optimizasyon katmanıdır
+- Widget method cache ile translation cache birbirinden ayrı tutulur
+- Widget method cache korunur, translation cache dil değişiminde sıfırlanır
+- RootDilAkisiMixin ve root callback zinciri ile uyumlu çalışır
 
-SURUM: 2
+SURUM: 4
 TARIH: 2026-03-24
 IMZA: FY.
 """
@@ -28,16 +34,27 @@ from __future__ import annotations
 
 
 class RootDilYardimcilariMixin:
-
     # =========================================================
     # INIT CACHE
     # =========================================================
     def _ensure_dil_cache(self):
-        if not hasattr(self, "_dil_cache"):
-            self._dil_cache = {}
+        try:
+            if not hasattr(self, "_dil_cache"):
+                self._dil_cache = {}
+        except Exception:
+            pass
 
-        if not hasattr(self, "_widget_method_cache"):
-            self._widget_method_cache = {}
+        try:
+            if not hasattr(self, "_widget_method_cache"):
+                self._widget_method_cache = {}
+        except Exception:
+            pass
+
+        try:
+            if not hasattr(self, "_aktif_dil_cache_kodu"):
+                self._aktif_dil_cache_kodu = ""
+        except Exception:
+            pass
 
     # =========================================================
     # INTERNAL HELPERS
@@ -48,13 +65,87 @@ class RootDilYardimcilariMixin:
         except Exception:
             return default
 
+    def _aktif_dil_kodu(self) -> str:
+        """
+        Services üzerinden aktif dil kodunu güvenli biçimde döndürür.
+        """
+        try:
+            services = self._safe_getattr("services", None)
+            if services is None:
+                return ""
+
+            aktif_dil = getattr(services, "aktif_dil", None)
+            if callable(aktif_dil):
+                return str(aktif_dil() or "").strip()
+
+            get_language = getattr(services, "get_language", None)
+            if callable(get_language):
+                return str(get_language(default="") or "").strip()
+
+        except Exception:
+            pass
+
+        return ""
+
+    def _clear_translation_cache(self) -> None:
+        """
+        Sadece çeviri cache'ini temizler.
+        Widget method cache korunur.
+        """
+        try:
+            self._ensure_dil_cache()
+            self._dil_cache = {}
+        except Exception:
+            pass
+
+    def _clear_widget_method_cache(self) -> None:
+        """
+        Widget method cache'ini temizler.
+
+        Not:
+        - Normalde gerekli değildir
+        - Widget değişimi / popup rebuild gibi durumlarda kullanılabilir
+        """
+        try:
+            self._ensure_dil_cache()
+            self._widget_method_cache = {}
+        except Exception:
+            pass
+
+    def _sync_translation_cache_language(self) -> None:
+        """
+        Aktif dil değişmişse translation cache'i sıfırlar.
+        """
+        try:
+            self._ensure_dil_cache()
+            aktif_kod = self._aktif_dil_kodu()
+            onceki_kod = str(self._safe_getattr("_aktif_dil_cache_kodu", "") or "")
+
+            if aktif_kod != onceki_kod:
+                self._dil_cache = {}
+                self._aktif_dil_cache_kodu = aktif_kod
+        except Exception:
+            pass
+
     # =========================================================
     # DIL METIN COZUMLEME (CACHE)
     # =========================================================
     def _m(self, anahtar: str, default: str = "") -> str:
-        self._ensure_dil_cache()
+        """
+        Aktif dile göre çevrilmiş metni döndürür.
 
-        cache_key = f"{anahtar}|{default}"
+        Cache anahtarı:
+        - aktif dil
+        - anahtar
+        - default
+
+        Böylece dil değişince eski dil sonucu dönmez.
+        """
+        self._ensure_dil_cache()
+        self._sync_translation_cache_language()
+
+        aktif_dil = self._aktif_dil_kodu()
+        cache_key = f"{aktif_dil}|{anahtar}|{default}"
 
         try:
             if cache_key in self._dil_cache:
@@ -69,13 +160,19 @@ class RootDilYardimcilariMixin:
             else:
                 result = str(services.metin(anahtar, default) or default or anahtar)
 
-            # CACHE
-            self._dil_cache[cache_key] = result
+            try:
+                self._dil_cache[cache_key] = result
+            except Exception:
+                pass
+
             return result
 
         except Exception:
             result = str(default or anahtar)
-            self._dil_cache[cache_key] = result
+            try:
+                self._dil_cache[cache_key] = result
+            except Exception:
+                pass
             return result
 
     # =========================================================
@@ -91,7 +188,11 @@ class RootDilYardimcilariMixin:
 
         try:
             if wid in self._widget_method_cache:
-                return self._widget_method_cache[wid]
+                cached = self._widget_method_cache[wid]
+                if callable(cached):
+                    return cached
+                if cached is None:
+                    return None
         except Exception:
             pass
 
@@ -104,7 +205,11 @@ class RootDilYardimcilariMixin:
         except Exception:
             pass
 
-        self._widget_method_cache[wid] = None
+        try:
+            self._widget_method_cache[wid] = None
+        except Exception:
+            pass
+
         return None
 
     # =========================================================
@@ -113,6 +218,22 @@ class RootDilYardimcilariMixin:
     def _refresh_widget_language(self, widget) -> None:
         if widget is None:
             return
+
+        try:
+            method = self._get_widget_refresh_method(widget)
+            if method:
+                method()
+                return
+        except Exception:
+            # Cache'te bozulmuş bound method kalmış olabilir.
+            pass
+
+        try:
+            wid = id(widget)
+            if hasattr(self, "_widget_method_cache") and wid in self._widget_method_cache:
+                self._widget_method_cache.pop(wid, None)
+        except Exception:
+            pass
 
         try:
             method = self._get_widget_refresh_method(widget)
@@ -173,6 +294,15 @@ class RootDilYardimcilariMixin:
     # FULL REFRESH
     # =========================================================
     def _full_language_refresh(self) -> None:
+        """
+        Dil refresh öncesi translation cache'i aktif dile senkronlar,
+        sonra tüm bağlı widget'ları ve layout'u günceller.
+        """
+        try:
+            self._sync_translation_cache_language()
+        except Exception:
+            pass
+
         try:
             self._refresh_all_language_bound_widgets()
         except Exception:
