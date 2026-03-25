@@ -31,8 +31,8 @@ API UYUMLULUK:
 - Büyük liste / dar liste davranışı güvenli şekilde yönetilir
 - API 35 ile güvenle kullanılabilir
 
-SURUM: 7
-TARIH: 2026-03-23
+SURUM: 9
+TARIH: 2026-03-24
 IMZA: FY.
 """
 
@@ -151,24 +151,97 @@ class FonksiyonListesi(BoxLayout):
     def refresh_language(self) -> None:
         try:
             if self.header is not None:
+                baslik = self._m("function_list_title", "Fonksiyon Listesi")
                 if hasattr(self.header, "set_text") and callable(self.header.set_text):
-                    self.header.set_text(
-                        self._m("function_list_title", "Fonksiyon Listesi")
-                    )
+                    self.header.set_text(baslik)
                 elif hasattr(self.header, "text"):
-                    self.header.text = self._m(
-                        "function_list_title",
-                        "Fonksiyon Listesi",
+                    self.header.text = baslik
+        except Exception:
+            pass
+
+        try:
+            if self.toggle_button is not None:
+                liste_metin = self._m("list", "Liste")
+                if hasattr(self.toggle_button, "set_text") and callable(
+                    self.toggle_button.set_text
+                ):
+                    self.toggle_button.set_text(liste_metin)
+                elif hasattr(self.toggle_button, "text"):
+                    self.toggle_button.text = liste_metin
+        except Exception:
+            pass
+
+        try:
+            if self.search_input is not None and hasattr(
+                self.search_input,
+                "hint_text",
+            ):
+                self.search_input.hint_text = self._m(
+                    "function_search_hint",
+                    "Fonksiyon ara...",
+                )
+        except Exception:
+            pass
+
+        try:
+            if self.list_info_label is not None and hasattr(self.list_info_label, "text"):
+                if self.is_list_expanded:
+                    self.list_info_label.text = self._m(
+                        "list_info_expanded",
+                        "Tüm fonksiyonlar geniş listede görüntülenebilir ve aranabilir.",
+                    )
+                else:
+                    self.list_info_label.text = self._m(
+                        "list_info_compact",
+                        "Dar görünüm açık. Yine kaydırarak birkaç fonksiyon görebilirsiniz.",
                     )
         except Exception:
             pass
 
         try:
-            if self.search_input is not None and hasattr(self.search_input, "hint_text"):
-                self.search_input.hint_text = self._m(
-                    "search_functions",
-                    "Fonksiyon ara...",
+            if self.table_header is not None:
+                self._refresh_table_header_language()
+        except Exception:
+            pass
+
+        try:
+            if (
+                self.selected_preview_card is not None
+                and hasattr(self.selected_preview_card, "_preview_head")
+                and self.selected_preview_card._preview_head is not None
+            ):
+                head = self.selected_preview_card._preview_head
+                title_text = self._m(
+                    "selected_code_preview",
+                    "Seçilen Kod Önizleme",
                 )
+                if hasattr(head, "set_text") and callable(head.set_text):
+                    head.set_text(title_text)
+                elif hasattr(head, "text"):
+                    head.text = title_text
+        except Exception:
+            pass
+
+        try:
+            if (
+                self.new_preview_card is not None
+                and hasattr(self.new_preview_card, "_preview_head")
+                and self.new_preview_card._preview_head is not None
+            ):
+                head = self.new_preview_card._preview_head
+                title_text = self._m(
+                    "new_code_preview",
+                    "Yeni Kod Önizleme",
+                )
+                if hasattr(head, "set_text") and callable(head.set_text):
+                    head.set_text(title_text)
+                elif hasattr(head, "text"):
+                    head.text = title_text
+        except Exception:
+            pass
+
+        try:
+            self._sync_list_visibility()
         except Exception:
             pass
 
@@ -189,6 +262,32 @@ class FonksiyonListesi(BoxLayout):
 
         try:
             self._render_items(self.filtered_items, keep_scroll=True)
+        except Exception:
+            pass
+
+    def _refresh_table_header_language(self) -> None:
+        try:
+            hedefler = list(getattr(self.table_header, "children", []) or [])
+            if not hedefler:
+                return
+
+            hedefler = list(reversed(hedefler))
+            metinler = [
+                self._m("function", "Fonksiyon"),
+                self._m("type", "Tür"),
+                self._m("line", "Satır"),
+                self._m("signature", "İmza"),
+            ]
+
+            for index, child in enumerate(hedefler[:4]):
+                try:
+                    text_value = metinler[index]
+                    if hasattr(child, "set_text") and callable(child.set_text):
+                        child.set_text(text_value)
+                    elif hasattr(child, "text"):
+                        child.text = text_value
+                except Exception:
+                    continue
         except Exception:
             pass
 
@@ -232,14 +331,13 @@ class FonksiyonListesi(BoxLayout):
             elif filtreli == toplam:
                 text_value = self._m(
                     "function_count_all",
-                    f"Toplam {toplam} fonksiyon",
+                    "Toplam {count} fonksiyon",
                 )
-                if "{count}" in text_value:
-                    text_value = text_value.replace("{count}", str(toplam))
+                text_value = text_value.replace("{count}", str(toplam))
             else:
                 text_value = self._m(
                     "function_count_filtered",
-                    f"{filtreli} / {toplam} fonksiyon",
+                    "{filtered} / {total} fonksiyon",
                 )
                 text_value = (
                     text_value.replace("{filtered}", str(filtreli))
@@ -512,6 +610,7 @@ class FonksiyonListesi(BoxLayout):
             if self.selected_preview_card is not None:
                 self.selected_preview_card._preview_label.text = (
                     self._onizleme_yoneticisi.preview_from_text(
+                        self,
                         self._selected_preview_text,
                         max_lines=5,
                     )
@@ -530,6 +629,7 @@ class FonksiyonListesi(BoxLayout):
             if self.new_preview_card is not None:
                 self.new_preview_card._preview_label.text = (
                     self._onizleme_yoneticisi.preview_from_text(
+                        self,
                         self._new_preview_text,
                         max_lines=5,
                     )
@@ -618,6 +718,7 @@ class FonksiyonListesi(BoxLayout):
     def _toggle_list_visibility(self, *_args):
         try:
             self._gorunum_akisi_yoneticisi.toggle_list_visibility(self, *_args)
+            self.refresh_language()
         except Exception as exc:
             self._report_error(
                 exc,
@@ -701,4 +802,4 @@ class FonksiyonListesi(BoxLayout):
                     "function_search_error",
                     "Fonksiyon Arama Hatası",
                 ),
-      )
+)
