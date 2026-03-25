@@ -7,20 +7,24 @@ ROL:
 - Filtreleme yapmak
 - Görüntüleme, indirme ve silme akışlarını başlatmak
 - Toplu silme akışını yönetmek
+- Görünen metinlerde services tabanlı dil desteğine hazır olmak
 
 MİMARİ:
 - Doğrudan ortak bileşen import etmez
-- Ortak yonetici üzerinden erişir
+- Ortak yönetici üzerinden erişir
 - Popup akışları yeni popups yolu üzerinden çağrılır
 - Yedek satırı ve indirme işlemi yedek katmanı üzerinden çağrılır
+- services verilirse sabit metinler dil servisi üzerinden alınabilir
+- services verilmezse güvenli fallback ile çalışır
+- Hardcoded kullanıcı metni bırakılmaz
 
 API UYUMLULUK:
 - Platform bağımsızdır
 - Android API 35 ile uyumludur
 - Doğrudan Android bridge çağrısı içermez
 
-SURUM: 3
-TARIH: 2026-03-19
+SURUM: 5
+TARIH: 2026-03-23
 IMZA: FY.
 """
 
@@ -80,11 +84,11 @@ def _show_confirm_popup(**kwargs):
     return show_confirm_popup(**kwargs)
 
 
-def _open_backup_view_popup(yedek):
+def _open_backup_view_popup(yedek, services=None):
     from app.ui.tum_dosya_erisim_paketi.popups.yedek_goruntuleme_popup import (
         open_backup_view_popup,
     )
-    return open_backup_view_popup(yedek)
+    return open_backup_view_popup(yedek, services=services)
 
 
 def _silme_durum_popup_sinifi():
@@ -94,7 +98,16 @@ def _silme_durum_popup_sinifi():
     return SilmeDurumPopup
 
 
-def open_backups_popup(debug=None):
+def _m(services, anahtar: str, default: str = "") -> str:
+    try:
+        if services is not None:
+            return str(services.metin(anahtar, default) or default or anahtar)
+    except Exception:
+        pass
+    return str(default or anahtar)
+
+
+def open_backups_popup(debug=None, services=None):
     yedek_yoneticisi = _yedek_listeleme_modulu()
     yedek_ui_yoneticisi = _yedek_satiri_yoneticisi()
 
@@ -107,7 +120,7 @@ def open_backups_popup(debug=None):
     )
 
     title = Label(
-        text="Yedeklenen Dosyalar",
+        text=_m(services, "backup_files", "Yedeklenen Dosyalar"),
         color=TEXT_PRIMARY,
         font_size="18sp",
         bold=True,
@@ -120,7 +133,7 @@ def open_backups_popup(debug=None):
     content.add_widget(title)
 
     info = Label(
-        text="Yedekler yükleniyor...",
+        text=_m(services, "backups_loading", "Yedekler yükleniyor..."),
         color=TEXT_MUTED,
         font_size="12sp",
         size_hint_y=None,
@@ -177,25 +190,25 @@ def open_backups_popup(debug=None):
     )
 
     btn_tumu = Button(
-        text="Tümü",
+        text=_m(services, "all", "Tümü"),
         size_hint_x=1,
         background_normal="",
         color=(0.95, 0.95, 0.98, 1),
     )
     btn_bugun = Button(
-        text="Bugün",
+        text=_m(services, "today", "Bugün"),
         size_hint_x=1,
         background_normal="",
         color=(0.95, 0.95, 0.98, 1),
     )
     btn_dun = Button(
-        text="Dün",
+        text=_m(services, "yesterday", "Dün"),
         size_hint_x=1,
         background_normal="",
         color=(0.95, 0.95, 0.98, 1),
     )
     btn_son7 = Button(
-        text="Son 7 Gün",
+        text=_m(services, "last_7_days", "Son 7 Gün"),
         size_hint_x=1.2,
         background_normal="",
         color=(0.95, 0.95, 0.98, 1),
@@ -215,7 +228,11 @@ def open_backups_popup(debug=None):
     )
 
     tarih_input = TextInput(
-        hint_text="Tarih ara: 2026-03-18 veya 18.03.2026",
+        hint_text=_m(
+            services,
+            "backup_date_search_hint",
+            "Tarih ara: 2026-03-18 veya 18.03.2026",
+        ),
         multiline=False,
         size_hint_x=1,
         size_hint_y=None,
@@ -230,7 +247,7 @@ def open_backups_popup(debug=None):
     )
 
     btn_tarih_ara = Button(
-        text="Tarih Ara",
+        text=_m(services, "search_date", "Tarih Ara"),
         size_hint_x=None,
         width=dp(110),
         background_normal="",
@@ -282,14 +299,14 @@ def open_backups_popup(debug=None):
         tarih = str(aktif_filtre.get("tarih", "") or "").strip()
 
         if tip == "bugun":
-            return f"Bugünkü yedekler: {yedek_sayisi}"
+            return f"{_m(services, 'today_backups', 'Bugünkü yedekler')}: {yedek_sayisi}"
         if tip == "dun":
-            return f"Dünkü yedekler: {yedek_sayisi}"
+            return f"{_m(services, 'yesterday_backups', 'Dünkü yedekler')}: {yedek_sayisi}"
         if tip == "son7":
-            return f"Son 7 gün: {yedek_sayisi}"
+            return f"{_m(services, 'last_7_days', 'Son 7 gün')}: {yedek_sayisi}"
         if tip == "tarih" and tarih:
-            return f"{tarih} için yedekler: {yedek_sayisi}"
-        return f"Toplam yedek: {yedek_sayisi}"
+            return f"{tarih} {_m(services, 'backups_for_date', 'için yedekler')}: {yedek_sayisi}"
+        return f"{_m(services, 'total_backups', 'Toplam yedek')}: {yedek_sayisi}"
 
     def _renkleri_guncelle():
         secili = (0.18, 0.55, 0.28, 1)
@@ -367,7 +384,11 @@ def open_backups_popup(debug=None):
 
         if not yedekler:
             bos = Label(
-                text="Bu filtre için yedek bulunamadı.",
+                text=_m(
+                    services,
+                    "no_backups_for_filter",
+                    "Bu filtre için yedek bulunamadı.",
+                ),
                 color=TEXT_MUTED,
                 size_hint_y=None,
                 height=dp(36),
@@ -380,7 +401,7 @@ def open_backups_popup(debug=None):
 
         for yedek in yedekler:
             def on_view(y):
-                _open_backup_view_popup(y)
+                _open_backup_view_popup(y, services=services)
 
             def on_download(y):
                 try:
@@ -390,60 +411,94 @@ def open_backups_popup(debug=None):
                     )
                 except Exception as exc:
                     _show_simple_popup(
-                        title_text="İndirme Hatası",
-                        body_text=f"Yedek kopyalanamadı:\n{exc}",
+                        title_text=_m(
+                            services,
+                            "download_error_title",
+                            "İndirme Hatası",
+                        ),
+                        body_text=(
+                            f"{_m(services, 'backup_copy_failed', 'Yedek kopyalanamadı:')}\n{exc}"
+                        ),
                         icon_name="warning.png",
                         auto_close_seconds=1.8,
                         compact=True,
+                        services=services,
                     )
 
             def _tekli_sil_onayli(y):
                 SilmeDurumPopup = _silme_durum_popup_sinifi()
 
                 durum_popup = SilmeDurumPopup(
-                    title_text="Silme İşlemi",
-                    body_text="Yedek siliniyor...",
-                    success_text="Yedek başarıyla silindi.",
+                    title_text=_m(services, "delete_process_title", "Silme İşlemi"),
+                    body_text=_m(services, "backup_deleting", "Yedek siliniyor..."),
+                    success_text=_m(
+                        services,
+                        "backup_deleted_success",
+                        "Yedek başarıyla silindi.",
+                    ),
                     icon_name="onaylandi.png",
+                    services=services,
                 ).open()
 
-                durum_popup.set_progress(0.15, "Silme işlemi başlatıldı...")
-                durum_popup.set_progress(0.35, "Yedek hazırlanıyor...")
+                durum_popup.set_progress(
+                    0.15,
+                    _m(services, "delete_process_started", "Silme işlemi başlatıldı..."),
+                )
+                durum_popup.set_progress(
+                    0.35,
+                    _m(services, "backup_preparing", "Yedek hazırlanıyor..."),
+                )
 
                 def _silme_adimi(_dt):
                     try:
-                        durum_popup.set_progress(0.65, "Yedek siliniyor...")
+                        durum_popup.set_progress(
+                            0.65,
+                            _m(services, "backup_deleting", "Yedek siliniyor..."),
+                        )
                         silinen = yedek_yoneticisi.yedegi_sil(y)
                         _safe_debug(f"Yedek silindi: {silinen}")
 
                         refresh_list()
 
                         durum_popup.finish_success(
-                            text="Yedek başarıyla silindi.",
+                            text=_m(
+                                services,
+                                "backup_deleted_success",
+                                "Yedek başarıyla silindi.",
+                            ),
                             auto_close_seconds=1.6,
                         )
                     except Exception as exc:
                         _safe_debug(f"Yedek silme hatası: {exc}")
                         durum_popup.dismiss()
                         _show_simple_popup(
-                            title_text="Silme Hatası",
-                            body_text=f"Yedek silinemedi:\n{exc}",
+                            title_text=_m(
+                                services,
+                                "delete_error_title",
+                                "Silme Hatası",
+                            ),
+                            body_text=(
+                                f"{_m(services, 'backup_delete_failed', 'Yedek silinemedi:')}\n{exc}"
+                            ),
                             icon_name="warning.png",
                             auto_close_seconds=1.8,
                             compact=True,
+                            services=services,
                         )
 
                 Clock.schedule_once(_silme_adimi, 0.18)
 
             def on_delete(y):
                 _show_confirm_popup(
-                    title_text="Yedeği Sil",
+                    title_text=_m(services, "delete_backup_title", "Yedeği Sil"),
                     body_text=(
-                        f"Bu yedek silinecek:\n{getattr(y, 'name', '')}\n\n"
-                        "Bu işlem geri alınamaz."
+                        f"{_m(services, 'backup_will_be_deleted', 'Bu yedek silinecek:')}\n"
+                        f"{getattr(y, 'name', '')}\n\n"
+                        f"{_m(services, 'irreversible_action', 'Bu işlem geri alınamaz.')}"
                     ),
                     on_confirm=lambda: _tekli_sil_onayli(y),
                     confirm_icon="delete.png",
+                    services=services,
                 )
 
             try:
@@ -462,18 +517,28 @@ def open_backups_popup(debug=None):
         SilmeDurumPopup = _silme_durum_popup_sinifi()
 
         durum_popup = SilmeDurumPopup(
-            title_text="Toplu Silme",
-            body_text="Yedekler siliniyor...",
-            success_text="Toplu silme tamamlandı.",
+            title_text=_m(services, "bulk_delete_title", "Toplu Silme"),
+            body_text=_m(services, "backups_deleting", "Yedekler siliniyor..."),
+            success_text=_m(services, "bulk_delete_completed", "Toplu silme tamamlandı."),
             icon_name="onaylandi.png",
+            services=services,
         ).open()
 
-        durum_popup.set_progress(0.12, "Silme işlemi başlatıldı...")
-        durum_popup.set_progress(0.28, "Yedekler taranıyor...")
+        durum_popup.set_progress(
+            0.12,
+            _m(services, "delete_process_started", "Silme işlemi başlatıldı..."),
+        )
+        durum_popup.set_progress(
+            0.28,
+            _m(services, "backups_scanning", "Yedekler taranıyor..."),
+        )
 
         def _silme_adimi(_dt):
             try:
-                durum_popup.set_progress(0.62, "Yedekler siliniyor...")
+                durum_popup.set_progress(
+                    0.62,
+                    _m(services, "backups_deleting", "Yedekler siliniyor..."),
+                )
                 silinen_sayi = yedek_yoneticisi.tum_yedekleri_sil()
                 _safe_debug(f"Toplu yedek silindi: {silinen_sayi}")
 
@@ -482,36 +547,59 @@ def open_backups_popup(debug=None):
                 if silinen_sayi <= 0:
                     durum_popup.dismiss()
                     _show_simple_popup(
-                        title_text="Bilgi",
-                        body_text="Silinecek yedek bulunamadı.",
+                        title_text=_m(services, "notification", "Bildirim"),
+                        body_text=_m(
+                            services,
+                            "no_backup_to_delete",
+                            "Silinecek yedek bulunamadı.",
+                        ),
                         icon_name="warning.png",
                         auto_close_seconds=1.5,
                         compact=True,
+                        services=services,
                     )
                 else:
                     durum_popup.finish_success(
-                        text=f"{silinen_sayi} yedek silindi.",
+                        text=(
+                            f"{silinen_sayi} "
+                            f"{_m(services, 'backup_deleted_count_suffix', 'yedek silindi.')}"
+                        ),
                         auto_close_seconds=1.8,
                     )
             except Exception as exc:
                 _safe_debug(f"Toplu yedek silme hatası: {exc}")
                 durum_popup.dismiss()
                 _show_simple_popup(
-                    title_text="Toplu Silme Hatası",
-                    body_text=f"Yedekler silinemedi:\n{exc}",
+                    title_text=_m(
+                        services,
+                        "bulk_delete_error_title",
+                        "Toplu Silme Hatası",
+                    ),
+                    body_text=(
+                        f"{_m(services, 'backups_delete_failed', 'Yedekler silinemedi:')}\n{exc}"
+                    ),
                     icon_name="warning.png",
                     auto_close_seconds=1.8,
                     compact=True,
+                    services=services,
                 )
 
         Clock.schedule_once(_silme_adimi, 0.22)
 
     def tumunu_sil(*_args):
         _show_confirm_popup(
-            title_text="Tüm Yedekleri Sil",
-            body_text="Listelenen tüm .bak dosyaları silinecek.\nBu işlem geri alınamaz.",
+            title_text=_m(
+                services,
+                "delete_all_backups_title",
+                "Tüm Yedekleri Sil",
+            ),
+            body_text=(
+                f"{_m(services, 'all_listed_backups_will_be_deleted', 'Listelenen tüm .bak dosyaları silinecek.')}\n"
+                f"{_m(services, 'irreversible_action', 'Bu işlem geri alınamaz.')}"
+            ),
             on_confirm=_toplu_sil_onayli,
             confirm_icon="delete.png",
+            services=services,
         )
 
     def filtre_tumu(*_args):
@@ -538,11 +626,16 @@ def open_backups_popup(debug=None):
         tarih_text = str(tarih_input.text or "").strip()
         if not tarih_text:
             _show_simple_popup(
-                title_text="Tarih Gerekli",
-                body_text="Lütfen bir tarih girin.",
+                title_text=_m(services, "date_required_title", "Tarih Gerekli"),
+                body_text=_m(
+                    services,
+                    "please_enter_date",
+                    "Lütfen bir tarih girin.",
+                ),
                 icon_name="warning.png",
                 auto_close_seconds=1.5,
                 compact=True,
+                services=services,
             )
             return
 
