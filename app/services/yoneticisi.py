@@ -6,6 +6,7 @@ ROL:
 - Services katmanı için tek giriş noktası sağlamak
 - Alt servis yöneticilerini merkezileştirmek
 - Üst katmanın alt modül detaylarını bilmesini engellemek
+- Lazy import ve cache sistemi ile servis erişim maliyetini azaltmak
 
 MİMARİ:
 - Lazy import kullanır
@@ -15,55 +16,204 @@ MİMARİ:
 - Banner ve geçiş reklamı gibi reklam akışları üst katmana tek kapıdan açılır
 - Play Store yönlendirmeli güncelleme akışı üst katmana tek kapıdan açılır
 - Dil ve lokalizasyon akışı üst katmana tek kapıdan açılır
+- diller/ klasörüne eklenen json dosyalarının otomatik algılanması sistem katmanı üzerinden dışarı açılır
+- Aynı ServicesYoneticisi instance'ı içinde alt yöneticiler cache'lenir
+- Özellikle sistem/dil akışında state kaybını önlemek için yönetici instance'ları tekrar kullanılabilir tutulur
+- Modül ve yönetici referansları tek instance içinde tekrar kullanılır
 
 API UYUMLULUK:
 - Platform bağımsız çekirdek servislerle uyumludur
 - Android servisleri izole biçimde yönetir
 - Android API 35 hedefiyle uyumlu mimari için uygundur
 
-SURUM: 8
-TARIH: 2026-03-23
+SURUM: 12
+TARIH: 2026-03-24
 IMZA: FY.
 """
 
 from __future__ import annotations
 
+import traceback
+
 
 class ServicesYoneticisi:
+    """
+    Tüm servis yöneticileri için merkezi erişim katmanı.
+    """
+
+    def __init__(self) -> None:
+        self._analiz_yonetici_cache = None
+        self._android_yonetici_cache = None
+        self._belge_yonetici_cache = None
+        self._dosya_yonetici_cache = None
+        self._reklam_yonetici_cache = None
+        self._guncelleme_yonetici_cache = None
+        self._sistem_yonetici_cache = None
+        self._yedek_yonetici_cache = None
+
+        self._modul_cache: dict[str, object] = {}
+
+    # =========================================================
+    # CACHE / INTERNAL
+    # =========================================================
+    def cache_temizle(self) -> None:
+        """
+        Tüm modül ve yönetici cache alanlarını temizler.
+        """
+        try:
+            self._analiz_yonetici_cache = None
+            self._android_yonetici_cache = None
+            self._belge_yonetici_cache = None
+            self._dosya_yonetici_cache = None
+            self._reklam_yonetici_cache = None
+            self._guncelleme_yonetici_cache = None
+            self._sistem_yonetici_cache = None
+            self._yedek_yonetici_cache = None
+            self._modul_cache = {}
+        except Exception:
+            pass
+
+    def _modul_yukle(self, modul_yolu: str):
+        """
+        Hedef modülü lazy import + cache ile yükler.
+
+        Args:
+            modul_yolu: Yüklenecek modül yolu.
+
+        Returns:
+            module | None
+        """
+        try:
+            cached = self._modul_cache.get(modul_yolu)
+            if cached is not None:
+                return cached
+        except Exception:
+            pass
+
+        try:
+            modul = __import__(modul_yolu, fromlist=["*"])
+            self._modul_cache[modul_yolu] = modul
+            return modul
+        except Exception:
+            print(f"[SERVICES] Modül yüklenemedi: {modul_yolu}")
+            print(traceback.format_exc())
+            return None
+
+    def _yonetici_sinifini_getir(self, modul_yolu: str, sinif_adi: str):
+        """
+        Modül içinden hedef yönetici sınıfını alır.
+
+        Args:
+            modul_yolu: Modül yolu.
+            sinif_adi: Sınıf adı.
+
+        Returns:
+            type | None
+        """
+        modul = self._modul_yukle(modul_yolu)
+        if modul is None:
+            return None
+
+        try:
+            cls = getattr(modul, sinif_adi, None)
+            if cls is None:
+                print(f"[SERVICES] Sınıf bulunamadı: {modul_yolu}.{sinif_adi}")
+            return cls
+        except Exception:
+            print(f"[SERVICES] Sınıf alınamadı: {modul_yolu}.{sinif_adi}")
+            print(traceback.format_exc())
+            return None
+
     # =========================================================
     # ALT YONETICILER
     # =========================================================
     def _analiz_yoneticisi(self):
-        from app.services.analiz import AnalizYoneticisi
-        return AnalizYoneticisi()
+        if self._analiz_yonetici_cache is None:
+            cls = self._yonetici_sinifini_getir(
+                "app.services.analiz",
+                "AnalizYoneticisi",
+            )
+            if cls is None:
+                raise RuntimeError("AnalizYoneticisi bulunamadı.")
+            self._analiz_yonetici_cache = cls()
+        return self._analiz_yonetici_cache
 
     def _android_yoneticisi(self):
-        from app.services.android import AndroidYoneticisi
-        return AndroidYoneticisi()
+        if self._android_yonetici_cache is None:
+            cls = self._yonetici_sinifini_getir(
+                "app.services.android",
+                "AndroidYoneticisi",
+            )
+            if cls is None:
+                raise RuntimeError("AndroidYoneticisi bulunamadı.")
+            self._android_yonetici_cache = cls()
+        return self._android_yonetici_cache
 
     def _belge_yoneticisi(self):
-        from app.services.belge import BelgeYoneticisi
-        return BelgeYoneticisi()
+        if self._belge_yonetici_cache is None:
+            cls = self._yonetici_sinifini_getir(
+                "app.services.belge",
+                "BelgeYoneticisi",
+            )
+            if cls is None:
+                raise RuntimeError("BelgeYoneticisi bulunamadı.")
+            self._belge_yonetici_cache = cls()
+        return self._belge_yonetici_cache
 
     def _dosya_yoneticisi(self):
-        from app.services.dosya import DosyaYoneticisi
-        return DosyaYoneticisi()
+        if self._dosya_yonetici_cache is None:
+            cls = self._yonetici_sinifini_getir(
+                "app.services.dosya",
+                "DosyaYoneticisi",
+            )
+            if cls is None:
+                raise RuntimeError("DosyaYoneticisi bulunamadı.")
+            self._dosya_yonetici_cache = cls()
+        return self._dosya_yonetici_cache
 
     def _reklam_yoneticisi(self):
-        from app.services.reklam import ReklamYoneticisi
-        return ReklamYoneticisi()
+        if self._reklam_yonetici_cache is None:
+            cls = self._yonetici_sinifini_getir(
+                "app.services.reklam",
+                "ReklamYoneticisi",
+            )
+            if cls is None:
+                raise RuntimeError("ReklamYoneticisi bulunamadı.")
+            self._reklam_yonetici_cache = cls()
+        return self._reklam_yonetici_cache
 
     def _guncelleme_yoneticisi(self):
-        from app.services.guncelleme import GuncellemeYoneticisi
-        return GuncellemeYoneticisi()
+        if self._guncelleme_yonetici_cache is None:
+            cls = self._yonetici_sinifini_getir(
+                "app.services.guncelleme",
+                "GuncellemeYoneticisi",
+            )
+            if cls is None:
+                raise RuntimeError("GuncellemeYoneticisi bulunamadı.")
+            self._guncelleme_yonetici_cache = cls()
+        return self._guncelleme_yonetici_cache
 
     def _sistem_yoneticisi(self):
-        from app.services.sistem import SistemYoneticisi
-        return SistemYoneticisi()
+        if self._sistem_yonetici_cache is None:
+            cls = self._yonetici_sinifini_getir(
+                "app.services.sistem",
+                "SistemYoneticisi",
+            )
+            if cls is None:
+                raise RuntimeError("SistemYoneticisi bulunamadı.")
+            self._sistem_yonetici_cache = cls()
+        return self._sistem_yonetici_cache
 
     def _yedek_yoneticisi(self):
-        from app.services.yedek import YedekYoneticisi
-        return YedekYoneticisi()
+        if self._yedek_yonetici_cache is None:
+            cls = self._yonetici_sinifini_getir(
+                "app.services.yedek",
+                "YedekYoneticisi",
+            )
+            if cls is None:
+                raise RuntimeError("YedekYoneticisi bulunamadı.")
+            self._yedek_yonetici_cache = cls()
+        return self._yedek_yonetici_cache
 
     # =========================================================
     # ANALIZ
@@ -227,12 +377,6 @@ class ServicesYoneticisi:
     def sistem_yoneticisi(self):
         return self._sistem_yoneticisi()
 
-    def gecici_bildirim_servisi(self):
-        return self._sistem_yoneticisi().gecici_bildirim_servisi()
-
-    def log_servisi(self):
-        return self._sistem_yoneticisi().log_servisi()
-
     def ayarlari_yukle(self) -> dict:
         return self._sistem_yoneticisi().ayarlari_yukle()
 
@@ -254,6 +398,30 @@ class ServicesYoneticisi:
     def aktif_dil(self) -> str:
         return self._sistem_yoneticisi().aktif_dil()
 
+    def dil_degistir(self, code: str) -> bool:
+        return self._sistem_yoneticisi().dil_degistir(code)
+
+    def set_active_language(self, code: str) -> bool:
+        return self._sistem_yoneticisi().set_active_language(code)
+
+    def aktif_dili_ayardan_yukle(self, default: str = "tr") -> str:
+        return self._sistem_yoneticisi().aktif_dili_ayardan_yukle(default=default)
+
+    def dil_destekleniyor_mu(self, code: str) -> bool:
+        return self._sistem_yoneticisi().dil_destekleniyor_mu(code)
+
+    def dil_var_mi(self, code: str) -> bool:
+        return self._sistem_yoneticisi().dil_var_mi(code)
+
+    def mevcut_dilleri_listele(self) -> list[dict[str, str]]:
+        return self._sistem_yoneticisi().mevcut_dilleri_listele()
+
+    def mevcut_dil_kodlari(self) -> list[str]:
+        return self._sistem_yoneticisi().mevcut_dil_kodlari()
+
+    def dilleri_yeniden_tara(self) -> list[dict[str, str]]:
+        return self._sistem_yoneticisi().dilleri_yeniden_tara()
+
     def desteklenen_diller(
         self,
         sadece_aktifler: bool = False,
@@ -261,9 +429,6 @@ class ServicesYoneticisi:
         return self._sistem_yoneticisi().desteklenen_diller(
             sadece_aktifler=sadece_aktifler
         )
-
-    def dil_var_mi(self, code: str) -> bool:
-        return self._sistem_yoneticisi().dil_var_mi(code)
 
     def dil_adi(self, code: str, default: str = "") -> str:
         return self._sistem_yoneticisi().dil_adi(code=code, default=default)
@@ -282,6 +447,39 @@ class ServicesYoneticisi:
 
     def clear_app_state(self) -> None:
         self._sistem_yoneticisi().clear_app_state()
+
+    def register_bildirim_layer(self, layer) -> bool:
+        return self._sistem_yoneticisi().register_bildirim_layer(layer)
+
+    def unregister_bildirim_layer(self) -> None:
+        self._sistem_yoneticisi().unregister_bildirim_layer()
+
+    def bildirim_layer_var_mi(self) -> bool:
+        return self._sistem_yoneticisi().bildirim_layer_var_mi()
+
+    def bildirim_goster(
+        self,
+        text: str,
+        icon_name: str = "",
+        duration: float = 2.4,
+        title: str = "",
+        tone: str = "info",
+        on_tap=None,
+    ) -> bool:
+        return self._sistem_yoneticisi().bildirim_goster(
+            text=text,
+            icon_name=icon_name,
+            duration=duration,
+            title=title,
+            tone=tone,
+            on_tap=on_tap,
+        )
+
+    def bildirim_gizle(self) -> bool:
+        return self._sistem_yoneticisi().bildirim_gizle()
+
+    def bildirimi_aninda_gizle(self) -> bool:
+        return self._sistem_yoneticisi().bildirimi_aninda_gizle()
 
     def premium_aktif_mi(self) -> bool:
         return self._sistem_yoneticisi().premium_aktif_mi()
