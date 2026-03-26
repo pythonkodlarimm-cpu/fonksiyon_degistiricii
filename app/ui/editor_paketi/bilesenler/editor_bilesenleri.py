@@ -4,9 +4,10 @@ DOSYA: app/ui/editor_paketi/bilesenler/editor_bilesenleri.py
 
 ROL:
 - Editör paketinin temel görsel bileşenlerini sağlamak
-- Kod editörü, bilgi kutusu ve sade kod alanı bileşenlerini tanımlamak
+- Kod editörü, bilgi kutusu, sade kod alanı ve aksiyon araç satırı bileşenlerini tanımlamak
 - Editör paneli için tekrar kullanılabilir UI yapı taşları üretmek
 - Aktif dile göre görünür metinleri yenileyebilmek
+- Yeni kod alanı için kontrol paneli üstünde yapıştırma butonu gibi yeni aksiyonları barındırmak
 
 MİMARİ:
 - Bu dosya sadece bileşen tanımlar
@@ -15,24 +16,28 @@ MİMARİ:
 - Görünen sabit metinler ServicesYoneticisi üzerinden çözülebilir
 - Dil değişiminde mevcut görünen varsayılan metinler güvenli şekilde yenilenir
 - Hint text güncellemesi doğrudan editör widget'ına da yansıtılır
+- Aksiyon araç satırı ikon + metin + callback bazlı esnek yapı ile çalışır
 
 API UYUMLULUK:
 - Platform bağımsızdır
 - Android API 35 ile uyumludur
 - Doğrudan Android bridge çağrısı içermez
 
-SURUM: 4
-TARIH: 2026-03-24
+SURUM: 5
+TARIH: 2026-03-26
 IMZA: FY.
 """
 
 from __future__ import annotations
+
+from functools import partial
 
 from kivy.animation import Animation
 from kivy.clock import Clock
 from kivy.graphics import Color, Line, RoundedRectangle
 from kivy.metrics import dp
 from kivy.properties import NumericProperty
+from kivy.uix.behaviors import ButtonBehavior
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.codeinput import CodeInput
 from kivy.uix.image import Image
@@ -163,6 +168,190 @@ class KodPaneli(BoxLayout):
             self.height,
             dp(RADIUS_MD),
         )
+
+
+class AksiyonIkonButonu(ButtonBehavior, BoxLayout):
+    """
+    Araç satırı için ikon + metin tabanlı hafif aksiyon butonu.
+    """
+
+    def __init__(
+        self,
+        text: str = "",
+        icon_name: str = "",
+        **kwargs,
+    ):
+        super().__init__(
+            orientation="horizontal",
+            spacing=dp(6),
+            padding=(dp(10), dp(8)),
+            size_hint=(None, None),
+            height=dp(40),
+            **kwargs,
+        )
+
+        self.text_value = str(text or "")
+        self.icon_name = str(icon_name or "").strip()
+
+        self.bind(
+            minimum_width=lambda inst, value: setattr(inst, "width", max(dp(92), value))
+        )
+
+        with self.canvas.before:
+            self._bg_color = Color(0.11, 0.15, 0.20, 1)
+            self._bg_rect = RoundedRectangle(radius=[dp(10)])
+
+        with self.canvas.after:
+            self._border_color = Color(0.20, 0.26, 0.34, 1)
+            self._border_line = Line(
+                rounded_rectangle=(0, 0, 0, 0, dp(10)),
+                width=1.0,
+            )
+
+        self.bind(pos=self._update_canvas, size=self._update_canvas)
+        self._update_canvas()
+
+        self.icon = Image(
+            source=f"app/assets/icons/{self.icon_name}" if self.icon_name else "",
+            size_hint=(None, None),
+            size=(dp(18), dp(18)),
+            opacity=1 if self.icon_name else 0,
+            allow_stretch=True,
+            keep_ratio=True,
+        )
+        self.add_widget(self.icon)
+
+        self.label = Label(
+            text=self.text_value,
+            size_hint=(None, 1),
+            width=dp(54),
+            halign="left",
+            valign="middle",
+            color=(0.92, 0.96, 1, 1),
+            font_size="12sp",
+            shorten=True,
+            shorten_from="right",
+            max_lines=1,
+        )
+        self.label.bind(
+            size=lambda inst, size: setattr(inst, "text_size", (size[0], size[1]))
+        )
+        self.add_widget(self.label)
+
+    def _update_canvas(self, *_args):
+        self._bg_rect.pos = self.pos
+        self._bg_rect.size = self.size
+        self._border_line.rounded_rectangle = (
+            self.x,
+            self.y,
+            self.width,
+            self.height,
+            dp(10),
+        )
+
+    def on_press(self):
+        try:
+            self._bg_color.rgba = (0.16, 0.22, 0.30, 1)
+            self._border_color.rgba = (0.28, 0.36, 0.48, 1)
+        except Exception:
+            pass
+
+    def on_release(self):
+        try:
+            self._bg_color.rgba = (0.11, 0.15, 0.20, 1)
+            self._border_color.rgba = (0.20, 0.26, 0.34, 1)
+        except Exception:
+            pass
+
+    def set_text(self, text: str) -> None:
+        self.text_value = str(text or "")
+        try:
+            self.label.text = self.text_value
+        except Exception:
+            pass
+
+    def set_icon(self, icon_name: str) -> None:
+        self.icon_name = str(icon_name or "").strip()
+        try:
+            self.icon.source = (
+                f"app/assets/icons/{self.icon_name}" if self.icon_name else ""
+            )
+            self.icon.opacity = 1 if self.icon_name else 0
+        except Exception:
+            pass
+
+
+class EditorAksiyonCubugu(BoxLayout):
+    """
+    Editör aksiyonları için tekrar kullanılabilir yatay araç satırı.
+    """
+
+    def __init__(
+        self,
+        services: ServicesYoneticisi | None = None,
+        **kwargs,
+    ):
+        super().__init__(
+            orientation="horizontal",
+            size_hint_y=None,
+            height=dp(48),
+            spacing=dp(8),
+            **kwargs,
+        )
+
+        self.services = services or ServicesYoneticisi()
+        self._aksiyon_butonlari: dict[str, AksiyonIkonButonu] = {}
+        self._aksiyon_metinleri: dict[str, tuple[str, str]] = {}
+
+    def _m(self, anahtar: str, default: str = "") -> str:
+        try:
+            return str(self.services.metin(anahtar, default) or default or anahtar)
+        except Exception:
+            return str(default or anahtar)
+
+    def aksiyon_ekle(
+        self,
+        aksiyon_anahtari: str,
+        text_key: str,
+        default_text: str,
+        icon_name: str,
+        callback=None,
+    ) -> AksiyonIkonButonu:
+        buton = AksiyonIkonButonu(
+            text=self._m(text_key, default_text),
+            icon_name=icon_name,
+        )
+
+        if callable(callback):
+            try:
+                buton.bind(on_release=lambda *_: callback())
+            except Exception:
+                pass
+
+        self._aksiyon_butonlari[str(aksiyon_anahtari)] = buton
+        self._aksiyon_metinleri[str(aksiyon_anahtari)] = (
+            str(text_key or ""),
+            str(default_text or ""),
+        )
+        self.add_widget(buton)
+        return buton
+
+    def buton_al(self, aksiyon_anahtari: str):
+        try:
+            return self._aksiyon_butonlari.get(str(aksiyon_anahtari))
+        except Exception:
+            return None
+
+    def refresh_language(self) -> None:
+        try:
+            for aksiyon_anahtari, buton in self._aksiyon_butonlari.items():
+                text_key, default_text = self._aksiyon_metinleri.get(
+                    str(aksiyon_anahtari),
+                    ("", ""),
+                )
+                buton.set_text(self._m(text_key, default_text))
+        except Exception:
+            pass
 
 
 class BilgiKutusu(BoxLayout):
