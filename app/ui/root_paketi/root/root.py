@@ -14,23 +14,26 @@ ROL:
 MİMARİ:
 - Dosya/Seçim/Güncelleme/Geri yükleme eski root_paketi mixin'leri korunur
 - Yeni root_akisi modülleri parçalı sorumluluk yaklaşımıyla eklenmiştir
-- UI kurulumu, banner, tarama geçişi, editor state, geçici status ve RAM state akışları
+- UI kurulumu, banner, tarama geçişi, editor state, geçici status, dil akışı ve RAM state akışları
   alt modüllerden gelir
 - Root sadece üst orkestrasyon ve kalan bağlayıcı metodları içerir
 - Lazy import sistemi alt paketlerde __init__.py ve yonetici.py üzerinden korunur
 - Tek ServicesYoneticisi instance'ı root içinde oluşturulur ve alt UI bileşenlerine enjekte edilir
 - Reklam akışında mevcut davranış korunur; sadece görünürlük ve bağlama tarafı güvenli hale getirilir
+- Dil akışı RootDilAkisiMixin ile birlikte çalışır ve root callback zinciri korunur
+- App state akışı RAM öncelikli, gerekirse disk fallback ile çalışır
 
 NOTLAR:
-- Disk tabanlı app state restore kullanılmaz
-- Uygulama state yalnızca aynı process içindeki RAM bellekte tutulur
 - Android dışı platformlarda banner / interstitial akışları güvenli biçimde pas geçilir
 - Root method adları mevcut sistemle geriye uyumlu tutulmuştur
 - Reklam görünürlüğü için mevcut başlangıç akışı korunur; yalnızca fail-soft wrapper ve
   ortak services bağlama desteği güçlendirilmiştir
+- Dil değişiminde hem doğrudan hem de schedule_once tabanlı tekrar refresh uygulanır
+- UI kurulduktan sonra restore denenir
+- Resume dönüşünde services bağlama + dil yenileme + state restore zinciri tekrar tetiklenebilir
 
-SURUM: 69
-TARIH: 2026-03-24
+SURUM: 72
+TARIH: 2026-03-26
 IMZA: FY.
 """
 
@@ -61,6 +64,7 @@ from .root_akisi.app_state_kaydet_geri_yukle import (
     RootAppStateKaydetGeriYukleMixin,
 )
 from .root_akisi.banner_akisi import RootBannerAkisiMixin
+from .root_akisi.dil_akisi import RootDilAkisiMixin
 from .root_akisi.dil_yardimcilari import RootDilYardimcilariMixin
 from .root_akisi.editor_state import RootEditorStateMixin
 from .root_akisi.gecici_status import RootGeciciStatusMixin
@@ -84,6 +88,7 @@ class RootWidget(
     RootGuncellemeAkisiMixin,
     RootGeriYuklemeAkisiMixin,
     RootYardimcilariMixin,
+    RootDilAkisiMixin,
     RootDilYardimcilariMixin,
     RootEditorStateMixin,
     RootSistemVeAppStateMixin,
@@ -146,6 +151,8 @@ class RootWidget(
         self._resume_restore_scheduled = False
         self._memory_app_state = {}
         self._restore_status_reset_event = None
+        self._initial_restore_attempted = False
+        self._resume_refresh_scheduled = False
 
         self._pending_scan_result = None
         self._pending_scan_item_count = 0
@@ -158,11 +165,18 @@ class RootWidget(
         self._update_check_in_progress = False
 
         try:
+            self._auto_restore_saved_state_on_start()
+        except Exception:
+            pass
+
+        try:
             self._build_ui()
             self._bind_services_to_ui()
             self._full_language_refresh()
             self.set_status_info(self._m("app_ready", "Hazır."), "onaylandi.png")
+
             Clock.schedule_once(self._post_build_refresh, 0.08)
+            Clock.schedule_once(self._attempt_initial_state_restore, 0.10)
             Clock.schedule_once(self._rebinding_ui_services_after_layout, 0.12)
             Clock.schedule_once(self._try_start_banner, 0.35)
             Clock.schedule_once(self._try_preload_interstitial, 0.80)
@@ -221,13 +235,6 @@ class RootWidget(
     def _bind_services_to_ui(self) -> None:
         """
         Root içindeki ana UI bileşenlerine ortak services instance'ını bağlar.
-
-        Bu metod:
-        - UI kurulumundan hemen sonra
-        - Gerekirse layout sonrası tekrar
-        çağrılabilir.
-
-        Böylece UI <-> service bağı tek root instance üzerinden korunur.
         """
         try:
             self._bind_service_to_widget(self.file_access_panel)
@@ -260,6 +267,11 @@ class RootWidget(
             pass
 
         try:
+            self._bind_service_to_widget(self.version_label)
+        except Exception:
+            pass
+
+        try:
             self._bind_service_to_widget(self.bottom_bar)
         except Exception:
             pass
@@ -282,11 +294,6 @@ class RootWidget(
     def _rebinding_ui_services_after_layout(self, *_args) -> None:
         """
         UI layout kurulduktan kısa süre sonra services bağını tekrar doğrular.
-
-        Özellikle:
-        - yöneticiler içinden dönen widget'lar
-        - geç oluşturulan alt widget referansları
-        için güvenli ikinci bağlama katmanı sağlar.
         """
         try:
             self._bind_services_to_ui()
@@ -294,14 +301,104 @@ class RootWidget(
             pass
 
     # =========================================================
+    # STATE RESTORE / RESUME
+    # =========================================================
+    def _attempt_initial_state_restore(self, *_args) -> None:
+        """
+        UI kurulduktan sonra tek seferlik ilk restore denemesini başlatır.
+        """
+        if self._initial_restore_attempted:
+            return
+
+        self._initial_restore_attempted = True
+
+        try:
+            self.uygulama_durumu_geri_yukle()
+        except Exception:
+            print("[ROOT] İlk state restore denemesi başarısız.")
+            print(traceback.format_exc())
+
+    def resume_sonrasi_yenile(self, *_args) -> None:
+        """
+        Uygulama arka plandan geri geldiğinde UI zincirini yeniler.
+
+        Bu metod:
+        - services bağlarını tazeler
+        - dil cache / UI refresh akışını tekrar çalıştırır
+        - gerekiyorsa state restore'u yeniden dener
+        """
+        try:
+            self._bind_services_to_ui()
+        except Exception:
+            pass
+
+        try:
+            clear_translation_cache = getattr(self, "_clear_translation_cache", None)
+            if callable(clear_translation_cache):
+                clear_translation_cache()
+        except Exception:
+            pass
+
+        try:
+            self._full_language_refresh()
+        except Exception:
+            pass
+
+        try:
+            self.uygulama_durumu_geri_yukle()
+        except Exception:
+            print("[ROOT] Resume sonrası state restore başarısız.")
+            print(traceback.format_exc())
+
+        try:
+            Clock.schedule_once(lambda *_: self._bind_services_to_ui(), 0.02)
+            Clock.schedule_once(lambda *_: self._full_language_refresh(), 0.05)
+            Clock.schedule_once(lambda *_: self._full_language_refresh(), 0.15)
+        except Exception:
+            pass
+
+        try:
+            Clock.schedule_once(self._ensure_banner_visibility, 0.25)
+        except Exception:
+            pass
+
+    def uygulama_resume_akisini_tetikle(self) -> None:
+        """
+        main.py veya başka bir üst akıştan güvenli resume çağrısı almak için
+        ortak giriş noktasıdır.
+        """
+        try:
+            if self._resume_refresh_scheduled:
+                return
+        except Exception:
+            pass
+
+        self._resume_refresh_scheduled = True
+
+        def _run(*_args):
+            self._resume_refresh_scheduled = False
+            try:
+                self.resume_sonrasi_yenile()
+            except Exception:
+                print("[ROOT] uygulama_resume_akisini_tetikle başarısız.")
+                print(traceback.format_exc())
+
+        try:
+            Clock.schedule_once(_run, 0.02)
+        except Exception:
+            self._resume_refresh_scheduled = False
+            try:
+                self.resume_sonrasi_yenile()
+            except Exception:
+                print("[ROOT] uygulama_resume_akisini_tetikle fallback başarısız.")
+                print(traceback.format_exc())
+
+    # =========================================================
     # INTERSTITIAL WRAPPER
     # =========================================================
     def _try_preload_interstitial(self, *_args) -> None:
         """
         Geçiş reklamı preload akışını fail-soft şekilde başlatır.
-
-        Root başlangıcında schedule_once ile çağrıldığı için wrapper tutulur.
-        Alt mixin içindeki gerçek yükleme metodunu güvenli biçimde çağırır.
         """
         try:
             self._preload_interstitial()
@@ -312,23 +409,33 @@ class RootWidget(
     # =========================================================
     # LANGUAGE CALLBACK
     # =========================================================
-    def _on_language_changed(self, code: str) -> None:
+    def _on_language_changed(self, code: str = "") -> None:
         """
         Dil değişimi callback akışını yönetir.
 
         Args:
             code: Yeni dil kodu.
         """
-        try:
-            self.services.dil_degistir(code)
-        except Exception:
+        temiz_kod = str(code or "").strip()
+
+        if temiz_kod:
             try:
-                self.services.set_language(code)
+                self.services.dil_degistir(temiz_kod)
             except Exception:
-                pass
+                try:
+                    self.services.set_language(temiz_kod)
+                except Exception:
+                    pass
 
         try:
             self._bind_services_to_ui()
+        except Exception:
+            pass
+
+        try:
+            clear_translation_cache = getattr(self, "_clear_translation_cache", None)
+            if callable(clear_translation_cache):
+                clear_translation_cache()
         except Exception:
             pass
 
@@ -354,8 +461,16 @@ class RootWidget(
 
         try:
             Clock.schedule_once(lambda *_: self._bind_services_to_ui(), 0.01)
+            Clock.schedule_once(
+                lambda *_: (
+                    callable(getattr(self, "_clear_translation_cache", None))
+                    and self._clear_translation_cache()
+                ),
+                0.015,
+            )
             Clock.schedule_once(lambda *_: self._full_language_refresh(), 0.02)
             Clock.schedule_once(lambda *_: self._full_language_refresh(), 0.10)
+            Clock.schedule_once(lambda *_: self._full_language_refresh(), 0.20)
         except Exception:
             pass
 
@@ -519,4 +634,4 @@ class RootWidget(
             print(traceback.format_exc())
             self.set_status_warning(
                 self._m("play_store_open_failed", "Play Store açılamadı.")
-            )
+                )
