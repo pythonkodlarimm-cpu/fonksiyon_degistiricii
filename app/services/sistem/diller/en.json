@@ -243,10 +243,19 @@
 
   "download_error_title": "Download Error",
   "backup_copy_failed": "Backup could not be copied:",
+  "download_failed_message": "Backup could not be copied:",
+  "backup_not_found": "Backup not found",
+  "invalid_backup_file": "Not a valid backup file",
+  "download_target_not_created": "Downloaded target file was not created",
+  "target_folder": "Target folder",
 
   "delete_backup_title": "Delete Backup",
   "backup_will_be_deleted": "This backup will be deleted:",
   "irreversible_action": "This action cannot be undone.",
+  "delete_confirm_title": "Delete Confirmation",
+  "delete_confirm_message": "Are you sure you want to delete this item?",
+  "delete_success": "Delete operation successful",
+  "delete_failed": "Delete operation failed",
 
   "bulk_delete_title": "Bulk Delete",
   "backups_deleting": "Deleting backups...",
@@ -290,5 +299,13 @@
   "selection_error_title": "Selection Error",
   "update_flow_wrong_target_detail": "A function from outside the selected working file or from inside the application itself was passed into the update flow.",
   "update_prepare_error_occurred": "An error occurred while preparing the update.",
-  "update_prepare_error_title": "Update Preparation Error"
+  "update_prepare_error_title": "Update Preparation Error",
+
+  "menu_error_title": "Menu Error",
+  "menu_open_failed": "Menu could not be opened:",
+  "backup_error_title": "Backup Error",
+  "backup_screen_open_failed": "Backup screen could not be opened:",
+
+  "unexpected_error": "An unexpected error occurred",
+  "operation_failed": "Operation failed"
 }
