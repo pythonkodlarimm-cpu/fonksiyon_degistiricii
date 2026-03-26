@@ -8,6 +8,7 @@ ROL:
 - Ana menü ve yedek popup akışını başlatmak
 - Dil popup akışına giriş için gerekli callback ve servis bağlantısını taşımak
 - Popup açılışlarında services zincirini aşağı katmana iletmek
+- Root tarafından verilen ortak services instance'ı ile uyumlu çalışmak
 
 MİMARİ:
 - Alt modülleri doğrudan import etmez
@@ -15,14 +16,16 @@ MİMARİ:
 - Panel yalnızca UI davranışını yönetir
 - Menü popup'a servis ve dil değişim callback'i güvenli şekilde iletilir
 - Yedek popup ve hata popup çağrılarında services parametresi aşağı geçirilir
+- Services yeniden bağlanırsa mevcut panel davranışı bozulmaz
+- Dil değişiminde panel üstünden yeni popup açılışları güncel dil ile çalışır
 
 API UYUMLULUK:
 - Platform bağımsızdır
 - Android API 35 ile uyumludur
 - Doğrudan Android bridge çağrısı içermez
 
-SURUM: 5
-TARIH: 2026-03-23
+SURUM: 6
+TARIH: 2026-03-24
 IMZA: FY.
 """
 
@@ -62,10 +65,24 @@ class TumDosyaErisimPaneli(Kart):
         self._start_menu_glow()
 
     # =========================================================
+    # SERVICES
+    # =========================================================
+    def set_services(self, services: ServicesYoneticisi | None) -> None:
+        """
+        Root tarafından ortak services instance'ı yeniden bağlanabilir.
+        """
+        try:
+            if services is not None:
+                self.services = services
+        except Exception:
+            pass
+
+    # =========================================================
     # YONETICI
     # =========================================================
     def _yonetici(self):
         from app.ui.tum_dosya_erisim_paketi import TumDosyaErisimYoneticisi
+
         return TumDosyaErisimYoneticisi()
 
     # =========================================================
@@ -76,6 +93,18 @@ class TumDosyaErisimPaneli(Kart):
             return str(self.services.metin(anahtar, default) or default or anahtar)
         except Exception:
             return str(default or anahtar)
+
+    def refresh_language(self) -> None:
+        """
+        Panel üzerinde görünür sabit metin neredeyse olmadığı için
+        burada esas amaç ortak services bağını güncel tutmaktır.
+        """
+        try:
+            if self.menu_icon is not None and hasattr(self.menu_icon, "source"):
+                # İkon statik, sadece yerinde kalsın.
+                pass
+        except Exception:
+            pass
 
     # =========================================================
     # DEBUG
@@ -180,4 +209,4 @@ class TumDosyaErisimPaneli(Kart):
                 auto_close_seconds=1.8,
                 compact=True,
                 services=self.services,
-                )
+            )
