@@ -8,6 +8,7 @@ ROL:
 - Alt akış paketlerini root katmanından izole eder
 - Tüm akışlara merkezi yöneticiden erişim sağlar
 - Erişim politikası olarak alt modüllere bu dosya üzerinden ulaşılmasını hedefler
+- Android ve AAB ortamında tekrar eden import maliyetini azaltacak şekilde çalışır
 
 MİMARİ:
 - Her akış için ayrı accessor vardır
@@ -16,6 +17,8 @@ MİMARİ:
 - Fail-soft yaklaşım uygulanır; hata durumunda log basılır ve None döner
 - İstenirse cache temizlenerek modüller yeniden çözümlenebilir
 - Alt paketlerin kendi __init__.py lazy export sistemi ile uyumludur
+- Cache bozulursa kendini toparlayacak şekilde yeniden resolve yapabilir
+- Alt modüllere erişim doğrudan değil, bu yönetici üzerinden yapılmalıdır
 
 ERISILEN AKISLAR:
 - dil_yardimcilari
@@ -41,10 +44,10 @@ NOT:
 - Bu dosya root örneği oluşturmaz
 - Sadece modül erişimini merkezi hale getirir
 - root/root_akisi klasör yapısına göre import yolları güncellenmiştir
-- Alt modüllere erişim doğrudan değil, bu yönetici üzerinden yapılmalıdır
+- Geliştirme sırasında hot-reload veya kısmi dosya değişimlerinde cache temizlenebilir
 
-SURUM: 3
-TARIH: 2026-03-24
+SURUM: 6
+TARIH: 2026-03-26
 IMZA: FY.
 """
 
@@ -117,6 +120,21 @@ class RootAkisiYoneticisi:
     # =========================================================
     # INTERNAL
     # =========================================================
+    def _modul_gecerli_mi(self, module) -> bool:
+        """
+        Cache içindeki modül nesnesinin geçerli olup olmadığını kontrol eder.
+
+        Args:
+            module: Kontrol edilecek modül.
+
+        Returns:
+            bool
+        """
+        try:
+            return module is not None and hasattr(module, "__name__")
+        except Exception:
+            return False
+
     def _yukle(self, import_path: str):
         """
         Modülü lazy import + cache ile yükler.
@@ -129,13 +147,22 @@ class RootAkisiYoneticisi:
         """
         try:
             cached = self._cache_get(import_path)
-            if cached is not None:
+            if cached is not None and self._modul_gecerli_mi(cached):
                 return cached
         except Exception:
-            pass
+            self._cache_delete(import_path)
 
         try:
             module = __import__(import_path, fromlist=["*"])
+
+            if not self._modul_gecerli_mi(module):
+                print(
+                    "[ROOT_AKISI] modül yüklendi ama geçerli görünmedi: "
+                    f"{import_path}"
+                )
+                self._cache_delete(import_path)
+                return None
+
             self._cache_set(import_path, module)
             return module
         except Exception:
@@ -148,6 +175,9 @@ class RootAkisiYoneticisi:
     # DIL YARDIMCILARI
     # =========================================================
     def dil_yardimcilari(self):
+        """
+        Dil yardımcıları akış modülünü döndürür.
+        """
         return self._yukle(
             "app.ui.root_paketi.root.root_akisi.dil_yardimcilari"
         )
@@ -156,6 +186,9 @@ class RootAkisiYoneticisi:
     # EDITOR STATE
     # =========================================================
     def editor_state(self):
+        """
+        Editör state akış modülünü döndürür.
+        """
         return self._yukle(
             "app.ui.root_paketi.root.root_akisi.editor_state"
         )
@@ -164,6 +197,9 @@ class RootAkisiYoneticisi:
     # SISTEM / APP STATE
     # =========================================================
     def sistem_ve_app_state(self):
+        """
+        Sistem ve app state akış modülünü döndürür.
+        """
         return self._yukle(
             "app.ui.root_paketi.root.root_akisi.sistem_ve_app_state"
         )
@@ -178,6 +214,9 @@ class RootAkisiYoneticisi:
     # GECICI STATUS
     # =========================================================
     def gecici_status(self):
+        """
+        Geçici status akış modülünü döndürür.
+        """
         return self._yukle(
             "app.ui.root_paketi.root.root_akisi.gecici_status"
         )
@@ -186,6 +225,9 @@ class RootAkisiYoneticisi:
     # GUNCELLEME CTA / SURUM KONTROL
     # =========================================================
     def guncelleme_cta_ve_surum_kontrol(self):
+        """
+        Güncelleme CTA ve sürüm kontrol akış modülünü döndürür.
+        """
         return self._yukle(
             "app.ui.root_paketi.root.root_akisi.guncelleme_cta_ve_surum_kontrol"
         )
@@ -200,6 +242,9 @@ class RootAkisiYoneticisi:
     # GECIS REKLAMI ON YUKLEME
     # =========================================================
     def gecis_reklami_on_yukleme(self):
+        """
+        Geçiş reklamı ön yükleme akış modülünü döndürür.
+        """
         return self._yukle(
             "app.ui.root_paketi.root.root_akisi.gecis_reklami_on_yukleme"
         )
@@ -208,6 +253,9 @@ class RootAkisiYoneticisi:
     # BANNER AKISI
     # =========================================================
     def banner_akisi(self):
+        """
+        Banner akış modülünü döndürür.
+        """
         return self._yukle(
             "app.ui.root_paketi.root.root_akisi.banner_akisi"
         )
@@ -216,6 +264,9 @@ class RootAkisiYoneticisi:
     # TARAMA GECIS VE LISTE ACMA
     # =========================================================
     def tarama_gecis_ve_liste_acma(self):
+        """
+        Tarama geçiş ve liste açma akış modülünü döndürür.
+        """
         return self._yukle(
             "app.ui.root_paketi.root.root_akisi.tarama_gecis_ve_liste_acma"
         )
@@ -230,6 +281,9 @@ class RootAkisiYoneticisi:
     # DIL AKISI
     # =========================================================
     def dil_akisi(self):
+        """
+        Dil akışı modülünü döndürür.
+        """
         return self._yukle(
             "app.ui.root_paketi.root.root_akisi.dil_akisi"
         )
@@ -238,6 +292,9 @@ class RootAkisiYoneticisi:
     # UI KURULUMU
     # =========================================================
     def ui_kurulumu(self):
+        """
+        UI kurulumu akış modülünü döndürür.
+        """
         return self._yukle(
             "app.ui.root_paketi.root.root_akisi.ui_kurulumu"
         )
@@ -246,6 +303,9 @@ class RootAkisiYoneticisi:
     # APP STATE KAYDET / GERI YUKLE
     # =========================================================
     def app_state_kaydet_geri_yukle(self):
+        """
+        App state kaydet / geri yükle akış modülünü döndürür.
+        """
         return self._yukle(
             "app.ui.root_paketi.root.root_akisi.app_state_kaydet_geri_yukle"
         )
@@ -255,3 +315,45 @@ class RootAkisiYoneticisi:
         Geriye uyumlu kısa ad.
         """
         return self.app_state_kaydet_geri_yukle()
+
+    # =========================================================
+    # ALIAS / TOPLU ERISIM
+    # =========================================================
+    def dil(self):
+        """
+        Geriye uyumlu kısa alias.
+        """
+        return self.dil_akisi()
+
+    def ui(self):
+        """
+        Geriye uyumlu kısa alias.
+        """
+        return self.ui_kurulumu()
+
+    def editor(self):
+        """
+        Geriye uyumlu kısa alias.
+        """
+        return self.editor_state()
+
+    def tum_moduller(self) -> dict[str, object | None]:
+        """
+        Tüm root_akisi modüllerini bir sözlük halinde döndürür.
+
+        Returns:
+            dict[str, object | None]
+        """
+        return {
+            "dil_yardimcilari": self.dil_yardimcilari(),
+            "editor_state": self.editor_state(),
+            "sistem_ve_app_state": self.sistem_ve_app_state(),
+            "gecici_status": self.gecici_status(),
+            "guncelleme_cta_ve_surum_kontrol": self.guncelleme_cta_ve_surum_kontrol(),
+            "gecis_reklami_on_yukleme": self.gecis_reklami_on_yukleme(),
+            "banner_akisi": self.banner_akisi(),
+            "tarama_gecis_ve_liste_acma": self.tarama_gecis_ve_liste_acma(),
+            "dil_akisi": self.dil_akisi(),
+            "ui_kurulumu": self.ui_kurulumu(),
+            "app_state_kaydet_geri_yukle": self.app_state_kaydet_geri_yukle(),
+        }
