@@ -10,6 +10,8 @@ ROL:
 - Görünen metinlerde services tabanlı dil desteğine hazır olmak
 - Panodan yapıştırılan içeriklerde güvenli normalize akışı uygulamak
 - Boşluk / satır başı-sonu / sekme / satır sonu farklarını güvenli biçimde temizlemek
+- Popup içi yapıştırma akışında Android uzun bas -> Yapıştır davranışına
+  görsel olarak yakın ama kontrollü bir metin aktarımı uygulamak
 
 MİMARİ:
 - Üst katman bu modüle doğrudan değil, popup/yoneticisi.py üzerinden erişmelidir
@@ -20,14 +22,19 @@ MİMARİ:
 - services verilmezse güvenli fallback ile çalışır
 - Clipboard içeriği yoksa veya erişilemezse fail-soft davranır
 - Kullanıcıya görünen sabit metinler _m(...) ile çözülür
+- Yapıştırma akışında ham native paste kullanılmaz; bunun yerine
+  clipboard -> normalize -> güvenli set_text zinciri uygulanır
+- Popup editöründe siyah blok / bozuk render riskini azaltmak için
+  insert_text yerine tam metin atama yaklaşımı kullanılır
+- Dil entegrasyonu bozulmadan yeni anahtar bazlı notice akışı korunur
 
 API UYUMLULUK:
 - Platform bağımsızdır
 - Android API 35 ile uyumludur
 - Doğrudan Android bridge çağrısı içermez
 
-SURUM: 4
-TARIH: 2026-03-24
+SURUM: 7
+TARIH: 2026-03-26
 IMZA: FY.
 """
 
@@ -45,16 +52,19 @@ from app.ui.tema import ACCENT, TEXT_MUTED
 
 def _bilesenler():
     from app.ui.editor_paketi.bilesenler import BilesenlerYoneticisi
+
     return BilesenlerYoneticisi()
 
 
 def _dogrulama():
     from app.ui.editor_paketi.dogrulama import DogrulamaYoneticisi
+
     return DogrulamaYoneticisi()
 
 
 def _yardimci():
     from app.ui.editor_paketi.yardimci import YardimciYoneticisi
+
     return YardimciYoneticisi()
 
 
@@ -97,7 +107,21 @@ def _normalize_text(text, trim_outer_blank_lines: bool = True) -> str:
         )
     except Exception:
         metin = str(text or "")
-        metin = metin.replace("\r\n", "\n").replace("\r", "\n").replace("\t", "    ")
+        metin = metin.replace("\r\n", "\n").replace("\r", "\n")
+        metin = metin.replace("\u2028", "\n").replace("\u2029", "\n")
+        metin = metin.replace("\ufeff", "")
+        metin = metin.replace("\u200b", "")
+        metin = metin.replace("\u200c", "")
+        metin = metin.replace("\u200d", "")
+        metin = metin.replace("\u2060", "")
+        metin = metin.replace("\xa0", " ")
+        metin = metin.replace("\t", "    ")
+
+        try:
+            satirlar = [str(satir or "").rstrip() for satir in metin.split("\n")]
+            metin = "\n".join(satirlar)
+        except Exception:
+            pass
 
         if trim_outer_blank_lines:
             satirlar = metin.split("\n")
@@ -117,6 +141,41 @@ def _safe_scroll_to_top(widget) -> None:
     try:
         if widget is not None and hasattr(widget, "scroll_to_top"):
             widget.scroll_to_top()
+            return
+    except Exception:
+        pass
+
+    try:
+        editor = getattr(widget, "editor", None)
+        if editor is not None and hasattr(editor, "scroll_to_top"):
+            editor.scroll_to_top()
+            return
+    except Exception:
+        pass
+
+    try:
+        editor = getattr(widget, "editor", None)
+        if editor is not None:
+            editor.scroll_y = 1
+    except Exception:
+        pass
+
+
+def _safe_scroll_to_end(widget) -> None:
+    try:
+        editor = getattr(widget, "editor", None)
+        if editor is not None:
+            try:
+                editor.scroll_y = 0
+            except Exception:
+                pass
+            return
+    except Exception:
+        pass
+
+    try:
+        if widget is not None and hasattr(widget, "scroll_y"):
+            widget.scroll_y = 0
     except Exception:
         pass
 
@@ -129,21 +188,121 @@ def _safe_popup_title_path(panel) -> str:
 
 
 def _safe_clipboard_text() -> str:
-    try:
-        raw = Clipboard.paste()
-    except Exception:
-        raw = ""
+    adaylar = (
+        "text/plain;charset=utf-8",
+        "UTF8_STRING",
+        "text/plain",
+        "STRING",
+        "TEXT",
+    )
+
+    for hedef in adaylar:
+        try:
+            ham = Clipboard.get(hedef)
+            if ham is None:
+                continue
+
+            metin = _normalize_text(ham, trim_outer_blank_lines=True)
+            if metin:
+                return metin
+        except Exception:
+            pass
 
     try:
-        if raw is None:
+        ham = Clipboard.paste()
+        if ham is None:
             return ""
-        return str(raw)
+        return _normalize_text(ham, trim_outer_blank_lines=True)
     except Exception:
         return ""
 
 
 def _is_blank_text(text: str) -> bool:
     return not str(text or "").strip()
+
+
+def _safe_get_widget_text(widget) -> str:
+    if widget is None:
+        return ""
+
+    try:
+        if hasattr(widget, "get_text") and callable(widget.get_text):
+            return str(widget.get_text() or "")
+    except Exception:
+        pass
+
+    try:
+        editor = getattr(widget, "editor", None)
+        if editor is not None and hasattr(editor, "text"):
+            return str(editor.text or "")
+    except Exception:
+        pass
+
+    try:
+        if hasattr(widget, "text"):
+            return str(getattr(widget, "text", "") or "")
+    except Exception:
+        pass
+
+    return ""
+
+
+def _safe_set_widget_text(widget, text: str) -> bool:
+    if widget is None:
+        return False
+
+    temiz = str(text or "")
+
+    try:
+        if hasattr(widget, "set_text") and callable(widget.set_text):
+            widget.set_text(temiz)
+            return True
+    except Exception:
+        pass
+
+    try:
+        editor = getattr(widget, "editor", None)
+        if editor is not None and hasattr(editor, "text"):
+            editor.text = temiz
+            return True
+    except Exception:
+        pass
+
+    try:
+        if hasattr(widget, "text"):
+            setattr(widget, "text", temiz)
+            return True
+    except Exception:
+        pass
+
+    return False
+
+
+def _replace_popup_editor_text(editor_area, text: str) -> bool:
+    """
+    Popup editöründe metni kontrollü biçimde tamamen değiştirir.
+
+    Not:
+    - insert_text/native paste kullanılmaz
+    - amaç render bozulmalarını azaltmaktır
+    """
+    temiz = _normalize_text(text, trim_outer_blank_lines=True)
+
+    try:
+        onceki = _safe_get_widget_text(editor_area)
+        yazildi = _safe_set_widget_text(editor_area, temiz)
+        sonraki = _safe_get_widget_text(editor_area)
+
+        if yazildi and str(sonraki) == str(temiz):
+            _safe_scroll_to_top(editor_area)
+            return True
+
+        if not onceki and not sonraki and temiz:
+            return False
+
+        return str(sonraki) == str(temiz)
+    except Exception:
+        return False
 
 
 def build_popup_toolbar(actions):
@@ -181,6 +340,7 @@ def open_current_code_popup(panel, *_args):
     kod_alani = _bilesenler().sade_kod_alani_olustur(
         readonly=True,
         size_hint=(1, 1),
+        services=_services_from_panel(panel),
     )
     kod_alani.text = _normalize_text(
         getattr(panel.current_code_area, "text", ""),
@@ -235,13 +395,17 @@ def open_new_code_editor_popup(panel, *_args):
             "new_function_hint",
             "Tam fonksiyon kodunu buraya yaz veya yapıştır.",
         ),
+        hint_text_key="new_function_hint",
+        services=_services_from_panel(panel),
         size_hint=(1, 1),
     )
-    editor_area.text = _normalize_text(
-        getattr(panel, "_new_code_buffer", "") or getattr(panel.new_code_area, "text", ""),
+
+    baslangic_metin = _normalize_text(
+        getattr(panel, "_new_code_buffer", "")
+        or getattr(panel.new_code_area, "text", ""),
         trim_outer_blank_lines=True,
     )
-    _safe_scroll_to_top(editor_area)
+    _replace_popup_editor_text(editor_area, baslangic_metin)
     ana.add_widget(editor_area)
 
     popup_error = Label(
@@ -270,7 +434,7 @@ def open_new_code_editor_popup(panel, *_args):
             ),
             (
                 "paste_clipboard",
-                "edit.png",
+                "yapistir.png",
                 _m(panel, "paste", "Yapıştır"),
                 lambda *_: None,
             ),
@@ -283,7 +447,7 @@ def open_new_code_editor_popup(panel, *_args):
             (
                 "cancel",
                 "cancel.png",
-                _m(panel, "cancel", "İptal"),
+                _m(panel, "cancel", "Vazgeç"),
                 lambda *_: None,
             ),
         ]
@@ -312,11 +476,24 @@ def open_new_code_editor_popup(panel, *_args):
 
     def mevcuttan_al(*_args):
         try:
-            editor_area.text = _normalize_text(
+            temiz = _normalize_text(
                 getattr(panel.current_code_area, "text", ""),
                 trim_outer_blank_lines=True,
             )
-            _safe_scroll_to_top(editor_area)
+
+            if not _replace_popup_editor_text(editor_area, temiz):
+                _yardimci().set_popup_error(
+                    popup_error,
+                    editor_area,
+                    _m(
+                        panel,
+                        "copy_current_to_popup_failed",
+                        "Mevcut kod popup düzenleyiciye aktarılamadı.",
+                    ),
+                    0,
+                )
+                return
+
             _set_popup_info(
                 "current_code_copied_to_new",
                 "Mevcut kod yeni alana kopyalandı.",
@@ -359,8 +536,20 @@ def open_new_code_editor_popup(panel, *_args):
                 )
                 return
 
-            editor_area.text = temiz
-            _safe_scroll_to_top(editor_area)
+            yazildi = _replace_popup_editor_text(editor_area, temiz)
+            if not yazildi:
+                _yardimci().set_popup_error(
+                    popup_error,
+                    editor_area,
+                    _m(
+                        panel,
+                        "clipboard_paste_failed",
+                        "Panodan yapıştırma başarısız oldu.",
+                    ),
+                    0,
+                )
+                return
+
             _yardimci().set_popup_error(
                 popup_error,
                 editor_area,
@@ -371,6 +560,7 @@ def open_new_code_editor_popup(panel, *_args):
                 ),
                 0,
             )
+            _safe_scroll_to_end(editor_area)
         except Exception:
             _yardimci().set_popup_error(
                 popup_error,
@@ -385,7 +575,7 @@ def open_new_code_editor_popup(panel, *_args):
 
     def kaydet(*_args):
         yeni = _normalize_text(
-            getattr(editor_area, "text", ""),
+            _safe_get_widget_text(editor_area),
             trim_outer_blank_lines=True,
         )
 
@@ -429,6 +619,10 @@ def open_new_code_editor_popup(panel, *_args):
             tone="success",
             duration=3.8,
             on_tap=lambda: _safe_scroll_to_top(panel.new_code_area),
+            title_key="new_code_updated",
+            title_default="Yeni kod güncellendi",
+            text_key="popup_edit_transferred_to_main_area",
+            text_default="Popup içindeki düzenleme ana yeni kod alanına aktarıldı.",
         )
         _yardimci().toast(
             _m(
