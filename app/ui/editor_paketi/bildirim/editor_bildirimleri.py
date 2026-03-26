@@ -8,6 +8,7 @@ ROL:
 - Başarı, bilgi, uyarı ve hata tonlarında görsel geri bildirim sağlamak
 - Hata durumunda detaylı, kopyalanabilir popup gösterebilmek
 - Aktif dile göre görünür metinleri üretmek ve yenilemek
+- Yapıştırma gibi yeni editör aksiyonlarında da tekrar kullanılabilir bildirim katmanı sunmak
 
 MİMARİ:
 - Bildirim alt paketinin iç görsel bileşenini içerir
@@ -15,14 +16,15 @@ MİMARİ:
 - Editör içi inline bildirim davranışını UI tarafında izole eder
 - API korunur, hata tonu için detay popup desteği eklenmiştir
 - Kullanıcıya görünen metinler services -> sistem -> dil_servisi zincirinden alınabilir
+- Dil yenilemede aktif başlık, ipucu ve popup metinleri güvenli şekilde güncellenir
 
 API UYUMLULUK:
 - Platform bağımsızdır
 - Android API 35 ile uyumludur
 - Doğrudan Android bridge çağrısı içermez
 
-SURUM: 4
-TARIH: 2026-03-23
+SURUM: 5
+TARIH: 2026-03-26
 IMZA: FY.
 """
 
@@ -71,6 +73,13 @@ class _DokunmatikAksiyonBildirimi(ButtonBehavior, BoxLayout):
         self._last_tap_ts = 0.0
         self._pulse_anim = None
         self._hide_event = None
+        self._last_title_key = ""
+        self._last_title_default = ""
+        self._last_body_key = ""
+        self._last_body_default = ""
+        self._last_title_text = ""
+        self._last_body_text = ""
+        self._last_tappable = False
 
         self._bg_success = (0.08, 0.24, 0.14, 0.98)
         self._bg_info = (0.08, 0.13, 0.20, 0.98)
@@ -146,7 +155,7 @@ class _DokunmatikAksiyonBildirimi(ButtonBehavior, BoxLayout):
             halign="right",
             valign="middle",
             size_hint_x=None,
-            width=dp(48),
+            width=dp(60),
         )
         self.hint_label.bind(size=lambda inst, size: setattr(inst, "text_size", size))
         self.add_widget(self.hint_label)
@@ -165,8 +174,28 @@ class _DokunmatikAksiyonBildirimi(ButtonBehavior, BoxLayout):
 
     def refresh_language(self) -> None:
         try:
-            if str(self.hint_label.text or "").strip():
+            if self._last_title_key:
+                self.title_label.text = self._m(
+                    self._last_title_key,
+                    self._last_title_default or self._last_title_text,
+                )
+        except Exception:
+            pass
+
+        try:
+            if self._last_body_key:
+                self.body_label.text = self._m(
+                    self._last_body_key,
+                    self._last_body_default or self._last_body_text,
+                )
+        except Exception:
+            pass
+
+        try:
+            if self._last_tappable:
                 self.hint_label.text = self._m("tap", "Dokun")
+            else:
+                self.hint_label.text = ""
         except Exception:
             pass
 
@@ -219,6 +248,17 @@ class _DokunmatikAksiyonBildirimi(ButtonBehavior, BoxLayout):
         except Exception:
             pass
 
+    def _resolve_localized_text(
+        self,
+        direct_text: str,
+        text_key: str = "",
+        default_text: str = "",
+    ) -> str:
+        temiz_key = str(text_key or "").strip()
+        if temiz_key:
+            return self._m(temiz_key, default_text or direct_text or "")
+        return str(direct_text or default_text or "")
+
     def _set_visual(
         self,
         tone: str,
@@ -226,6 +266,10 @@ class _DokunmatikAksiyonBildirimi(ButtonBehavior, BoxLayout):
         text: str,
         icon_name: str,
         tappable: bool,
+        title_key: str = "",
+        title_default: str = "",
+        text_key: str = "",
+        text_default: str = "",
     ):
         tone_key = str(tone or "success").strip().lower()
 
@@ -254,11 +298,29 @@ class _DokunmatikAksiyonBildirimi(ButtonBehavior, BoxLayout):
             body_color = (0.84, 0.96, 0.88, 1)
             hint_color = (0.76, 0.96, 0.82, 0.95)
 
-        self.title_label.text = (
-            str(title or "").strip() or self._m("notification", "Bildirim")
-        )
+        final_title = self._resolve_localized_text(
+            direct_text=title,
+            text_key=title_key,
+            default_text=title_default or self._m("notification", "Bildirim"),
+        ).strip() or self._m("notification", "Bildirim")
+
+        final_body = self._resolve_localized_text(
+            direct_text=text,
+            text_key=text_key,
+            default_text=text_default or "",
+        ).strip()
+
+        self._last_title_key = str(title_key or "").strip()
+        self._last_title_default = str(title_default or "").strip()
+        self._last_body_key = str(text_key or "").strip()
+        self._last_body_default = str(text_default or "").strip()
+        self._last_title_text = final_title
+        self._last_body_text = final_body
+        self._last_tappable = bool(tappable)
+
+        self.title_label.text = final_title
         self.title_label.color = title_color
-        self.body_label.text = str(text or "").strip() or ""
+        self.body_label.text = final_body
         self.body_label.color = body_color
         self.hint_label.text = self._m("tap", "Dokun") if tappable else ""
         self.hint_label.color = hint_color
@@ -288,6 +350,10 @@ class _DokunmatikAksiyonBildirimi(ButtonBehavior, BoxLayout):
         tone="success",
         duration=4.0,
         tappable=False,
+        title_key: str = "",
+        title_default: str = "",
+        text_key: str = "",
+        text_default: str = "",
     ):
         self._cancel_hide_event()
         self._set_visual(
@@ -296,6 +362,10 @@ class _DokunmatikAksiyonBildirimi(ButtonBehavior, BoxLayout):
             text=text,
             icon_name=icon_name,
             tappable=tappable,
+            title_key=title_key,
+            title_default=title_default,
+            text_key=text_key,
+            text_default=text_default,
         )
         self.disabled = False
         self._start_pulse()
@@ -391,6 +461,12 @@ class EditorAksiyonBildirimi(BoxLayout):
         self._popup_ref = None
         self._detailed_error_text = ""
         self._popup_title = self._m("error_title", "Hata Detayı")
+        self._popup_title_key = "error_title"
+        self._popup_title_default = "Hata Detayı"
+        self._last_notice_title_key = ""
+        self._last_notice_title_default = ""
+        self._last_notice_text_key = ""
+        self._last_notice_text_default = ""
 
         self.notice = _DokunmatikAksiyonBildirimi(
             on_single_tap=self._handle_single_tap,
@@ -415,9 +491,11 @@ class EditorAksiyonBildirimi(BoxLayout):
             pass
 
         try:
-            if not self._has_detailed_error():
-                return
-            self._popup_title = self._m("error_title", "Hata Detayı")
+            if self._popup_title_key:
+                self._popup_title = self._m(
+                    self._popup_title_key,
+                    self._popup_title_default or "Hata Detayı",
+                )
         except Exception:
             pass
 
@@ -438,15 +516,27 @@ class EditorAksiyonBildirimi(BoxLayout):
     def _handle_double_tap(self):
         self.hide_immediately()
 
-    def _set_detailed_error(self, text: str, title: str = "") -> None:
+    def _set_detailed_error(
+        self,
+        text: str,
+        title: str = "",
+        title_key: str = "",
+        title_default: str = "",
+    ) -> None:
         self._detailed_error_text = str(text or "").strip()
+        self._popup_title_key = str(title_key or "").strip() or "error_title"
+        self._popup_title_default = (
+            str(title_default or "").strip() or "Hata Detayı"
+        )
         self._popup_title = (
-            str(title or self._m("error_title", "Hata Detayı")).strip()
-            or self._m("error_title", "Hata Detayı")
+            str(title or "").strip()
+            or self._m(self._popup_title_key, self._popup_title_default)
         )
 
     def _clear_detailed_error(self) -> None:
         self._detailed_error_text = ""
+        self._popup_title_key = "error_title"
+        self._popup_title_default = "Hata Detayı"
         self._popup_title = self._m("error_title", "Hata Detayı")
 
     def _has_detailed_error(self) -> bool:
@@ -507,7 +597,11 @@ class EditorAksiyonBildirimi(BoxLayout):
                 color=(0.96, 0.96, 0.98, 1),
             )
             detay.bind(
-                texture_size=lambda inst, val: setattr(inst, "height", max(dp(180), val[1]))
+                texture_size=lambda inst, val: setattr(
+                    inst,
+                    "height",
+                    max(dp(180), val[1]),
+                )
             )
             detay.bind(
                 size=lambda inst, size: setattr(inst, "text_size", (size[0], None))
@@ -566,6 +660,7 @@ class EditorAksiyonBildirimi(BoxLayout):
             try:
                 if popup is not None:
                     popup.dismiss()
+                self._popup_ref = None
             except Exception:
                 pass
 
@@ -580,17 +675,28 @@ class EditorAksiyonBildirimi(BoxLayout):
         tone="success",
         duration=4.0,
         on_tap=None,
+        title_key: str = "",
+        title_default: str = "",
+        text_key: str = "",
+        text_default: str = "",
     ):
         self._on_tap = on_tap
         self.height = dp(58)
         self.opacity = 1
+
+        self._last_notice_title_key = str(title_key or "").strip()
+        self._last_notice_title_default = str(title_default or "").strip()
+        self._last_notice_text_key = str(text_key or "").strip()
+        self._last_notice_text_default = str(text_default or "").strip()
 
         temiz_tone = str(tone or "success").strip().lower()
 
         if temiz_tone == "error":
             self._set_detailed_error(
                 text=str(text or ""),
-                title=str(title or self._m("error_title", "Hata Detayı")),
+                title=str(title or ""),
+                title_key=title_key or "error_title",
+                title_default=title_default or "Hata Detayı",
             )
         else:
             self._clear_detailed_error()
@@ -602,6 +708,10 @@ class EditorAksiyonBildirimi(BoxLayout):
             tone=tone,
             duration=duration,
             tappable=bool(on_tap) or self._has_detailed_error(),
+            title_key=title_key,
+            title_default=title_default,
+            text_key=text_key,
+            text_default=text_default,
         )
 
     def hide(self):
@@ -612,6 +722,10 @@ class EditorAksiyonBildirimi(BoxLayout):
             self.opacity = 0
             self._on_tap = None
             self._clear_detailed_error()
+            self._last_notice_title_key = ""
+            self._last_notice_title_default = ""
+            self._last_notice_text_key = ""
+            self._last_notice_text_default = ""
 
         Clock.schedule_once(_finish, 0.22)
 
@@ -621,3 +735,7 @@ class EditorAksiyonBildirimi(BoxLayout):
         self.opacity = 0
         self._on_tap = None
         self._clear_detailed_error()
+        self._last_notice_title_key = ""
+        self._last_notice_title_default = ""
+        self._last_notice_text_key = ""
+        self._last_notice_text_default = ""
