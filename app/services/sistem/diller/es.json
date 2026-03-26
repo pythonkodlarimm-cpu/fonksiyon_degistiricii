@@ -243,10 +243,19 @@
 
   "download_error_title": "Error de descarga",
   "backup_copy_failed": "No se pudo copiar la copia de seguridad:",
+  "download_failed_message": "No se pudo copiar la copia de seguridad:",
+  "backup_not_found": "No se encontró la copia de seguridad",
+  "invalid_backup_file": "No es un archivo de copia de seguridad válido",
+  "download_target_not_created": "No se creó el archivo de destino descargado",
+  "target_folder": "Carpeta de destino",
 
   "delete_backup_title": "Eliminar copia de seguridad",
   "backup_will_be_deleted": "Esta copia de seguridad será eliminada:",
   "irreversible_action": "Esta acción no se puede deshacer.",
+  "delete_confirm_title": "Confirmación de eliminación",
+  "delete_confirm_message": "¿Está seguro de que desea eliminar este elemento?",
+  "delete_success": "La operación de eliminación fue exitosa",
+  "delete_failed": "La operación de eliminación falló",
 
   "bulk_delete_title": "Eliminación masiva",
   "backups_deleting": "Eliminando copias de seguridad...",
@@ -290,5 +299,13 @@
   "selection_error_title": "Error de selección",
   "update_flow_wrong_target_detail": "Se pasó al flujo de actualización una función ajena al archivo de trabajo seleccionado o desde el interior de la propia aplicación.",
   "update_prepare_error_occurred": "Ocurrió un error al preparar la actualización.",
-  "update_prepare_error_title": "Error de preparación de la actualización"
+  "update_prepare_error_title": "Error de preparación de la actualización",
+
+  "menu_error_title": "Error del menú",
+  "menu_open_failed": "No se pudo abrir el menú:",
+  "backup_error_title": "Error de copia de seguridad",
+  "backup_screen_open_failed": "No se pudo abrir la pantalla de copias de seguridad:",
+
+  "unexpected_error": "Ocurrió un error inesperado",
+  "operation_failed": "La operación falló"
 }
