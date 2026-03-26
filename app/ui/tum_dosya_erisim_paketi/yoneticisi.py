@@ -8,6 +8,8 @@ ROL:
 - Üst katmanın iç modül detaylarını bilmesini engellemek
 - Menü popup üzerinden dil seçimi akışına gerekli bağımlılıkları iletmek
 - Popup katmanına services bağımlılığını kontrollü biçimde aktarmak
+- Yedek indirme akışında services bilgisini aşağı katmana zincir halinde taşımak
+- İndirme sonucu popup ve hata popup metinlerinin aktif dile göre üretilmesini desteklemek
 
 MİMARİ:
 - Üst katman sadece bu yöneticiyi bilir
@@ -16,14 +18,17 @@ MİMARİ:
 - Dil popup akışı popup yöneticisi üzerinden zincir halinde aktarılır
 - Basit popup, onay popup, indirme sonuç popup, yedek görüntüleme popup
   ve yedekler popup çağrılarında services parametresi aşağı geçirilebilir
+- Yedek indirme işlemi services parametresi ile çağrıldığında popup ve metin zinciri
+  aynı ServicesYoneticisi instance'ı üzerinden korunur
 
 API UYUMLULUK:
 - Platform bağımsızdır
 - Android API 35 ile uyumludur
 - Doğrudan Android bridge çağrısı içermez
+- Mevcut public method isimleri korunur
 
-SURUM: 6
-TARIH: 2026-03-23
+SURUM: 7
+TARIH: 2026-03-26
 IMZA: FY.
 """
 
@@ -162,12 +167,20 @@ class TumDosyaErisimYoneticisi:
     # =========================================================
     # YEDEK
     # =========================================================
-    def yedek_satiri_olustur(self, yedek, on_view, on_download, on_delete):
+    def yedek_satiri_olustur(
+        self,
+        yedek,
+        on_view,
+        on_download,
+        on_delete,
+        services=None,
+    ):
         return self._yedek_yoneticisi().yedek_satiri_olustur(
             yedek=yedek,
             on_view=on_view,
             on_download=on_download,
             on_delete=on_delete,
+            services=services,
         )
 
     def yedek_indirme_islemi_baslat(
@@ -175,17 +188,27 @@ class TumDosyaErisimYoneticisi:
         debug,
         yedek,
         hedef_klasor=None,
+        services=None,
     ):
+        """
+        Yedek indirme / kopyalama akışını başlatır.
+
+        Not:
+        - services verilirse sonuç popup'ı ve hata popup'ı aktif dil ile açılır
+        - Mevcut çağrılar bozulmasın diye services opsiyonel tutulur
+        """
         return self._yedek_yoneticisi().yedek_indirme_islemi_baslat(
             debug=debug,
             yedek=yedek,
             hedef_klasor=hedef_klasor,
+            services=services,
         )
 
-    def dosya_yolu_ac(self, path_value, debug=None) -> bool:
+    def dosya_yolu_ac(self, path_value, debug=None, services=None) -> bool:
         return self._yedek_yoneticisi().dosya_yolu_ac(
             path_value=path_value,
             debug=debug,
+            services=services,
         )
 
     # =========================================================
