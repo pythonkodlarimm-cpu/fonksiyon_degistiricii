@@ -11,6 +11,8 @@ ROL:
 - Uygulama state toplama akışında gereken editör/selection verisini üretir
 - Sık erişilen metod ve attribute çözümlemelerini cache içinde tutar
 - Runtime tarafında lookup maliyetini azaltır
+- Android arka plan / geri dönüş akışında seçim bilgisinin eksik kalmaması için
+  dosya seçimine ait ayrıntılı selection state alanlarını da toplar
 
 MİMARİ:
 - Bu modül mixin mantığıyla çalışır
@@ -29,6 +31,13 @@ MİMARİ:
     - dotted_path
     - path
     - name
+- Dosya seçici için aşağıdaki alanlar mümkün olduğunda toplanır:
+    - selection_identifier
+    - selection_display_name
+    - selection_source
+    - selection_uri
+    - selection_local_path
+    - selection_mime_type
 - Hatalar UI akışını kırmamak için swallow edilir
 - Root nesnesinde self.editor, self.selected_item, self.items, self.dosya_secici,
   self.scroll ve self.current_file_path üyelerinin bulunması beklenir
@@ -39,9 +48,11 @@ NOTLAR:
 - Tarama veya geri yükleme yürütmez
 - Kayıt için uygun state sözlüğü üretir
 - Method/attribute erişimleri ilk çözümlemeden sonra cache'lenir
+- Cache anahtarlarında nesne id + method/attr listesi kullanılır
+- Android restore akışında eksik/yarım widget state durumlarına fail-soft yaklaşım uygular
 
-SURUM: 2
-TARIH: 2026-03-24
+SURUM: 4
+TARIH: 2026-03-26
 IMZA: FY.
 """
 
@@ -98,6 +109,12 @@ class RootEditorStateMixin:
         except Exception:
             pass
 
+        try:
+            if not hasattr(self, "_editor_state_dosya_secici_attr_cache"):
+                self._editor_state_dosya_secici_attr_cache = {}
+        except Exception:
+            pass
+
     def _editor_state_cache_temizle(self) -> None:
         """
         Editor state yardımcı cache alanlarını temizler.
@@ -127,19 +144,17 @@ class RootEditorStateMixin:
         except Exception:
             pass
 
+        try:
+            self._editor_state_dosya_secici_attr_cache = {}
+        except Exception:
+            pass
+
     # =========================================================
     # INTERNAL HELPERS
     # =========================================================
     def _safe_getattr(self, name: str, default=None):
         """
         Root üzerinde güvenli getattr çağrısı yapar.
-
-        Args:
-            name: Alan adı.
-            default: Alan yoksa dönecek varsayılan değer.
-
-        Returns:
-            Any
         """
         try:
             return getattr(self, name, default)
@@ -149,34 +164,27 @@ class RootEditorStateMixin:
     def _coerce_text(self, value) -> str:
         """
         Gelen değeri güvenli şekilde metne çevirir.
-
-        Args:
-            value: Herhangi bir değer.
-
-        Returns:
-            str
         """
         try:
             return str(value or "")
         except Exception:
             return ""
 
-    def _get_cached_method(self, obj, cache_group: str, method_names: tuple[str, ...]):
+    def _get_cached_method(
+        self,
+        obj,
+        cache_group: str,
+        method_names: tuple[str, ...],
+    ):
         """
         Verilen nesne için ilk uygun metodu bulur ve cache'ler.
-
-        Args:
-            obj: Hedef nesne.
-            cache_group: Cache grubu anahtarı.
-            method_names: Denenecek metod adları.
-
-        Returns:
-            callable | None
         """
         if obj is None:
             return None
 
         self._ensure_editor_state_cache()
+
+        cache_key = None
 
         try:
             object_id = id(obj)
@@ -185,10 +193,12 @@ class RootEditorStateMixin:
                 group_cache = {}
                 setattr(self, cache_group, group_cache)
 
-            if object_id in group_cache:
-                return group_cache[object_id]
+            cache_key = (object_id, tuple(method_names))
+
+            if cache_key in group_cache:
+                return group_cache[cache_key]
         except Exception:
-            pass
+            cache_key = None
 
         bulunan = None
         try:
@@ -202,8 +212,8 @@ class RootEditorStateMixin:
 
         try:
             group_cache = getattr(self, cache_group, None)
-            if isinstance(group_cache, dict):
-                group_cache[object_id] = bulunan
+            if isinstance(group_cache, dict) and cache_key is not None:
+                group_cache[cache_key] = bulunan
         except Exception:
             pass
 
@@ -219,20 +229,13 @@ class RootEditorStateMixin:
     ):
         """
         Verilen nesne için ilk uygun attribute adını bulur ve cache'ler.
-
-        Args:
-            obj: Hedef nesne.
-            cache_group: Cache grubu anahtarı.
-            attr_names: Denenecek attribute adları.
-            require_string: True ise attribute değerinin str olmasını bekler.
-
-        Returns:
-            str | None
         """
         if obj is None:
             return None
 
         self._ensure_editor_state_cache()
+
+        cache_key = None
 
         try:
             object_id = id(obj)
@@ -241,10 +244,12 @@ class RootEditorStateMixin:
                 group_cache = {}
                 setattr(self, cache_group, group_cache)
 
-            if object_id in group_cache:
-                return group_cache[object_id]
+            cache_key = (object_id, tuple(attr_names), bool(require_string))
+
+            if cache_key in group_cache:
+                return group_cache[cache_key]
         except Exception:
-            pass
+            cache_key = None
 
         bulunan = None
 
@@ -264,28 +269,23 @@ class RootEditorStateMixin:
 
         try:
             group_cache = getattr(self, cache_group, None)
-            if isinstance(group_cache, dict):
-                group_cache[object_id] = bulunan
+            if isinstance(group_cache, dict) and cache_key is not None:
+                group_cache[cache_key] = bulunan
         except Exception:
             pass
 
         return bulunan
 
-    def _call_first_available(self, obj, method_names: tuple[str, ...], *args, **kwargs):
+    def _call_first_available(
+        self,
+        obj,
+        method_names: tuple[str, ...],
+        *args,
+        **kwargs,
+    ):
         """
         Verilen nesnede bulunan ilk callable metodu çağırır.
         Cache desteklidir.
-
-        Args:
-            obj: Hedef nesne.
-            method_names: Denenecek metod adları.
-            *args: Metod argümanları.
-            **kwargs: Metod keyword argümanları.
-
-        Returns:
-            tuple[bool, Any]:
-                - bool: çağrı yapıldı mı
-                - Any: metod dönüş değeri
         """
         if obj is None:
             return False, None
@@ -314,9 +314,6 @@ class RootEditorStateMixin:
         1) get_text / metni_al / icerik_al / kod_al metodları
         2) doğrudan text / metin / content / icerik / code attribute'ları
         3) editor_input.text
-
-        Returns:
-            str: Editör içeriği.
         """
         try:
             editor = self._safe_getattr("editor", None)
@@ -351,6 +348,7 @@ class RootEditorStateMixin:
                     ("editor_input",),
                     require_string=False,
                 )
+
                 if editor_input_attr:
                     editor_input = getattr(editor, editor_input_attr, None)
                 else:
@@ -377,9 +375,6 @@ class RootEditorStateMixin:
         1) set_text / metni_yaz / icerik_yaz / kod_yaz metodları
         2) editor_input.text
         3) doğrudan text / metin / content / icerik / code attribute'ları
-
-        Args:
-            text: Yazılacak metin.
         """
         temiz = self._coerce_text(text)
 
@@ -403,6 +398,7 @@ class RootEditorStateMixin:
                     ("editor_input",),
                     require_string=False,
                 )
+
                 if editor_input_attr:
                     editor_input = getattr(editor, editor_input_attr, None)
                 else:
@@ -444,16 +440,6 @@ class RootEditorStateMixin:
     def _selected_item_identity(self) -> str:
         """
         Mevcut seçili item için kalıcı/tekrar bulunabilir kimlik değeri üretir.
-
-        Öncelik sırası:
-        - identity
-        - full_path
-        - dotted_path
-        - path
-        - name
-
-        Returns:
-            str: Kimlik değeri.
         """
         try:
             selected_item = self._safe_getattr("selected_item", None)
@@ -495,12 +481,6 @@ class RootEditorStateMixin:
     def _find_item_by_identity_value(self, identity: str):
         """
         Kaydedilmiş kimlik değerine göre self.items içinde eşleşen item'i arar.
-
-        Args:
-            identity: Daha önce kayıt edilmiş kimlik değeri.
-
-        Returns:
-            object | None: Eşleşen item veya None.
         """
         temiz = self._coerce_text(identity).strip()
         if not temiz:
@@ -545,21 +525,20 @@ class RootEditorStateMixin:
     # =========================================================
     # DOSYA SECICI HELPERS
     # =========================================================
-    def _get_dosya_secici_method(self, dosya_secici, method_names: tuple[str, ...]):
+    def _get_dosya_secici_method(
+        self,
+        dosya_secici,
+        method_names: tuple[str, ...],
+    ):
         """
         Dosya seçici için ilk uygun callable metodu bulur ve cache'ler.
-
-        Args:
-            dosya_secici: Dosya seçici widget'ı.
-            method_names: Denenecek metod adları.
-
-        Returns:
-            callable | None
         """
         if dosya_secici is None:
             return None
 
         self._ensure_editor_state_cache()
+
+        cache_key = None
 
         try:
             object_id = id(dosya_secici)
@@ -569,7 +548,7 @@ class RootEditorStateMixin:
             if cache_key in group_cache:
                 return group_cache[cache_key]
         except Exception:
-            pass
+            cache_key = None
 
         bulunan = None
         try:
@@ -582,11 +561,112 @@ class RootEditorStateMixin:
             bulunan = None
 
         try:
-            self._editor_state_dosya_secici_method_cache[cache_key] = bulunan
+            if cache_key is not None:
+                self._editor_state_dosya_secici_method_cache[cache_key] = bulunan
         except Exception:
             pass
 
         return bulunan
+
+    def _get_dosya_secici_attr(
+        self,
+        dosya_secici,
+        attr_names: tuple[str, ...],
+    ):
+        """
+        Dosya seçici üzerinde ilk uygun attribute adını bulur ve cache'ler.
+        """
+        if dosya_secici is None:
+            return None
+
+        self._ensure_editor_state_cache()
+
+        cache_key = None
+
+        try:
+            object_id = id(dosya_secici)
+            group_cache = self._editor_state_dosya_secici_attr_cache
+            cache_key = (object_id, tuple(attr_names))
+
+            if cache_key in group_cache:
+                return group_cache[cache_key]
+        except Exception:
+            cache_key = None
+
+        bulunan = None
+        try:
+            for attr_name in attr_names:
+                if hasattr(dosya_secici, attr_name):
+                    bulunan = attr_name
+                    break
+        except Exception:
+            bulunan = None
+
+        try:
+            if cache_key is not None:
+                self._editor_state_dosya_secici_attr_cache[cache_key] = bulunan
+        except Exception:
+            pass
+
+        return bulunan
+
+    def _selection_nesnesi_al(self):
+        """
+        Dosya seçiciden mevcut seçim nesnesini almaya çalışır.
+        """
+        try:
+            dosya_secici = self._safe_getattr("dosya_secici", None)
+            if dosya_secici is None:
+                return None
+
+            get_selection = self._get_dosya_secici_method(
+                dosya_secici,
+                ("get_selection", "selection", "secim", "get_secim"),
+            )
+            if callable(get_selection):
+                return get_selection()
+        except Exception:
+            pass
+
+        try:
+            dosya_secici = self._safe_getattr("dosya_secici", None)
+            if dosya_secici is None:
+                return None
+
+            attr_name = self._get_dosya_secici_attr(
+                dosya_secici,
+                (
+                    "_selection",
+                    "selection",
+                    "_secim",
+                    "secim",
+                    "_current_selection",
+                ),
+            )
+            if attr_name:
+                return getattr(dosya_secici, attr_name, None)
+        except Exception:
+            pass
+
+        return None
+
+    def _selection_alani_oku(self, selection, alan_adlari: tuple[str, ...]) -> str:
+        """
+        Seçim nesnesinden verilen alan adlarından ilk dolu olanı okur.
+        """
+        if selection is None:
+            return ""
+
+        for alan in alan_adlari:
+            try:
+                deger = getattr(selection, alan, None)
+                metin = self._coerce_text(deger).strip()
+                if metin:
+                    return metin
+            except Exception:
+                continue
+
+        return ""
 
     # =========================================================
     # STATE COLLECTION
@@ -602,12 +682,17 @@ class RootEditorStateMixin:
         - scroll_y
         - selection_identifier
         - selection_display_name
-
-        Returns:
-            dict
+        - selection_source
+        - selection_uri
+        - selection_local_path
+        - selection_mime_type
         """
         selection_identifier = ""
         selection_display_name = ""
+        selection_source = ""
+        selection_uri = ""
+        selection_local_path = ""
+        selection_mime_type = ""
 
         try:
             dosya_secici = self._safe_getattr("dosya_secici", None)
@@ -618,7 +703,9 @@ class RootEditorStateMixin:
                         ("get_path",),
                     )
                     if callable(get_path):
-                        selection_identifier = self._coerce_text(get_path()).strip()
+                        selection_identifier = self._coerce_text(
+                            get_path()
+                        ).strip()
                 except Exception:
                     selection_identifier = ""
 
@@ -636,6 +723,44 @@ class RootEditorStateMixin:
         except Exception:
             pass
 
+        try:
+            selection = self._selection_nesnesi_al()
+
+            selection_source = self._selection_alani_oku(
+                selection,
+                ("source", "kaynak", "picker_source"),
+            )
+            selection_uri = self._selection_alani_oku(
+                selection,
+                ("uri", "document_uri", "content_uri"),
+            )
+            selection_local_path = self._selection_alani_oku(
+                selection,
+                ("local_path", "path", "file_path"),
+            )
+            selection_mime_type = self._selection_alani_oku(
+                selection,
+                ("mime_type", "mime", "content_type"),
+            )
+
+            if not selection_display_name:
+                selection_display_name = self._selection_alani_oku(
+                    selection,
+                    ("display_name", "name", "filename", "file_name"),
+                )
+
+            if not selection_identifier:
+                selection_identifier = (
+                    selection_uri
+                    or selection_local_path
+                    or self._selection_alani_oku(
+                        selection,
+                        ("identifier", "id", "selection_id"),
+                    )
+                )
+        except Exception:
+            pass
+
         state = {
             "current_file_path": self._coerce_text(
                 self._safe_getattr("current_file_path", "")
@@ -645,6 +770,10 @@ class RootEditorStateMixin:
             "scroll_y": None,
             "selection_identifier": selection_identifier,
             "selection_display_name": selection_display_name,
+            "selection_source": selection_source,
+            "selection_uri": selection_uri,
+            "selection_local_path": selection_local_path,
+            "selection_mime_type": selection_mime_type,
         }
 
         try:
