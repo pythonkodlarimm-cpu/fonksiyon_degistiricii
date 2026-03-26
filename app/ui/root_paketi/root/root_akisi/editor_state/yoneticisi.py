@@ -8,6 +8,7 @@ ROL:
 - Lazy import mantığıyla modülü ihtiyaç halinde yükler
 - İlk yüklenen modül ve sınıf referanslarını cache içinde tutar
 - Fail-soft yaklaşım uygular; hata durumunda çökmez, log basar
+- Android ve AAB ortamında tekrar eden import maliyetini azaltacak şekilde çalışır
 
 MİMARİ:
 - Yönetici sınıfı modül seviyesinde zorunlu import yapmaz
@@ -15,6 +16,8 @@ MİMARİ:
 - Modül ve sınıf referansları instance cache içinde saklanır
 - Root katmanı isterse bu yönetici üzerinden mixin sınıfına erişebilir
 - Paket erişim yapısı ileride genişletilebilir
+- Cache bozulursa kendini toparlayacak şekilde yeniden resolve yapabilir
+- Geliştirme sırasında hot-reload veya kısmi dosya değişimlerinde cache temizlenebilir
 
 KULLANIM:
 - yonetici = RootEditorStateYoneticisi()
@@ -27,8 +30,8 @@ NOT:
 - Sadece ilgili modül ve sınıfa merkezi erişim sağlar
 - İlk başarılı import sonrası tekrar import maliyeti oluşmaz
 
-SURUM: 2
-TARIH: 2026-03-24
+SURUM: 4
+TARIH: 2026-03-26
 IMZA: FY.
 """
 
@@ -101,6 +104,36 @@ class RootEditorStateYoneticisi:
         self._sinif_cache_temizle()
         self._modul_cache_temizle()
 
+    def _modul_gecerli_mi(self, module) -> bool:
+        """
+        Cache içindeki modülün beklenen sınıfı sağlayıp sağlamadığını kontrol eder.
+
+        Args:
+            module: Kontrol edilecek modül.
+
+        Returns:
+            bool
+        """
+        try:
+            return module is not None and hasattr(module, self.sinif_adi)
+        except Exception:
+            return False
+
+    def _sinif_gecerli_mi(self, cls) -> bool:
+        """
+        Cache içindeki sınıfın geçerli olup olmadığını kontrol eder.
+
+        Args:
+            cls: Kontrol edilecek sınıf.
+
+        Returns:
+            bool
+        """
+        try:
+            return cls is not None and getattr(cls, "__name__", "") == self.sinif_adi
+        except Exception:
+            return False
+
     def _yukle_modul(self):
         """
         Hedef modülü lazy import + cache ile güvenli biçimde yükler.
@@ -109,13 +142,25 @@ class RootEditorStateYoneticisi:
             module | None
         """
         try:
-            if self._modul_cache_var_mi():
+            if self._modul_cache_var_mi() and self._modul_gecerli_mi(
+                self._cached_module
+            ):
                 return self._cached_module
         except Exception:
             self._modul_cache_temizle()
 
         try:
             module = __import__(self.modul_yolu, fromlist=[self.sinif_adi])
+
+            if not self._modul_gecerli_mi(module):
+                print(
+                    "[ROOT_EDITOR_STATE] "
+                    "Modül yüklendi ama beklenen sınıf görünmedi: "
+                    f"{self.modul_yolu}.{self.sinif_adi}"
+                )
+                self._modul_cache_temizle()
+                return None
+
             self._cached_module = module
             return module
         except Exception:
@@ -132,7 +177,9 @@ class RootEditorStateYoneticisi:
             type | None
         """
         try:
-            if self._sinif_cache_var_mi():
+            if self._sinif_cache_var_mi() and self._sinif_gecerli_mi(
+                self._cached_class
+            ):
                 return self._cached_class
         except Exception:
             self._sinif_cache_temizle()
@@ -143,8 +190,9 @@ class RootEditorStateYoneticisi:
 
         try:
             cls = getattr(module, self.sinif_adi, None)
-            if cls is None:
-                print(f"[ROOT_EDITOR_STATE] Sınıf bulunamadı: {self.sinif_adi}")
+
+            if not self._sinif_gecerli_mi(cls):
+                print(f"[ROOT_EDITOR_STATE] Sınıf geçersiz: {self.sinif_adi}")
                 self._sinif_cache_temizle()
                 return None
 
@@ -171,6 +219,15 @@ class RootEditorStateYoneticisi:
     def mixin_sinifi(self):
         """
         RootEditorStateMixin sınıfını döndürür.
+
+        Returns:
+            type | None
+        """
+        return self._yukle_sinif()
+
+    def sinif(self):
+        """
+        Geriye uyumlu kısa alias.
 
         Returns:
             type | None
