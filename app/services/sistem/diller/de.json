@@ -183,7 +183,6 @@
 
   "validation_error_new_code_empty": "Das Feld für den neuen Code darf nicht leer sein.",
   "validation_error_function_must_start_first_line": "Die Funktionsdefinition muss in Zeile 1 beginnen.",
-  "validation_error_first_meaningful_line_mUST_BE_def": "Die erste sinnvolle Zeile des Codes muss mit 'def' oder 'async def' beginnen.",
   "validation_error_first_meaningful_line_must_be_def": "Die erste sinnvolle Zeile des Codes muss mit 'def' oder 'async def' beginnen.",
   "validation_error_code_empty": "Der Code scheint leer zu sein.",
   "validation_error_single_function_required": "Der neue Code muss genau eine Funktion enthalten.",
@@ -244,10 +243,19 @@
 
   "download_error_title": "Download-Fehler",
   "backup_copy_failed": "Sicherung konnte nicht kopiert werden:",
+  "download_failed_message": "Sicherung konnte nicht kopiert werden:",
+  "backup_not_found": "Sicherung nicht gefunden",
+  "invalid_backup_file": "Keine gültige Sicherungsdatei",
+  "download_target_not_created": "Die Zieldatei wurde nicht erstellt",
+  "target_folder": "Zielordner",
 
   "delete_backup_title": "Sicherung löschen",
   "backup_will_be_deleted": "Diese Sicherung wird gelöscht:",
   "irreversible_action": "Dieser Vorgang kann nicht rückgängig gemacht werden.",
+  "delete_confirm_title": "Löschbestätigung",
+  "delete_confirm_message": "Möchten Sie dieses Element wirklich löschen?",
+  "delete_success": "Löschvorgang erfolgreich",
+  "delete_failed": "Löschvorgang fehlgeschlagen",
 
   "bulk_delete_title": "Massenlöschung",
   "backups_deleting": "Sicherungen werden gelöscht...",
@@ -291,5 +299,13 @@
   "selection_error_title": "Auswahlfehler",
   "update_flow_wrong_target_detail": "Im Aktualisierungsablauf wurde eine Funktion außerhalb der ausgewählten Arbeitsdatei oder aus der Anwendung selbst übergeben.",
   "update_prepare_error_occurred": "Beim Vorbereiten der Aktualisierung ist ein Fehler aufgetreten.",
-  "update_prepare_error_title": "Fehler bei der Aktualisierungsvorbereitung"
+  "update_prepare_error_title": "Fehler bei der Aktualisierungsvorbereitung",
+
+  "menu_error_title": "Menüfehler",
+  "menu_open_failed": "Menü konnte nicht geöffnet werden:",
+  "backup_error_title": "Sicherungsfehler",
+  "backup_screen_open_failed": "Der Sicherungsbildschirm konnte nicht geöffnet werden:",
+
+  "unexpected_error": "Ein unerwarteter Fehler ist aufgetreten",
+  "operation_failed": "Vorgang fehlgeschlagen"
 }
