@@ -4,18 +4,22 @@ DOSYA: app/ui/root_paketi/root/root_akisi/app_state_kaydet_geri_yukle/app_state_
 
 ROL:
 - Root katmanında uygulama state kaydetme ve geri yükleme akışını tek modülde toplar
-- Sadece RAM içindeki geçici memory state yaklaşımını uygular
-- Kaydedilmiş dosya yolundan fonksiyon listesini yeniden üretir
+- Öncelikli olarak RAM içindeki geçici memory state yaklaşımını uygular
+- Gerekirse aynı process / Android arka plan senaryoları için hafif disk fallback kullanır
+- Kaydedilmiş dosya yolundan veya seçim bilgisinden fonksiyon listesini yeniden üretir
 - Seçili item, editör içeriği ve scroll konumunu geri yükler
 - UI temizleme ve restore yardımcılarını merkezi hale getirir
 - Runtime tarafında lazy resolve ve cache kullanarak tekrar eden lookup maliyetini azaltır
+- Android arka plan dönüşlerinde sadece görsel state değil, gerçek belge oturumunu da
+  tekrar kurmaya çalışır
 
 MİMARİ:
 - Bu modül mixin mantığıyla çalışır
 - Import-level lazy import bu dosyada hedeflenmez; burada runtime lazy resolve + cache uygulanır
 - Root method ve widget method çözümlemeleri cache içine alınır
 - Dosya varlık kontrolü Path ile yapılır
-- Disk tabanlı settings restore bilinçli olarak kullanılmaz
+- Ana yaklaşım RAM state'tir; disk sadece güvenli fallback katmanıdır
+- Restore sırasında önce selection/session tekrar kurulur, sonra item/editor/scroll uygulanır
 - Fail-soft yaklaşım uygulanır; restore hataları root'u çökertmez
 
 DESTEKLENEN ROOT ALANLARI:
@@ -27,6 +31,7 @@ DESTEKLENEN ROOT ALANLARI:
 - self.function_list
 - self.editor
 - self.scroll
+- self.services
 - self._memory_app_state
 - self._resume_restore_scheduled
 
@@ -44,6 +49,7 @@ BEKLENEN ROOT METODLARI:
 BEKLENEN WIDGET API'LERI:
 - dosya_secici.clear_selection()
 - dosya_secici.set_path(...)
+- dosya_secici.set_selection(...)
 - dosya_secici.get_path()
 - dosya_secici.get_display_name()
 - function_list.clear_all()
@@ -52,18 +58,23 @@ BEKLENEN WIDGET API'LERI:
 - editor.set_item(...)
 
 NOTLAR:
-- Bu modül sadece aynı process içindeki geçici RAM state ile çalışır
-- Uygulama tamamen kapanıp açıldığında persist beklenmez
+- Önce RAM state kullanılır
+- RAM state yoksa disk fallback denenir
+- Uygulama tamamen kapanıp açıldığında kalıcılık ana hedef değildir
 - Restore başarısız olursa güvenli biçimde yeni oturum başlatılır
 - Scroll restore işlemi Clock.schedule_once ile gecikmeli uygulanır
+- Bu dosya restore sırasında belge oturumunu tekrar ayağa kaldırmayı dener;
+  bu sayede ekranda belge seçili görünüp arka planda "dosya seçili değil" hatası
+  oluşma ihtimali azaltılır
 
-SURUM: 1
-TARIH: 2026-03-24
+SURUM: 3
+TARIH: 2026-03-26
 IMZA: FY.
 """
 
 from __future__ import annotations
 
+import json
 import traceback
 from pathlib import Path
 
@@ -129,15 +140,76 @@ class RootAppStateKaydetGeriYukleMixin:
         except Exception:
             return default
 
+    def _coerce_text(self, value) -> str:
+        """
+        Gelen değeri güvenli biçimde metne çevirir.
+        """
+        try:
+            return str(value or "")
+        except Exception:
+            return ""
+
+    def _state_cache_file_path(self) -> Path:
+        """
+        Hafif disk fallback state dosya yolunu üretir.
+        """
+        try:
+            proje_root = Path(__file__).resolve().parents[7]
+        except Exception:
+            try:
+                proje_root = Path.cwd()
+            except Exception:
+                proje_root = Path(".")
+
+        return proje_root / ".root_memory_app_state.json"
+
+    def _write_state_to_disk(self, state: dict) -> bool:
+        """
+        State sözlüğünü hafif disk fallback dosyasına yazar.
+        """
+        try:
+            path = self._state_cache_file_path()
+            path.write_text(
+                json.dumps(state or {}, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+            return True
+        except Exception:
+            return False
+
+    def _read_state_from_disk(self) -> dict:
+        """
+        Hafif disk fallback dosyasından state okumayı dener.
+        """
+        try:
+            path = self._state_cache_file_path()
+            if not path.exists() or not path.is_file():
+                return {}
+
+            raw = path.read_text(encoding="utf-8")
+            data = json.loads(raw)
+
+            if isinstance(data, dict):
+                return dict(data)
+
+            return {}
+        except Exception:
+            return {}
+
+    def _clear_state_disk_cache(self) -> None:
+        """
+        Başarılı restore veya temizlik durumunda disk fallback dosyasını siler.
+        """
+        try:
+            path = self._state_cache_file_path()
+            if path.exists():
+                path.unlink()
+        except Exception:
+            pass
+
     def _resolve_root_method(self, method_name: str):
         """
         Root üzerindeki callable metodu lazy resolve eder ve cache'ler.
-
-        Args:
-            method_name: Çözümlenecek metod adı.
-
-        Returns:
-            callable | None
         """
         cache_key = None
 
@@ -168,13 +240,6 @@ class RootAppStateKaydetGeriYukleMixin:
     def _resolve_object_method(self, obj, method_name: str):
         """
         Verilen nesne üzerindeki callable metodu lazy resolve eder ve cache'ler.
-
-        Args:
-            obj: Hedef nesne.
-            method_name: Çözümlenecek metod adı.
-
-        Returns:
-            callable | None
         """
         if obj is None:
             return None
@@ -312,6 +377,79 @@ class RootAppStateKaydetGeriYukleMixin:
             pass
         return None
 
+    def _get_services_cached(self):
+        """
+        Root üzerindeki services nesnesini döndürür.
+        """
+        try:
+            cached = self._app_state_cache_get("resolved_services", None)
+            if cached is not None:
+                return cached
+        except Exception:
+            pass
+
+        try:
+            services = self._safe_getattr("services", None)
+            if services is not None:
+                self._app_state_cache_set("resolved_services", services)
+            return services
+        except Exception:
+            return None
+
+    def _get_belge_yoneticisi_cached(self):
+        """
+        Services üzerinden belge yöneticisini döndürür.
+        """
+        try:
+            cached = self._app_state_cache_get("resolved_belge_yoneticisi", None)
+            if cached is not None:
+                return cached
+        except Exception:
+            pass
+
+        try:
+            services = self._get_services_cached()
+            if services is None:
+                return None
+
+            belge_fn = getattr(services, "belge_yoneticisi", None)
+            if callable(belge_fn):
+                belge = belge_fn()
+                if belge is not None:
+                    self._app_state_cache_set("resolved_belge_yoneticisi", belge)
+                return belge
+        except Exception:
+            pass
+
+        return None
+
+    def _get_document_selection_class_cached(self):
+        """
+        DocumentSelection sınıfını güvenli biçimde resolve eder.
+        """
+        try:
+            cached = self._app_state_cache_get("document_selection_class", None)
+            if cached is not None:
+                return cached
+        except Exception:
+            pass
+
+        try:
+            called, value = self._root_call("_get_document_selection_class")
+            if called and value is not None:
+                self._app_state_cache_set("document_selection_class", value)
+                return value
+        except Exception:
+            pass
+
+        try:
+            from app.ui.dosya_secici_paketi.models import DocumentSelection
+
+            self._app_state_cache_set("document_selection_class", DocumentSelection)
+            return DocumentSelection
+        except Exception:
+            return None
+
     def _find_item_by_identity_value_cached(self, identity: str):
         """
         Root üzerindeki _find_item_by_identity_value metodunu çağırır.
@@ -333,12 +471,191 @@ class RootAppStateKaydetGeriYukleMixin:
         except Exception:
             pass
 
+    def _build_selection_from_state(self, state: dict):
+        """
+        Kayıtlı state'ten yeniden DocumentSelection nesnesi üretmeyi dener.
+        """
+        if not isinstance(state, dict):
+            return None
+
+        selection_source = self._coerce_text(state.get("selection_source", "")).strip()
+        selection_uri = self._coerce_text(state.get("selection_uri", "")).strip()
+        selection_local_path = self._coerce_text(
+            state.get("selection_local_path", "")
+        ).strip()
+        selection_mime_type = self._coerce_text(
+            state.get("selection_mime_type", "")
+        ).strip()
+        selection_display_name = self._coerce_text(
+            state.get("selection_display_name", "")
+        ).strip()
+        selection_identifier = self._coerce_text(
+            state.get("selection_identifier", "")
+        ).strip()
+
+        if not any(
+            (
+                selection_source,
+                selection_uri,
+                selection_local_path,
+                selection_mime_type,
+                selection_display_name,
+                selection_identifier,
+            )
+        ):
+            return None
+
+        DocumentSelection = self._get_document_selection_class_cached()
+        if DocumentSelection is None:
+            return None
+
+        try:
+            return DocumentSelection(
+                source=selection_source or "unknown",
+                uri=selection_uri,
+                local_path=selection_local_path,
+                display_name=selection_display_name,
+                mime_type=selection_mime_type,
+            )
+        except Exception:
+            pass
+
+        try:
+            return DocumentSelection(
+                source=selection_source or "unknown",
+                uri=selection_uri or selection_identifier,
+                local_path=selection_local_path,
+                display_name=selection_display_name,
+                mime_type=selection_mime_type,
+            )
+        except Exception:
+            return None
+
+    def _apply_selection_ui_state(
+        self,
+        selection,
+        current_file_path: str = "",
+        selection_identifier: str = "",
+        selection_display_name: str = "",
+    ) -> bool:
+        """
+        Dosya seçici UI üzerinde path/selection/display state'ini uygular.
+        """
+        selection_ui_ok = False
+
+        try:
+            dosya_secici = self._safe_getattr("dosya_secici", None)
+            if dosya_secici is None:
+                return False
+
+            if selection is not None:
+                called, _ = self._object_call(dosya_secici, "set_selection", selection)
+                if called:
+                    selection_ui_ok = True
+
+            if selection_identifier:
+                called, _ = self._object_call(
+                    dosya_secici,
+                    "set_path",
+                    selection_identifier,
+                )
+                if called:
+                    selection_ui_ok = True
+            elif current_file_path:
+                called, _ = self._object_call(
+                    dosya_secici,
+                    "set_path",
+                    current_file_path,
+                )
+                if called:
+                    selection_ui_ok = True
+
+            if selection_display_name:
+                try:
+                    dosya_secici._last_display_name = selection_display_name
+                except Exception:
+                    pass
+
+                try:
+                    refresh_summary = self._resolve_object_method(
+                        dosya_secici,
+                        "_refresh_summary",
+                    )
+                    if callable(refresh_summary):
+                        refresh_summary()
+                except Exception:
+                    pass
+
+        except Exception:
+            pass
+
+        return selection_ui_ok
+
+    def _restore_session_from_selection_state(self, state: dict) -> bool:
+        """
+        Kayıtlı selection state'ten gerçek belge oturumunu tekrar kurmayı dener.
+        """
+        if not isinstance(state, dict):
+            return False
+
+        selection = self._build_selection_from_state(state)
+        if selection is None:
+            return False
+
+        try:
+            belge = self._get_belge_yoneticisi_cached()
+            if belge is None:
+                return False
+
+            oturum_baslat = self._resolve_object_method(belge, "oturum_baslat")
+            if not callable(oturum_baslat):
+                return False
+
+            session = oturum_baslat(selection)
+            if session is None:
+                return False
+
+            self.current_session = session
+
+            try:
+                calisma_yolu_fn = self._resolve_object_method(
+                    belge,
+                    "calisma_dosyasi_yolu",
+                )
+                if callable(calisma_yolu_fn):
+                    calisma_yolu = self._coerce_text(calisma_yolu_fn(session)).strip()
+                    if calisma_yolu:
+                        self.current_file_path = calisma_yolu
+            except Exception:
+                pass
+
+            selection_identifier = self._coerce_text(
+                state.get("selection_identifier", "")
+            ).strip()
+            selection_display_name = self._coerce_text(
+                state.get("selection_display_name", "")
+            ).strip()
+
+            self._apply_selection_ui_state(
+                selection=selection,
+                current_file_path=self._coerce_text(self.current_file_path).strip(),
+                selection_identifier=selection_identifier,
+                selection_display_name=selection_display_name,
+            )
+
+            return bool(self._coerce_text(self.current_file_path).strip())
+        except Exception:
+            print("[ROOT] Selection state üzerinden session restore başarısız.")
+            print(traceback.format_exc())
+            return False
+
     # =========================================================
     # APP STATE SAVE
     # =========================================================
     def uygulama_durumu_kaydet(self) -> None:
         """
         Geçici RAM state sözlüğünü üretir ve root üzerinde saklar.
+        Gerekirse hafif disk fallback dosyasına da yazar.
         """
         try:
             called, state = self._root_call("_collect_app_state")
@@ -346,8 +663,15 @@ class RootAppStateKaydetGeriYukleMixin:
                 print("[ROOT] Uygulama durumu kaydedilemedi. _collect_app_state yok.")
                 return
 
-            self._memory_app_state = dict(state or {})
-            print("[ROOT] Uygulama durumu memory içinde kaydedildi.")
+            state_dict = dict(state or {})
+            self._memory_app_state = state_dict
+
+            disk_ok = self._write_state_to_disk(state_dict)
+
+            if disk_ok:
+                print("[ROOT] Uygulama durumu memory + disk fallback içinde kaydedildi.")
+            else:
+                print("[ROOT] Uygulama durumu memory içinde kaydedildi.")
         except Exception:
             print("[ROOT] Uygulama durumu kaydedilemedi.")
             print(traceback.format_exc())
@@ -406,7 +730,7 @@ class RootAppStateKaydetGeriYukleMixin:
         Returns:
             bool
         """
-        temiz_yol = str(saved_file_path or "").strip()
+        temiz_yol = self._coerce_text(saved_file_path).strip()
         if not temiz_yol:
             return False
 
@@ -463,7 +787,7 @@ class RootAppStateKaydetGeriYukleMixin:
     # =========================================================
     def _apply_saved_state(self, state: dict) -> bool:
         """
-        Kayıtlı RAM state sözlüğünü root'a uygular.
+        Kayıtlı state sözlüğünü root'a uygular.
 
         Args:
             state: Daha önce kaydedilmiş state sözlüğü.
@@ -474,17 +798,17 @@ class RootAppStateKaydetGeriYukleMixin:
         if not isinstance(state, dict) or not state:
             return False
 
-        current_file_path = str(state.get("current_file_path", "") or "").strip()
-        selected_item_identity = str(
-            state.get("selected_item_identity", "") or ""
+        current_file_path = self._coerce_text(state.get("current_file_path", "")).strip()
+        selected_item_identity = self._coerce_text(
+            state.get("selected_item_identity", "")
         ).strip()
-        editor_text = str(state.get("editor_text", "") or "")
+        editor_text = self._coerce_text(state.get("editor_text", ""))
         scroll_y = state.get("scroll_y", None)
-        selection_identifier = str(
-            state.get("selection_identifier", "") or ""
+        selection_identifier = self._coerce_text(
+            state.get("selection_identifier", "")
         ).strip()
-        selection_display_name = str(
-            state.get("selection_display_name", "") or ""
+        selection_display_name = self._coerce_text(
+            state.get("selection_display_name", "")
         ).strip()
 
         self._clear_restore_view_state()
@@ -493,44 +817,28 @@ class RootAppStateKaydetGeriYukleMixin:
         selected_ok = False
         editor_text_ok = False
         selection_ui_ok = False
+        session_restored = False
 
         try:
-            dosya_secici = self._safe_getattr("dosya_secici", None)
-            if dosya_secici is not None:
-                if selection_identifier:
-                    called, _ = self._object_call(
-                        dosya_secici,
-                        "set_path",
-                        selection_identifier,
-                    )
-                    if called:
-                        selection_ui_ok = True
-                elif current_file_path:
-                    called, _ = self._object_call(
-                        dosya_secici,
-                        "set_path",
-                        current_file_path,
-                    )
-                    if called:
-                        selection_ui_ok = True
+            session_restored = self._restore_session_from_selection_state(state)
+        except Exception:
+            session_restored = False
 
-                if selection_display_name:
-                    try:
-                        dosya_secici._last_display_name = selection_display_name
-                        refresh_summary = self._resolve_object_method(
-                            dosya_secici,
-                            "_refresh_summary",
-                        )
-                        if callable(refresh_summary):
-                            refresh_summary()
-                    except Exception:
-                        pass
+        try:
+            if not session_restored:
+                selection_ui_ok = self._apply_selection_ui_state(
+                    selection=None,
+                    current_file_path=current_file_path,
+                    selection_identifier=selection_identifier,
+                    selection_display_name=selection_display_name,
+                )
         except Exception:
             pass
 
         try:
-            if current_file_path:
-                restore_ok = self._restore_items_from_saved_file(current_file_path)
+            hedef_yol = self._coerce_text(self.current_file_path or current_file_path).strip()
+            if hedef_yol:
+                restore_ok = self._restore_items_from_saved_file(hedef_yol)
         except Exception:
             print("[ROOT] Saved file restore aşaması başarısız.")
             print(traceback.format_exc())
@@ -587,7 +895,7 @@ class RootAppStateKaydetGeriYukleMixin:
         except Exception:
             pass
 
-        if selected_ok or editor_text_ok or selection_ui_ok:
+        if selected_ok or editor_text_ok or selection_ui_ok or session_restored:
             return True
 
         self._clear_restore_view_state()
@@ -598,17 +906,28 @@ class RootAppStateKaydetGeriYukleMixin:
     # =========================================================
     def uygulama_durumu_geri_yukle(self) -> None:
         """
-        Memory içindeki geçici state'i root'a geri yüklemeyi dener.
+        Memory içindeki geçici state'i, gerekirse disk fallback'i kullanarak
+        root'a geri yüklemeyi dener.
         """
         try:
             state = {}
-            if isinstance(self._safe_getattr("_memory_app_state", None), dict):
-                memory_state = self._safe_getattr("_memory_app_state", {})
-                if memory_state:
-                    state = dict(memory_state)
+
+            memory_state = self._safe_getattr("_memory_app_state", None)
+            if isinstance(memory_state, dict) and memory_state:
+                state = dict(memory_state)
 
             if not state:
-                print("[ROOT] Memory app state bulunamadı.")
+                disk_state = self._read_state_from_disk()
+                if isinstance(disk_state, dict) and disk_state:
+                    state = dict(disk_state)
+                    try:
+                        self._memory_app_state = dict(state)
+                    except Exception:
+                        pass
+                    print("[ROOT] Memory state boştu, disk fallback state yüklendi.")
+
+            if not state:
+                print("[ROOT] Memory/disk app state bulunamadı.")
                 self._set_status_info_cached(
                     self._m_cached("new_session_started", "Yeni oturum açıldı."),
                     "onaylandi.png",
@@ -631,14 +950,15 @@ class RootAppStateKaydetGeriYukleMixin:
                             "onaylandi.png",
                             3.5,
                         )
-                        print("[ROOT] Uygulama durumu memory'den geri yüklendi.")
+                        self._clear_state_disk_cache()
+                        print("[ROOT] Uygulama durumu restore edildi.")
                         return
 
                     self._set_status_info_cached(
                         self._m_cached("new_session_started", "Yeni oturum açıldı."),
                         "onaylandi.png",
                     )
-                    print("[ROOT] Memory restore başarısız. Yeni oturum başlatıldı.")
+                    print("[ROOT] Restore başarısız. Yeni oturum başlatıldı.")
 
                 except Exception:
                     self._clear_restore_view_state()
@@ -664,6 +984,16 @@ class RootAppStateKaydetGeriYukleMixin:
     # =========================================================
     def _auto_restore_saved_state_on_start(self) -> None:
         """
-        Disk tabanlı auto-restore kapalı olduğundan no-op bırakılır.
+        Açılışta disk fallback state varsa memory alanına taşımayı dener.
         """
-        return
+        try:
+            memory_state = self._safe_getattr("_memory_app_state", None)
+            if isinstance(memory_state, dict) and memory_state:
+                return
+
+            disk_state = self._read_state_from_disk()
+            if isinstance(disk_state, dict) and disk_state:
+                self._memory_app_state = dict(disk_state)
+                print("[ROOT] Açılışta disk fallback state memory'e taşındı.")
+        except Exception:
+            pass
