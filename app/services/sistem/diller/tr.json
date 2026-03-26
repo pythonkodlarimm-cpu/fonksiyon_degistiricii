@@ -243,10 +243,19 @@
 
   "download_error_title": "İndirme Hatası",
   "backup_copy_failed": "Yedek kopyalanamadı:",
+  "download_failed_message": "Yedek kopyalanamadı:",
+  "backup_not_found": "Yedek bulunamadı",
+  "invalid_backup_file": "Geçerli bir yedek dosyası değil",
+  "download_target_not_created": "İndirilen hedef dosya oluşmadı",
+  "target_folder": "Hedef klasör",
 
   "delete_backup_title": "Yedeği Sil",
   "backup_will_be_deleted": "Bu yedek silinecek:",
   "irreversible_action": "Bu işlem geri alınamaz.",
+  "delete_confirm_title": "Silme Onayı",
+  "delete_confirm_message": "Bu öğeyi silmek istediğinize emin misiniz?",
+  "delete_success": "Silme işlemi başarılı",
+  "delete_failed": "Silme işlemi başarısız",
 
   "bulk_delete_title": "Toplu Silme",
   "backups_deleting": "Yedekler siliniyor...",
@@ -290,5 +299,8 @@
   "selection_error_title": "Seçim Hatası",
   "update_flow_wrong_target_detail": "Güncelleme akışına seçili çalışma dosyası dışından veya uygulama içinden bir fonksiyon geldi.",
   "update_prepare_error_occurred": "Güncelleme hazırlık hatası oluştu.",
-  "update_prepare_error_title": "Güncelleme Hazırlık Hatası"
+  "update_prepare_error_title": "Güncelleme Hazırlık Hatası",
+
+  "unexpected_error": "Beklenmeyen bir hata oluştu",
+  "operation_failed": "İşlem başarısız"
 }
