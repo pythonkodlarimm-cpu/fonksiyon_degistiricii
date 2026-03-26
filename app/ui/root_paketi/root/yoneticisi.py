@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-DOSYA: app/ui/root_paketi/root/yoneticisi.py
+DOSYA: app/ui/root_paketi/root/yonetici.py
 
 ROL:
 - root klasörü içindeki RootWidget için tek noktadan erişim sağlayan yönetici sınıfıdır
@@ -9,6 +9,7 @@ ROL:
 - İlk yüklenen modül ve sınıf referanslarını cache içinde tutar
 - Gerekirse RootWidget örneği oluşturur
 - Fail-soft yaklaşım uygular; hata durumunda çökmez, log basar
+- Android ve AAB ortamında tekrar eden import maliyetini azaltacak şekilde çalışır
 
 MİMARİ:
 - Yönetici sınıfı modül seviyesinde zorunlu import yapmaz
@@ -16,6 +17,9 @@ MİMARİ:
 - Modül ve sınıf referansları instance cache içinde saklanır
 - root paketinin kendi iç yapısı için kullanılır
 - Gerçek dosya yolu root/root.py olduğu için modul_yolu buna göre ayarlanmıştır
+- Cache bozulursa kendini toparlayacak şekilde yeniden resolve yapabilir
+- Üst yönetici katmanı ile aynı davranış modelini korur
+- Geliştirme sırasında hot-reload veya kısmi dosya değişimlerinde cache temizlenebilir
 
 GERÇEK DOSYA YOLU:
 - app/ui/root_paketi/root/root.py
@@ -32,8 +36,8 @@ NOT:
 - APK build sırasında path hatası yaşamamak için modul_yolu kesin olarak
   app.ui.root_paketi.root.root şeklinde ayarlanmıştır
 
-SURUM: 1
-TARIH: 2026-03-24
+SURUM: 4
+TARIH: 2026-03-26
 IMZA: FY.
 """
 
@@ -106,6 +110,36 @@ class RootYoneticisi:
         self._sinif_cache_temizle()
         self._modul_cache_temizle()
 
+    def _modul_gecerli_mi(self, module) -> bool:
+        """
+        Cache içindeki modülün beklenen sınıfı sağlayıp sağlamadığını kontrol eder.
+
+        Args:
+            module: Kontrol edilecek modül.
+
+        Returns:
+            bool
+        """
+        try:
+            return module is not None and hasattr(module, self.sinif_adi)
+        except Exception:
+            return False
+
+    def _sinif_gecerli_mi(self, cls) -> bool:
+        """
+        Cache içindeki sınıfın geçerli olup olmadığını kontrol eder.
+
+        Args:
+            cls: Kontrol edilecek sınıf.
+
+        Returns:
+            bool
+        """
+        try:
+            return cls is not None and getattr(cls, "__name__", "") == self.sinif_adi
+        except Exception:
+            return False
+
     def _yukle_modul(self):
         """
         Hedef modülü lazy import + cache ile güvenli biçimde yükler.
@@ -114,13 +148,24 @@ class RootYoneticisi:
             module | None
         """
         try:
-            if self._modul_cache_var_mi():
+            if self._modul_cache_var_mi() and self._modul_gecerli_mi(
+                self._cached_module
+            ):
                 return self._cached_module
         except Exception:
             self._modul_cache_temizle()
 
         try:
             module = __import__(self.modul_yolu, fromlist=[self.sinif_adi])
+
+            if not self._modul_gecerli_mi(module):
+                print(
+                    "[ROOT_IC_YONETICI] Modül yüklendi ama beklenen sınıf görünmedi: "
+                    f"{self.modul_yolu}.{self.sinif_adi}"
+                )
+                self._modul_cache_temizle()
+                return None
+
             self._cached_module = module
             return module
         except Exception:
@@ -137,7 +182,9 @@ class RootYoneticisi:
             type | None
         """
         try:
-            if self._sinif_cache_var_mi():
+            if self._sinif_cache_var_mi() and self._sinif_gecerli_mi(
+                self._cached_class
+            ):
                 return self._cached_class
         except Exception:
             self._sinif_cache_temizle()
@@ -148,8 +195,9 @@ class RootYoneticisi:
 
         try:
             cls = getattr(module, self.sinif_adi, None)
-            if cls is None:
-                print(f"[ROOT_IC_YONETICI] Sınıf bulunamadı: {self.sinif_adi}")
+
+            if not self._sinif_gecerli_mi(cls):
+                print(f"[ROOT_IC_YONETICI] Sınıf geçersiz: {self.sinif_adi}")
                 self._sinif_cache_temizle()
                 return None
 
@@ -182,6 +230,24 @@ class RootYoneticisi:
         """
         return self._yukle_sinif()
 
+    def mixin_sinifi(self):
+        """
+        Geriye uyumlu kullanım için RootWidget sınıfını döndürür.
+
+        Returns:
+            type | None
+        """
+        return self._yukle_sinif()
+
+    def sinif(self):
+        """
+        Geriye uyumlu kısa alias.
+
+        Returns:
+            type | None
+        """
+        return self._yukle_sinif()
+
     def root_olustur(self, *args, **kwargs):
         """
         RootWidget örneği oluşturmaya çalışır.
@@ -199,3 +265,12 @@ class RootYoneticisi:
             print("[ROOT_IC_YONETICI] Root örneği oluşturulamadı.")
             print(traceback.format_exc())
             return None
+
+    def ornek_olustur(self, *args, **kwargs):
+        """
+        Geriye uyumlu kullanım için RootWidget örneği oluşturur.
+
+        Returns:
+            object | None
+        """
+        return self.root_olustur(*args, **kwargs)
