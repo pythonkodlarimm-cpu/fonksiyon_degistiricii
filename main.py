@@ -1,18 +1,22 @@
 # -*- coding: utf-8 -*-
 """
 DOSYA: main.py
-MODUL: main
 
 ROL:
-- Uygulamanın giriş noktası
+- Uygulama giriş noktası
 - Kivy App sınıfını başlatır
 - RootWidget oluşturur
 - Uygulama başlığında sürüm bilgisini gösterir
 - Proje kökünü sys.path içine ekler
 - APK içinde ve normal çalıştırmada importları sade ve güvenli tutar
 - Hata olursa traceback'i ekranda göstermeye çalışır
-- Uygulama arka plana geçince durum kaydını tetikler
-- Uygulama geri gelince durum geri yüklemeyi tetikler
+- Lifecycle yönetimi (pause / resume)
+- Root state kaydet / geri yükle tetikleme
+- Resume sonrası UI refresh zincirini başlatma
+
+SURUM: 3
+TARIH: 2026-03-26
+IMZA: FY.
 """
 
 from __future__ import annotations
@@ -22,12 +26,16 @@ import traceback
 from pathlib import Path
 
 from kivy.app import App
+from kivy.clock import Clock
 from kivy.metrics import dp
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.label import Label
 
 
 def _safe_resolve(path: Path) -> Path:
+    """
+    Path nesnesini güvenli biçimde resolve etmeye çalışır.
+    """
     try:
         return path.resolve()
     except Exception:
@@ -38,6 +46,9 @@ def _safe_resolve(path: Path) -> Path:
 
 
 def _proje_koku_bul() -> Path:
+    """
+    Proje kökünü güvenli biçimde bulur.
+    """
     try:
         return _safe_resolve(Path(__file__).parent)
     except Exception:
@@ -54,6 +65,9 @@ if str(PROJE_ROOT) not in sys.path:
 
 
 def _build_error_root(hata_metni: str) -> BoxLayout:
+    """
+    Uygulama açılış hatalarında gösterilecek basit fallback root'u üretir.
+    """
     root = BoxLayout(
         orientation="vertical",
         padding=dp(18),
@@ -89,7 +103,14 @@ def _build_error_root(hata_metni: str) -> BoxLayout:
 
 
 class FonksiyonDegistiriciApp(App):
+    """
+    Uygulamanın ana App sınıfı.
+    """
+
     def build(self):
+        """
+        Root widget'ı oluşturur.
+        """
         try:
             try:
                 from kivy.core.window import Window
@@ -112,21 +133,34 @@ class FonksiyonDegistiriciApp(App):
                 print(hata)
             except Exception:
                 pass
+
             self.root_widget = None
             return _build_error_root(hata)
 
     def on_start(self):
+        """
+        Uygulama başlatıldıktan sonra debug amaçlı kök yolu loglar.
+        """
         try:
             print("PROJE_ROOT =", PROJE_ROOT)
         except Exception:
             pass
 
+    # =========================================================
+    # PAUSE → STATE SAVE
+    # =========================================================
     def on_pause(self):
+        """
+        Uygulama arka plana geçerken root state kaydını tetikler.
+        """
         try:
             print("[APP] on_pause")
-            if hasattr(self, "root_widget") and self.root_widget is not None:
-                if hasattr(self.root_widget, "uygulama_durumu_kaydet"):
-                    self.root_widget.uygulama_durumu_kaydet()
+
+            root_widget = getattr(self, "root_widget", None)
+            if root_widget is not None:
+                if hasattr(root_widget, "uygulama_durumu_kaydet"):
+                    root_widget.uygulama_durumu_kaydet()
+
         except Exception:
             try:
                 print(traceback.format_exc())
@@ -135,12 +169,63 @@ class FonksiyonDegistiriciApp(App):
 
         return True
 
+    # =========================================================
+    # RESUME → STATE LOAD + UI REFRESH
+    # =========================================================
     def on_resume(self):
+        """
+        Uygulama arka plandan geri gelince state restore ve UI refresh zincirini tetikler.
+        """
         try:
             print("[APP] on_resume")
-            if hasattr(self, "root_widget") and self.root_widget is not None:
-                if hasattr(self.root_widget, "uygulama_durumu_geri_yukle"):
-                    self.root_widget.uygulama_durumu_geri_yukle()
+
+            root_widget = getattr(self, "root_widget", None)
+            if root_widget is not None:
+                # İlk restore denemesi
+                if hasattr(root_widget, "uygulama_durumu_geri_yukle"):
+                    try:
+                        root_widget.uygulama_durumu_geri_yukle()
+                    except Exception:
+                        try:
+                            print(traceback.format_exc())
+                        except Exception:
+                            pass
+
+                # Ana resume zinciri
+                Clock.schedule_once(self._resume_ui_refresh, 0.10)
+
+        except Exception:
+            try:
+                print(traceback.format_exc())
+            except Exception:
+                pass
+
+    # =========================================================
+    # RESUME UI REFRESH
+    # =========================================================
+    def _resume_ui_refresh(self, _dt):
+        """
+        Resume sonrası root üstünde genel yenileme zincirini çalıştırır.
+        """
+        try:
+            root_widget = getattr(self, "root_widget", None)
+            if root_widget is None:
+                return
+
+            # Öncelikli ortak giriş
+            if hasattr(root_widget, "uygulama_resume_akisini_tetikle"):
+                root_widget.uygulama_resume_akisini_tetikle()
+                return
+
+            # Eski/uyumlu giriş
+            if hasattr(root_widget, "resume_sonrasi_yenile"):
+                root_widget.resume_sonrasi_yenile()
+                return
+
+            # Son fallback
+            if hasattr(root_widget, "_post_build_refresh"):
+                root_widget._post_build_refresh()
+
         except Exception:
             try:
                 print(traceback.format_exc())
@@ -149,6 +234,9 @@ class FonksiyonDegistiriciApp(App):
 
 
 def main() -> None:
+    """
+    Uygulamayı başlatır.
+    """
     try:
         FonksiyonDegistiriciApp().run()
     except Exception:
