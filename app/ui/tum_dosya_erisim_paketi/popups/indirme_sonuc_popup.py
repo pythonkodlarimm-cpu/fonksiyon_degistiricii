@@ -5,25 +5,28 @@ DOSYA: app/ui/tum_dosya_erisim_paketi/popups/indirme_sonuc_popup.py
 ROL:
 - Yedek indirme/kaydetme işlemi sonrası sonuç popup'ı göstermek
 - Kaydedilen konumu kullanıcıya göstermek
-- Uygunsa konumu dosya yöneticisi ile açmayı denemek
-- Başarısız açma durumunda sade uyarı popup'ı göstermek
-- Görünen metinlerde services tabanlı dil desteğine hazır olmak
+- Görünen metinleri services tabanlı dil desteği ile üretmek
+- Sade ve tek aksiyonlu kapanış akışı sunmak
+- Konum açma akışını bilinçli olarak devre dışı bırakmak
 
 MİMARİ:
 - Doğrudan ortak bileşen import etmez
 - Ortak yönetici üzerinden erişir
-- Popup akışı kendi içinde sade tutulur
-- services verilirse sabit metinler dil servisi üzerinden alınabilir
+- Popup akışı sade tutulur
+- services verilirse sabit metinler dil servisi üzerinden alınır
 - services verilmezse güvenli fallback ile çalışır
 - Hardcoded kullanıcı metni bırakılmaz
+- Tek butonlu kapanış davranışı korunur
+- Android / AAB / masaüstü ortamlarında aynı davranışı verir
 
 API UYUMLULUK:
 - Android API 35 ile uyumludur
 - Android dışı ortamlarda güvenli fallback uygular
 - Doğrudan platforma özel hata kullanıcıya taşınmaz
+- Konum açma butonu bilinçli olarak kaldırılmıştır
 
-SURUM: 5
-TARIH: 2026-03-23
+SURUM: 6
+TARIH: 2026-03-24
 IMZA: FY.
 """
 
@@ -60,49 +63,11 @@ def _m(services, anahtar: str, default: str = "") -> str:
     return str(default or anahtar)
 
 
-def _open_path_in_file_manager(
-    path_value: str | Path,
-    services=None,
-) -> bool:
+def _safe_path_text(saved_path: str | Path) -> str:
     try:
-        from kivy.utils import platform
+        return str(saved_path or "").strip()
     except Exception:
-        return False
-
-    if platform != "android":
-        return False
-
-    try:
-        from android import mActivity
-        from jnius import autoclass
-
-        path_obj = Path(str(path_value or "").strip())
-        if not path_obj.exists():
-            return False
-
-        target_dir = path_obj.parent if path_obj.is_file() else path_obj
-
-        Intent = autoclass("android.content.Intent")
-        Uri = autoclass("android.net.Uri")
-        File = autoclass("java.io.File")
-
-        intent = Intent(Intent.ACTION_VIEW)
-        uri = Uri.fromFile(File(str(target_dir)))
-
-        intent.setDataAndType(uri, "*/*")
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-
-        chooser = Intent.createChooser(
-            intent,
-            _m(services, "open_location", "Konumu Aç"),
-        )
-        chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-
-        mActivity.startActivity(chooser)
-        return True
-    except Exception:
-        return False
+        return ""
 
 
 def show_download_result_popup(
@@ -110,7 +75,7 @@ def show_download_result_popup(
     selected_by_user: bool = False,
     services=None,
 ):
-    hedef = str(saved_path or "").strip()
+    hedef = _safe_path_text(saved_path)
 
     title_text = _m(services, "operation_completed", "İşlem Tamam")
 
@@ -171,13 +136,6 @@ def show_download_result_popup(
         spacing=dp(8),
     )
 
-    btn_open = Button(
-        text=_m(services, "open_location", "Konumu Aç"),
-        background_normal="",
-        background_color=(0.18, 0.55, 0.28, 1),
-        color=(0.95, 0.95, 0.98, 1),
-    )
-
     btn_ok = Button(
         text=_m(services, "ok", "Tamam"),
         background_normal="",
@@ -185,7 +143,6 @@ def show_download_result_popup(
         color=(0.95, 0.95, 0.98, 1),
     )
 
-    button_row.add_widget(btn_open)
     button_row.add_widget(btn_ok)
     content.add_widget(button_row)
 
@@ -197,37 +154,12 @@ def show_download_result_popup(
         separator_height=0,
     )
 
-    def _on_open(*_args):
-        acildi = _open_path_in_file_manager(hedef, services=services)
-        if acildi:
-            popup.dismiss()
-            return
-
-        from app.ui.tum_dosya_erisim_paketi.popups.basit_popup import (
-            show_simple_popup,
-        )
-
-        show_simple_popup(
-            title_text=_m(
-                services,
-                "location_open_failed_title",
-                "Konum Açılamadı",
-            ),
-            body_text=_m(
-                services,
-                "location_open_failed_message",
-                "Dosya yöneticisi ile konum açılamadı.",
-            ),
-            icon_name="warning.png",
-            auto_close_seconds=1.7,
-            compact=True,
-            services=services,
-        )
-
     def _on_ok(*_args):
-        popup.dismiss()
+        try:
+            popup.dismiss()
+        except Exception:
+            pass
 
-    btn_open.bind(on_release=_on_open)
     btn_ok.bind(on_release=_on_ok)
 
     popup.open()
