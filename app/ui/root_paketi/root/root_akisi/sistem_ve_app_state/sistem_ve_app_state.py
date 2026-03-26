@@ -5,32 +5,44 @@ DOSYA: app/ui/root_paketi/root/root_akisi/sistem_ve_app_state/sistem_ve_app_stat
 ROL:
 - Root katmanında sistem ve uygulama state erişim yardımcılarını tek modülde toplar
 - ServicesYoneticisi üzerinden sistem yöneticisine güvenli erişim sağlar
-- Uygulama state kaydetme / yükleme için soyut (stub) arayüz sunar
-- Disk tabanlı kalıcılığı bilinçli olarak devre dışı bırakır (RAM-only state yaklaşımı)
+- Uygulama state kaydetme / yükleme için fail-soft arayüz sunar
 - Root içinde sistem bağımlılıklarını izole eder
 - Sistem erişiminde lazy resolve ve runtime cache uygular
+- RAM öncelikli state yaklaşımını destekler
+- Gerekirse services katmanında mevcutsa app state erişimini kullanır
 
 MİMARİ:
 - Bu modül mixin mantığıyla çalışır
 - RootWidget içinde kullanılan sistem/app state yardımcı metodları burada tanımlanır
 - Sistem erişimi yalnızca services üzerinden yapılır
-- Disk yazımı ve kalıcı storage intentionally kapalıdır
 - Fail-soft yaklaşım uygulanır (hata durumunda None/boş değer döner)
 - İlk uygun services method resolve edildikten sonra cache içine alınır
 - İstenirse cache temizlenebilir
+- Bu dosyada import-level lazy import yerine runtime lazy resolve + cache uygulanır
 
 NOTLAR:
-- Uygulama state sadece memory (RAM) içinde tutulur
-- _save_app_state_to_settings ve _load_app_state_from_settings intentionally no-op'tur
-- Bu yapı Play Store politikalarına uyumlu sade bir state yönetimi sağlar
-- Genişletilmek istenirse bu noktadan disk tabanlı persist eklenebilir
-- Bu dosyada import-level lazy import yerine runtime lazy resolve + cache uygulanır
+- Uygulama state için ana yaklaşım root içindeki memory state akışıdır
+- Bu modül, services katmanında varsa app state metodlarını ek yardımcı katman olarak kullanır
+- Services tarafında state API yoksa sessizce fail-soft davranır
+- Genişletilmek istenirse bu noktadan services/state entegrasyonu artırılabilir
+- Bu dosya doğrudan UI çizmez
 
 BEKLENEN ROOT ALANLARI:
 - self.services
 
-SURUM: 2
-TARIH: 2026-03-24
+DESTEKLENEN SERVICES API VARYASYONLARI:
+- sistem_yoneticisi()
+- get_sistem_yoneticisi()
+- system_manager()
+- get_system_manager()
+
+OPSİYONEL APP STATE API VARYASYONLARI:
+- get_app_state(default=...)
+- set_app_state(state)
+- clear_app_state()
+
+SURUM: 4
+TARIH: 2026-03-26
 IMZA: FY.
 """
 
@@ -114,6 +126,28 @@ class RootSistemVeAppStateMixin:
         except Exception:
             pass
 
+    def _resolve_services(self):
+        """
+        Root üzerindeki services nesnesini alır ve cache'ler.
+
+        Returns:
+            object | None
+        """
+        try:
+            cached = self._cache_get("resolved_services_obj", None)
+            if cached is not None:
+                return cached
+        except Exception:
+            pass
+
+        try:
+            services = self._safe_getattr("services", None)
+            if services is not None:
+                self._cache_set("resolved_services_obj", services)
+            return services
+        except Exception:
+            return None
+
     def _resolve_services_method(self, services, method_names: tuple[str, ...]):
         """
         Services nesnesi üzerinde ilk uygun callable metodu bulur ve cache'ler.
@@ -130,12 +164,10 @@ class RootSistemVeAppStateMixin:
 
         self._ensure_sistem_app_state_cache()
 
-        object_id = None
         cache_key = None
 
         try:
-            object_id = id(services)
-            cache_key = ("services_method", object_id, tuple(method_names))
+            cache_key = ("services_method", id(services), tuple(method_names))
             cached_method = self._cache_get(cache_key, None)
             if cached_method is not None:
                 return cached_method
@@ -147,6 +179,51 @@ class RootSistemVeAppStateMixin:
         try:
             for method_name in method_names:
                 method = getattr(services, method_name, None)
+                if callable(method):
+                    bulunan = method
+                    break
+        except Exception:
+            bulunan = None
+
+        try:
+            if cache_key is not None and bulunan is not None:
+                self._cache_set(cache_key, bulunan)
+        except Exception:
+            pass
+
+        return bulunan
+
+    def _resolve_sistem_method(self, sistem, method_names: tuple[str, ...]):
+        """
+        Sistem yöneticisi üzerinde ilk uygun callable metodu bulur ve cache'ler.
+
+        Args:
+            sistem: Sistem yöneticisi nesnesi.
+            method_names: Denenecek method adları.
+
+        Returns:
+            callable | None
+        """
+        if sistem is None:
+            return None
+
+        self._ensure_sistem_app_state_cache()
+
+        cache_key = None
+
+        try:
+            cache_key = ("sistem_method", id(sistem), tuple(method_names))
+            cached_method = self._cache_get(cache_key, None)
+            if cached_method is not None:
+                return cached_method
+        except Exception:
+            cache_key = None
+
+        bulunan = None
+
+        try:
+            for method_name in method_names:
+                method = getattr(sistem, method_name, None)
                 if callable(method):
                     bulunan = method
                     break
@@ -185,7 +262,7 @@ class RootSistemVeAppStateMixin:
             pass
 
         try:
-            services = self._safe_getattr("services", None)
+            services = self._resolve_services()
             if services is None:
                 return None
 
@@ -210,30 +287,218 @@ class RootSistemVeAppStateMixin:
             return None
 
     # =========================================================
-    # APP STATE (DISK DISABLED)
+    # APP STATE HELPERS
+    # =========================================================
+    def _get_app_state_api_reader(self):
+        """
+        App state okuma metodunu services veya sistem yöneticisi üstünden bulur.
+
+        Returns:
+            callable | None
+        """
+        try:
+            cached = self._cache_get("resolved_app_state_reader", None)
+            if cached is not None:
+                return cached
+        except Exception:
+            pass
+
+        reader = None
+
+        try:
+            services = self._resolve_services()
+            reader = self._resolve_services_method(
+                services,
+                (
+                    "get_app_state",
+                    "app_state_al",
+                ),
+            )
+        except Exception:
+            reader = None
+
+        if reader is None:
+            try:
+                sistem = self._sistem()
+                reader = self._resolve_sistem_method(
+                    sistem,
+                    (
+                        "get_app_state",
+                        "app_state_al",
+                    ),
+                )
+            except Exception:
+                reader = None
+
+        try:
+            if reader is not None:
+                self._cache_set("resolved_app_state_reader", reader)
+        except Exception:
+            pass
+
+        return reader
+
+    def _get_app_state_api_writer(self):
+        """
+        App state yazma metodunu services veya sistem yöneticisi üstünden bulur.
+
+        Returns:
+            callable | None
+        """
+        try:
+            cached = self._cache_get("resolved_app_state_writer", None)
+            if cached is not None:
+                return cached
+        except Exception:
+            pass
+
+        writer = None
+
+        try:
+            services = self._resolve_services()
+            writer = self._resolve_services_method(
+                services,
+                (
+                    "set_app_state",
+                    "app_state_yaz",
+                ),
+            )
+        except Exception:
+            writer = None
+
+        if writer is None:
+            try:
+                sistem = self._sistem()
+                writer = self._resolve_sistem_method(
+                    sistem,
+                    (
+                        "set_app_state",
+                        "app_state_yaz",
+                    ),
+                )
+            except Exception:
+                writer = None
+
+        try:
+            if writer is not None:
+                self._cache_set("resolved_app_state_writer", writer)
+        except Exception:
+            pass
+
+        return writer
+
+    def _get_app_state_api_clearer(self):
+        """
+        App state temizleme metodunu services veya sistem yöneticisi üstünden bulur.
+
+        Returns:
+            callable | None
+        """
+        try:
+            cached = self._cache_get("resolved_app_state_clearer", None)
+            if cached is not None:
+                return cached
+        except Exception:
+            pass
+
+        clearer = None
+
+        try:
+            services = self._resolve_services()
+            clearer = self._resolve_services_method(
+                services,
+                (
+                    "clear_app_state",
+                    "app_state_temizle",
+                ),
+            )
+        except Exception:
+            clearer = None
+
+        if clearer is None:
+            try:
+                sistem = self._sistem()
+                clearer = self._resolve_sistem_method(
+                    sistem,
+                    (
+                        "clear_app_state",
+                        "app_state_temizle",
+                    ),
+                )
+            except Exception:
+                clearer = None
+
+        try:
+            if clearer is not None:
+                self._cache_set("resolved_app_state_clearer", clearer)
+        except Exception:
+            pass
+
+        return clearer
+
+    # =========================================================
+    # APP STATE API
     # =========================================================
     def _save_app_state_to_settings(self, state: dict) -> None:
         """
-        Uygulama state'ini kalıcı ortama kaydetme stub metodudur.
+        Uygulama state'ini uygun services/sistem API varsa kaydetmeyi dener.
 
         Not:
-        - Bu projede disk tabanlı state saklama BİLİNÇLİ OLARAK kapalıdır
-        - Bu metod no-op (boş) bırakılmıştır
+        - Bu metod fail-soft çalışır
+        - API yoksa sessizce çıkar
+        - Root tarafındaki memory state akışını bozmaz
 
         Args:
             state: Kaydedilmek istenen state sözlüğü
         """
-        return None
+        try:
+            if not isinstance(state, dict):
+                return
+
+            writer = self._get_app_state_api_writer()
+            if callable(writer):
+                writer(dict(state))
+        except Exception:
+            pass
 
     def _load_app_state_from_settings(self) -> dict:
         """
-        Kalıcı ortamdan uygulama state'ini yükleme stub metodudur.
+        Uygun services/sistem API varsa app state okumayı dener.
 
         Not:
-        - Bu projede disk tabanlı state restore BİLİNÇLİ OLARAK kapalıdır
-        - Bu metod her zaman boş dict döner
+        - API yoksa veya hata olursa boş dict döner
+        - Root tarafındaki memory/disk fallback akışına yardımcı katmandır
 
         Returns:
-            dict: Boş state
+            dict
         """
-        return {}
+        try:
+            reader = self._get_app_state_api_reader()
+            if not callable(reader):
+                return {}
+
+            try:
+                value = reader(default={})
+            except TypeError:
+                value = reader()
+
+            if isinstance(value, dict):
+                return dict(value)
+
+            return {}
+        except Exception:
+            return {}
+
+    def _clear_app_state_from_settings(self) -> None:
+        """
+        Uygun services/sistem API varsa app state temizlemeyi dener.
+
+        Not:
+        - API yoksa sessizce çıkar
+        """
+        try:
+            clearer = self._get_app_state_api_clearer()
+            if callable(clearer):
+                clearer()
+        except Exception:
+            pass
