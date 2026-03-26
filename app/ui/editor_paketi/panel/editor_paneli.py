@@ -10,6 +10,7 @@ ROL:
 - Üst katmanların editör iç yapısını bilmeden metin okuyup yazabilmesi için public text API sağlar
 - Android restore akışında eksik item / geç zamanlama kaynaklı UI çökmesini azaltır
 - Aktif dile göre görünür metinleri üretir ve yeniler
+- Yeni kod alanı için araç çubuğunda doğrudan yapıştır aksiyonu sağlar
 
 MİMARİ:
 - Alt modüllere doğrudan erişmez
@@ -20,14 +21,15 @@ MİMARİ:
 - Root ve diğer üst katmanlar editör iç widget yapısını bilmeden public API üzerinden içerik okuyup yazabilir
 - Widget hazır değilken veya item eksik gelirse güvenli fallback uygulanır
 - Kullanıcıya görünen metinler services -> sistem -> dil_servisi zincirinden alınır
+- Yapıştırma butonu mevcut Android uzun bas -> yapıştır davranışına yakın çalışan aksiyon yöneticisine bağlanır
 
 API UYUMLULUK:
 - Platform bağımsızdır
 - Android API 35 ile uyumludur
 - Doğrudan Android bridge çağrısı içermez
 
-SURUM: 33
-TARIH: 2026-03-24
+SURUM: 34
+TARIH: 2026-03-26
 IMZA: FY.
 """
 
@@ -77,6 +79,7 @@ class EditorPaneli(BoxLayout):
         self._tool_update = None
         self._tool_check = None
         self._tool_copy = None
+        self._tool_paste = None
         self._tool_restore = None
 
         self._pending_set_item_event = None
@@ -124,7 +127,8 @@ class EditorPaneli(BoxLayout):
                     )
                 else:
                     self.path_label.set_text(
-                        f"{self._selected_function_prefix()}: {self._item_path_text(self.current_item)}"
+                        f"{self._selected_function_prefix()}: "
+                        f"{self._item_path_text(self.current_item)}"
                     )
         except Exception:
             pass
@@ -138,10 +142,7 @@ class EditorPaneli(BoxLayout):
                         self._m("current_code", "Mevcut Kod")
                     )
                 elif hasattr(self.current_title, "text"):
-                    self.current_title.text = self._m(
-                        "current_code",
-                        "Mevcut Kod",
-                    )
+                    self.current_title.text = self._m("current_code", "Mevcut Kod")
         except Exception:
             pass
 
@@ -227,7 +228,10 @@ class EditorPaneli(BoxLayout):
             pass
 
         try:
-            if self.error_box is not None and hasattr(self.error_box, "refresh_language"):
+            if self.error_box is not None and hasattr(
+                self.error_box,
+                "refresh_language",
+            ):
                 self.error_box.refresh_language()
         except Exception:
             pass
@@ -252,6 +256,7 @@ class EditorPaneli(BoxLayout):
             (self._tool_update, "update", "Güncelle"),
             (self._tool_check, "check", "Kontrol Et"),
             (self._tool_copy, "copy", "Kopyala"),
+            (self._tool_paste, "paste", "Yapıştır"),
             (self._tool_restore, "restore", "Geri Yükle"),
         ]
 
@@ -425,7 +430,7 @@ class EditorPaneli(BoxLayout):
         return wrap
 
     def _build_action_toolbar(self) -> None:
-        self.action_toolbar = IconToolbar(spacing_dp=22, padding_dp=6)
+        self.action_toolbar = IconToolbar(spacing_dp=18, padding_dp=6)
         self.action_toolbar.size_hint_y = None
         self.action_toolbar.height = dp(84)
 
@@ -463,6 +468,16 @@ class EditorPaneli(BoxLayout):
             icon_name="file_copy.png",
             text=self._m("copy", "Kopyala"),
             on_release=self._copy_current_to_new,
+            icon_size_dp=42,
+            text_size="12sp",
+            color=TEXT_MUTED,
+            icon_bg=None,
+        )
+
+        self._tool_paste = self.action_toolbar.add_tool(
+            icon_name="yapistir.png",
+            text=self._m("paste", "Yapıştır"),
+            on_release=self._paste_new_code,
             icon_size_dp=42,
             text_size="12sp",
             color=TEXT_MUTED,
@@ -777,6 +792,9 @@ class EditorPaneli(BoxLayout):
     # =========================================================
     def _copy_current_to_new(self, *_args):
         return self._aksiyon().copy_current_to_new(self, *_args)
+
+    def _paste_new_code(self, *_args):
+        return self._aksiyon().paste_new_code(self, *_args)
 
     def _clear_new_code(self, *_args):
         return self._aksiyon().clear_new_code(self, *_args)
