@@ -8,23 +8,17 @@ ROL:
 - Başarı, bilgi, uyarı ve hata tonlarında görsel geri bildirim sağlamak
 - Hata durumunda detaylı, kopyalanabilir popup gösterebilmek
 - Aktif dile göre görünür metinleri üretmek ve yenilemek
-- Yapıştırma gibi yeni editör aksiyonlarında da tekrar kullanılabilir bildirim katmanı sunmak
+- Yapıştırma gibi editör aksiyonlarında tekrar kullanılabilir bildirim katmanı sunmak
 
 MİMARİ:
 - Bildirim alt paketinin iç görsel bileşenini içerir
 - Üst katman bu modüle doğrudan değil, bildirim/yoneticisi.py üzerinden erişmelidir
 - Editör içi inline bildirim davranışını UI tarafında izole eder
-- API korunur, hata tonu için detay popup desteği eklenmiştir
-- Kullanıcıya görünen metinler services -> sistem -> dil_servisi zincirinden alınabilir
+- Kullanıcıya görünen metinler services üzerinden alınabilir
 - Dil yenilemede aktif başlık, ipucu ve popup metinleri güvenli şekilde güncellenir
 
-API UYUMLULUK:
-- Platform bağımsızdır
-- Android API 35 ile uyumludur
-- Doğrudan Android bridge çağrısı içermez
-
-SURUM: 5
-TARIH: 2026-03-26
+SURUM: 6
+TARIH: 2026-03-27
 IMZA: FY.
 """
 
@@ -71,8 +65,10 @@ class _DokunmatikAksiyonBildirimi(ButtonBehavior, BoxLayout):
         self.on_single_tap = on_single_tap
         self.on_double_tap = on_double_tap
         self._last_tap_ts = 0.0
+
         self._pulse_anim = None
         self._hide_event = None
+
         self._last_title_key = ""
         self._last_title_default = ""
         self._last_body_key = ""
@@ -192,10 +188,7 @@ class _DokunmatikAksiyonBildirimi(ButtonBehavior, BoxLayout):
             pass
 
         try:
-            if self._last_tappable:
-                self.hint_label.text = self._m("tap", "Dokun")
-            else:
-                self.hint_label.text = ""
+            self.hint_label.text = self._m("tap", "Dokun") if self._last_tappable else ""
         except Exception:
             pass
 
@@ -440,7 +433,9 @@ class _DokunmatikAksiyonBildirimi(ButtonBehavior, BoxLayout):
 
 
 class EditorAksiyonBildirimi(BoxLayout):
-    """Yeni kod alanına yakın konumlanan, detaylı ve tıklanabilir bildirim barı."""
+    """
+    Yeni kod alanına yakın konumlanan, detaylı ve tıklanabilir bildirim barı.
+    """
 
     def __init__(
         self,
@@ -460,13 +455,10 @@ class EditorAksiyonBildirimi(BoxLayout):
         self._on_tap = None
         self._popup_ref = None
         self._detailed_error_text = ""
+
         self._popup_title = self._m("error_title", "Hata Detayı")
         self._popup_title_key = "error_title"
         self._popup_title_default = "Hata Detayı"
-        self._last_notice_title_key = ""
-        self._last_notice_title_default = ""
-        self._last_notice_text_key = ""
-        self._last_notice_text_default = ""
 
         self.notice = _DokunmatikAksiyonBildirimi(
             on_single_tap=self._handle_single_tap,
@@ -525,9 +517,7 @@ class EditorAksiyonBildirimi(BoxLayout):
     ) -> None:
         self._detailed_error_text = str(text or "").strip()
         self._popup_title_key = str(title_key or "").strip() or "error_title"
-        self._popup_title_default = (
-            str(title_default or "").strip() or "Hata Detayı"
-        )
+        self._popup_title_default = str(title_default or "").strip() or "Hata Detayı"
         self._popup_title = (
             str(title or "").strip()
             or self._m(self._popup_title_key, self._popup_title_default)
@@ -660,9 +650,9 @@ class EditorAksiyonBildirimi(BoxLayout):
             try:
                 if popup is not None:
                     popup.dismiss()
-                self._popup_ref = None
             except Exception:
                 pass
+            self._popup_ref = None
 
     # =========================================================
     # PUBLIC
@@ -683,11 +673,6 @@ class EditorAksiyonBildirimi(BoxLayout):
         self._on_tap = on_tap
         self.height = dp(58)
         self.opacity = 1
-
-        self._last_notice_title_key = str(title_key or "").strip()
-        self._last_notice_title_default = str(title_default or "").strip()
-        self._last_notice_text_key = str(text_key or "").strip()
-        self._last_notice_text_default = str(text_default or "").strip()
 
         temiz_tone = str(tone or "success").strip().lower()
 
@@ -722,10 +707,6 @@ class EditorAksiyonBildirimi(BoxLayout):
             self.opacity = 0
             self._on_tap = None
             self._clear_detailed_error()
-            self._last_notice_title_key = ""
-            self._last_notice_title_default = ""
-            self._last_notice_text_key = ""
-            self._last_notice_text_default = ""
 
         Clock.schedule_once(_finish, 0.22)
 
@@ -735,7 +716,3 @@ class EditorAksiyonBildirimi(BoxLayout):
         self.opacity = 0
         self._on_tap = None
         self._clear_detailed_error()
-        self._last_notice_title_key = ""
-        self._last_notice_title_default = ""
-        self._last_notice_text_key = ""
-        self._last_notice_text_default = ""
