@@ -3,34 +3,26 @@
 DOSYA: app/ui/editor_paketi/bilesenler/editor_bilesenleri.py
 
 ROL:
-- Editör paketinin temel görsel bileşenlerini sağlamak
-- Kod editörü, bilgi kutusu, sade kod alanı ve aksiyon araç satırı bileşenlerini tanımlamak
-- Editör paneli için tekrar kullanılabilir UI yapı taşları üretmek
-- Aktif dile göre görünür metinleri yenileyebilmek
-- Yeni kod alanı için kontrol paneli üstünde yapıştırma butonu gibi yeni aksiyonları barındırmak
+- Editör paketinin temel görsel bileşenlerini sağlar
+- Kod editörü, bilgi kutusu, sade kod alanı ve aksiyon araç satırı bileşenlerini tanımlar
+- Editör paneli için tekrar kullanılabilir UI yapı taşları üretir
+- Aktif dile göre görünür metinleri yenileyebilir
+- Yeni kod alanı için kontrol paneli aksiyonlarını barındırır
 
 MİMARİ:
-- Bu dosya sadece bileşen tanımlar
-- Üst katman doğrudan bu modüle değil, bilesenler/yoneticisi.py üzerinden erişmelidir
+- Bu dosya sadece bileşen tanımları içerir
+- Üst katman bu modüle doğrudan değil, bilesenler/yoneticisi.py üzerinden erişmelidir
 - Platform bağımsız UI bileşenleri içerir
-- Görünen sabit metinler ServicesYoneticisi üzerinden çözülebilir
-- Dil değişiminde mevcut görünen varsayılan metinler güvenli şekilde yenilenir
-- Hint text güncellemesi doğrudan editör widget'ına da yansıtılır
-- Aksiyon araç satırı ikon + metin + callback bazlı esnek yapı ile çalışır
+- Görünen sabit metinler services üzerinden çözülebilir
+- Dil değişiminde görünür varsayılan metinler güvenli şekilde yenilenir
+- Hint text güncellemesi doğrudan editör widget'ına yansır
 
-API UYUMLULUK:
-- Platform bağımsızdır
-- Android API 35 ile uyumludur
-- Doğrudan Android bridge çağrısı içermez
-
-SURUM: 5
-TARIH: 2026-03-26
+SURUM: 6
+TARIH: 2026-03-27
 IMZA: FY.
 """
 
 from __future__ import annotations
-
-from functools import partial
 
 from kivy.animation import Animation
 from kivy.clock import Clock
@@ -49,7 +41,9 @@ from app.ui.tema import INPUT_BG, RADIUS_MD
 
 
 class KodEditoru(CodeInput):
-    """Temel Python editörü."""
+    """
+    Temel Python editörü.
+    """
 
     error_line = NumericProperty(0)
 
@@ -97,9 +91,7 @@ class KodEditoru(CodeInput):
             _cursor_col, cursor_row = self.cursor
             lines = self.text.split("\n")
             current_line = lines[cursor_row] if 0 <= cursor_row < len(lines) else ""
-            current_indent = current_line[
-                : len(current_line) - len(current_line.lstrip(" "))
-            ]
+            current_indent = current_line[: len(current_line) - len(current_line.lstrip(" "))]
             extra_indent = "    " if current_line.rstrip().endswith(":") else ""
             self.insert_text("\n" + current_indent + extra_indent)
         except Exception:
@@ -141,6 +133,10 @@ class KodEditoru(CodeInput):
 
 
 class KodPaneli(BoxLayout):
+    """
+    Kod alanları için ortak görsel panel kabuğu.
+    """
+
     def __init__(self, bg=INPUT_BG, border=(0.18, 0.24, 0.34, 1), **kwargs):
         super().__init__(**kwargs)
 
@@ -175,12 +171,7 @@ class AksiyonIkonButonu(ButtonBehavior, BoxLayout):
     Araç satırı için ikon + metin tabanlı hafif aksiyon butonu.
     """
 
-    def __init__(
-        self,
-        text: str = "",
-        icon_name: str = "",
-        **kwargs,
-    ):
+    def __init__(self, text: str = "", icon_name: str = "", **kwargs):
         super().__init__(
             orientation="horizontal",
             spacing=dp(6),
@@ -286,11 +277,7 @@ class EditorAksiyonCubugu(BoxLayout):
     Editör aksiyonları için tekrar kullanılabilir yatay araç satırı.
     """
 
-    def __init__(
-        self,
-        services: ServicesYoneticisi | None = None,
-        **kwargs,
-    ):
+    def __init__(self, services: ServicesYoneticisi | None = None, **kwargs):
         super().__init__(
             orientation="horizontal",
             size_hint_y=None,
@@ -355,11 +342,11 @@ class EditorAksiyonCubugu(BoxLayout):
 
 
 class BilgiKutusu(BoxLayout):
-    def __init__(
-        self,
-        services: ServicesYoneticisi | None = None,
-        **kwargs,
-    ):
+    """
+    Panel altı bilgi / başarı / uyarı / hata kutusu.
+    """
+
+    def __init__(self, services: ServicesYoneticisi | None = None, **kwargs):
         super().__init__(
             orientation="horizontal",
             size_hint_y=None,
@@ -416,9 +403,6 @@ class BilgiKutusu(BoxLayout):
         self.label.bind(size=self._sync_label_size)
         self.add_widget(self.label)
 
-    # =========================================================
-    # DIL
-    # =========================================================
     def _m(self, anahtar: str, default: str = "") -> str:
         try:
             return str(self.services.metin(anahtar, default) or default or anahtar)
@@ -461,22 +445,13 @@ class BilgiKutusu(BoxLayout):
                     self.label.text = self._m("warning", "Uyarı")
             elif self._last_tone == "success":
                 if not mevcut or mevcut in success_varsayilanlari:
-                    self.label.text = self._m(
-                        "processing_successful",
-                        "İşlem başarılı",
-                    )
+                    self.label.text = self._m("processing_successful", "İşlem başarılı")
             elif self._last_tone == "error":
                 if not mevcut or mevcut in error_varsayilanlari:
-                    self.label.text = self._m(
-                        "an_error_occurred",
-                        "Bir hata oluştu",
-                    )
+                    self.label.text = self._m("an_error_occurred", "Bir hata oluştu")
         except Exception:
             pass
 
-    # =========================================================
-    # INTERNAL
-    # =========================================================
     def _update_canvas(self, *_args):
         self._bg_rect.pos = self.pos
         self._bg_rect.size = self.size
@@ -501,6 +476,7 @@ class BilgiKutusu(BoxLayout):
 
     def _stop_pulse(self):
         self._cancel_pulse_stop_event()
+
         try:
             if self._pulse_anim is not None:
                 self._pulse_anim.cancel(self.status_icon)
@@ -516,9 +492,11 @@ class BilgiKutusu(BoxLayout):
 
     def _start_pulse(self, seconds: float | None = None):
         self._stop_pulse()
+
         try:
             self.status_icon.opacity = 1
             self.status_icon.size = (dp(22), dp(22))
+
             anim = (
                 Animation(opacity=0.68, size=(dp(26), dp(26)), duration=0.45)
                 + Animation(opacity=1.0, size=(dp(22), dp(22)), duration=0.45)
@@ -539,9 +517,6 @@ class BilgiKutusu(BoxLayout):
         self._stop_pulse()
         self.status_icon.opacity = 0
 
-    # =========================================================
-    # PUBLIC
-    # =========================================================
     def set_text(self, text: str):
         self.label.text = str(text or "")
 
@@ -582,6 +557,10 @@ class BilgiKutusu(BoxLayout):
 
 
 class SadeKodAlani(KodPaneli):
+    """
+    Sade kod alanı kapsayıcısı.
+    """
+
     def __init__(
         self,
         readonly=False,
@@ -605,9 +584,6 @@ class SadeKodAlani(KodPaneli):
         self.editor = KodEditoru(readonly=readonly, hint_text=hint_text)
         self.add_widget(self.editor)
 
-    # =========================================================
-    # DIL
-    # =========================================================
     def _m(self, anahtar: str, default: str = "") -> str:
         try:
             return str(self.services.metin(anahtar, default) or default or anahtar)
@@ -625,9 +601,6 @@ class SadeKodAlani(KodPaneli):
         except Exception:
             pass
 
-    # =========================================================
-    # PUBLIC
-    # =========================================================
     @property
     def text(self):
         return self.editor.text
