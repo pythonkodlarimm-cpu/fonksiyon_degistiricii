@@ -3,19 +3,18 @@
 DOSYA: main.py
 
 ROL:
-- Uygulama giriş noktası
+- Uygulama giriş noktasıdır
 - Kivy App sınıfını başlatır
 - RootWidget oluşturur
 - Uygulama başlığında sürüm bilgisini gösterir
 - Proje kökünü sys.path içine ekler
-- APK içinde ve normal çalıştırmada importları sade ve güvenli tutar
-- Hata olursa traceback'i ekranda göstermeye çalışır
-- Lifecycle yönetimi (pause / resume)
-- Root state kaydet / geri yükle tetikleme
-- Resume sonrası UI refresh zincirini başlatma
+- Hata olursa fallback hata ekranı göstermeye çalışır
+- Lifecycle yönetimini yapar
+- Pause sırasında root state kaydını tetikler
+- Resume sonrası root refresh zincirini başlatır
 
-SURUM: 3
-TARIH: 2026-03-26
+SURUM: 4
+TARIH: 2026-03-27
 IMZA: FY.
 """
 
@@ -112,11 +111,7 @@ class FonksiyonDegistiriciApp(App):
         Root widget'ı oluşturur.
         """
         try:
-            try:
-                from kivy.core.window import Window
-                Window.softinput_mode = "below_target"
-            except Exception:
-                pass
+            self._window_ayarlarini_uygula()
 
             from app.core import CoreYoneticisi
             from app.ui.root_paketi import RootWidget
@@ -129,6 +124,7 @@ class FonksiyonDegistiriciApp(App):
 
         except Exception:
             hata = traceback.format_exc()
+
             try:
                 print(hata)
             except Exception:
@@ -137,30 +133,40 @@ class FonksiyonDegistiriciApp(App):
             self.root_widget = None
             return _build_error_root(hata)
 
+    def _window_ayarlarini_uygula(self) -> None:
+        """
+        Pencere / klavye davranışı ile ilgili güvenli ayarları uygular.
+        """
+        try:
+            from kivy.core.window import Window
+            Window.softinput_mode = "below_target"
+        except Exception:
+            pass
+
     def on_start(self):
         """
-        Uygulama başlatıldıktan sonra debug amaçlı kök yolu loglar.
+        Uygulama başlatıldıktan sonra debug amaçlı proje kökünü loglar.
         """
         try:
             print("PROJE_ROOT =", PROJE_ROOT)
         except Exception:
             pass
 
-    # =========================================================
-    # PAUSE → STATE SAVE
-    # =========================================================
     def on_pause(self):
         """
         Uygulama arka plana geçerken root state kaydını tetikler.
         """
         try:
             print("[APP] on_pause")
+        except Exception:
+            pass
 
+        try:
             root_widget = getattr(self, "root_widget", None)
             if root_widget is not None:
-                if hasattr(root_widget, "uygulama_durumu_kaydet"):
-                    root_widget.uygulama_durumu_kaydet()
-
+                kaydet = getattr(root_widget, "uygulama_durumu_kaydet", None)
+                if callable(kaydet):
+                    kaydet()
         except Exception:
             try:
                 print(traceback.format_exc())
@@ -169,40 +175,37 @@ class FonksiyonDegistiriciApp(App):
 
         return True
 
-    # =========================================================
-    # RESUME → STATE LOAD + UI REFRESH
-    # =========================================================
     def on_resume(self):
         """
-        Uygulama arka plandan geri gelince state restore ve UI refresh zincirini tetikler.
+        Uygulama arka plandan geri gelince root refresh zincirini tetikler.
         """
         try:
             print("[APP] on_resume")
+        except Exception:
+            pass
 
+        try:
             root_widget = getattr(self, "root_widget", None)
-            if root_widget is not None:
-                # İlk restore denemesi
-                if hasattr(root_widget, "uygulama_durumu_geri_yukle"):
+            if root_widget is None:
+                return
+
+            geri_yukle = getattr(root_widget, "uygulama_durumu_geri_yukle", None)
+            if callable(geri_yukle):
+                try:
+                    geri_yukle()
+                except Exception:
                     try:
-                        root_widget.uygulama_durumu_geri_yukle()
+                        print(traceback.format_exc())
                     except Exception:
-                        try:
-                            print(traceback.format_exc())
-                        except Exception:
-                            pass
+                        pass
 
-                # Ana resume zinciri
-                Clock.schedule_once(self._resume_ui_refresh, 0.10)
-
+            Clock.schedule_once(self._resume_ui_refresh, 0.10)
         except Exception:
             try:
                 print(traceback.format_exc())
             except Exception:
                 pass
 
-    # =========================================================
-    # RESUME UI REFRESH
-    # =========================================================
     def _resume_ui_refresh(self, _dt):
         """
         Resume sonrası root üstünde genel yenileme zincirini çalıştırır.
@@ -212,20 +215,19 @@ class FonksiyonDegistiriciApp(App):
             if root_widget is None:
                 return
 
-            # Öncelikli ortak giriş
-            if hasattr(root_widget, "uygulama_resume_akisini_tetikle"):
-                root_widget.uygulama_resume_akisini_tetikle()
+            resume_akisi = getattr(root_widget, "uygulama_resume_akisini_tetikle", None)
+            if callable(resume_akisi):
+                resume_akisi()
                 return
 
-            # Eski/uyumlu giriş
-            if hasattr(root_widget, "resume_sonrasi_yenile"):
-                root_widget.resume_sonrasi_yenile()
+            resume_yenile = getattr(root_widget, "resume_sonrasi_yenile", None)
+            if callable(resume_yenile):
+                resume_yenile()
                 return
 
-            # Son fallback
-            if hasattr(root_widget, "_post_build_refresh"):
-                root_widget._post_build_refresh()
-
+            post_build_refresh = getattr(root_widget, "_post_build_refresh", None)
+            if callable(post_build_refresh):
+                post_build_refresh()
         except Exception:
             try:
                 print(traceback.format_exc())
