@@ -32,8 +32,8 @@ NOTLAR:
 - UI kurulduktan sonra restore denenir
 - Resume dönüşünde services bağlama + dil yenileme + state restore zinciri tekrar tetiklenebilir
 
-SURUM: 72
-TARIH: 2026-03-26
+SURUM: 73
+TARIH: 2026-03-27
 IMZA: FY.
 """
 
@@ -153,6 +153,7 @@ class RootWidget(
         self._restore_status_reset_event = None
         self._initial_restore_attempted = False
         self._resume_refresh_scheduled = False
+        self._language_refresh_scheduled = False
 
         self._pending_scan_result = None
         self._pending_scan_item_count = 0
@@ -301,6 +302,72 @@ class RootWidget(
             pass
 
     # =========================================================
+    # LANGUAGE / REFRESH CORE
+    # =========================================================
+    def _run_language_refresh_pipeline(self) -> None:
+        """
+        Dil değişimi veya resume sonrası ortak UI yenileme zinciri.
+
+        Bu zincir:
+        - services bağlarını yeniler
+        - çeviri cache'ini temizler
+        - görünür UI metinlerini tazeler
+        """
+        try:
+            self._bind_services_to_ui()
+        except Exception:
+            pass
+
+        try:
+            clear_translation_cache = getattr(self, "_clear_translation_cache", None)
+            if callable(clear_translation_cache):
+                clear_translation_cache()
+        except Exception:
+            pass
+
+        try:
+            self._full_language_refresh()
+        except Exception:
+            pass
+
+    def _schedule_language_refresh_burst(self) -> None:
+        """
+        Dil değişimi sonrası anlık UI güncellenmesi için kısa aralıklı
+        tekrar yenileme zinciri çalıştırır.
+        """
+        try:
+            if self._language_refresh_scheduled:
+                return
+        except Exception:
+            pass
+
+        self._language_refresh_scheduled = True
+
+        zamanlar = (0.00, 0.03, 0.08, 0.16)
+
+        def _tek_tur(*_args):
+            try:
+                self._run_language_refresh_pipeline()
+            except Exception:
+                print("[ROOT] Dil refresh turu başarısız.")
+                print(traceback.format_exc())
+
+        def _bitir(*_args):
+            self._language_refresh_scheduled = False
+
+        try:
+            for sure in zamanlar:
+                Clock.schedule_once(_tek_tur, sure)
+            Clock.schedule_once(_bitir, 0.22)
+        except Exception:
+            self._language_refresh_scheduled = False
+            try:
+                self._run_language_refresh_pipeline()
+            except Exception:
+                print("[ROOT] Dil refresh fallback başarısız.")
+                print(traceback.format_exc())
+
+    # =========================================================
     # STATE RESTORE / RESUME
     # =========================================================
     def _attempt_initial_state_restore(self, *_args) -> None:
@@ -328,19 +395,7 @@ class RootWidget(
         - gerekiyorsa state restore'u yeniden dener
         """
         try:
-            self._bind_services_to_ui()
-        except Exception:
-            pass
-
-        try:
-            clear_translation_cache = getattr(self, "_clear_translation_cache", None)
-            if callable(clear_translation_cache):
-                clear_translation_cache()
-        except Exception:
-            pass
-
-        try:
-            self._full_language_refresh()
+            self._run_language_refresh_pipeline()
         except Exception:
             pass
 
@@ -351,9 +406,9 @@ class RootWidget(
             print(traceback.format_exc())
 
         try:
-            Clock.schedule_once(lambda *_: self._bind_services_to_ui(), 0.02)
-            Clock.schedule_once(lambda *_: self._full_language_refresh(), 0.05)
-            Clock.schedule_once(lambda *_: self._full_language_refresh(), 0.15)
+            Clock.schedule_once(lambda *_: self._run_language_refresh_pipeline(), 0.02)
+            Clock.schedule_once(lambda *_: self._run_language_refresh_pipeline(), 0.05)
+            Clock.schedule_once(lambda *_: self._run_language_refresh_pipeline(), 0.15)
         except Exception:
             pass
 
@@ -428,19 +483,7 @@ class RootWidget(
                     pass
 
         try:
-            self._bind_services_to_ui()
-        except Exception:
-            pass
-
-        try:
-            clear_translation_cache = getattr(self, "_clear_translation_cache", None)
-            if callable(clear_translation_cache):
-                clear_translation_cache()
-        except Exception:
-            pass
-
-        try:
-            self._full_language_refresh()
+            self._run_language_refresh_pipeline()
         except Exception:
             pass
 
@@ -460,17 +503,15 @@ class RootWidget(
             pass
 
         try:
-            Clock.schedule_once(lambda *_: self._bind_services_to_ui(), 0.01)
+            self._schedule_language_refresh_burst()
+        except Exception:
+            pass
+
+        try:
             Clock.schedule_once(
-                lambda *_: (
-                    callable(getattr(self, "_clear_translation_cache", None))
-                    and self._clear_translation_cache()
-                ),
-                0.015,
+                lambda *_: self.uygulama_resume_akisini_tetikle(),
+                0.05,
             )
-            Clock.schedule_once(lambda *_: self._full_language_refresh(), 0.02)
-            Clock.schedule_once(lambda *_: self._full_language_refresh(), 0.10)
-            Clock.schedule_once(lambda *_: self._full_language_refresh(), 0.20)
         except Exception:
             pass
 
@@ -613,25 +654,3 @@ class RootWidget(
                 self.status.clear_action()
         except Exception:
             pass
-
-    def _open_play_store_for_update(self) -> None:
-        """
-        Play Store güncelleme sayfasını açmayı dener.
-        """
-        try:
-            ok = self.services.play_store_sayfasini_ac(
-                package_name=self.services.play_store_package_name()
-            )
-            if ok:
-                print("[ROOT] Play Store güncelleme sayfası açıldı.")
-                return
-
-            self.set_status_warning(
-                self._m("play_store_open_failed", "Play Store açılamadı.")
-            )
-        except Exception:
-            print("[ROOT] Play Store açma akışı başarısız.")
-            print(traceback.format_exc())
-            self.set_status_warning(
-                self._m("play_store_open_failed", "Play Store açılamadı.")
-                )
