@@ -3,48 +3,30 @@
 DOSYA: app/ui/root_paketi/akisi_dosya/dosya_akisi.py
 
 ROL:
-- Dosya seçimi sonrası belge oturumu başlatmak
-- Çalışma kopyasını doğrulamak
-- Çalışma dosyasından fonksiyonları yeniden taramak
-- Tarama / yenileme akışını tek yerde toplamak
-- Hata durumunda detaylı, kopyalanabilir hata bilgisini iletmek
-- Tarama göstergesi overlay akışını yönetmek
-- Ağır tarama işini UI thread'i bloklamadan yürütmek
-- Geçiş reklamı öncesi tarama sonucunu bekleyen state olarak hazırlamak
-- Diğer akışların tekrar kullanacağı dosya yenileme yardımcılarını sağlamak
-- Arka plan dönüşünde mevcut belge/session varsa onu koruyarak yeniden taramaya yardımcı olmak
-- Restore sonrası selection nesnesi eksik olsa bile mevcut session/current_file_path üzerinden
-  çalışmayı sürdürebilmek
+- Dosya seçimi sonrası belge oturumu başlatır
+- Çalışma kopyasını doğrular
+- Çalışma dosyasından fonksiyonları yeniden tarar
+- Tarama / yenileme akışını tek yerde toplar
+- Tarama göstergesi overlay akışını yönetir
+- Ağır tarama işini UI thread'ini bloklamadan yürütür
+- Geçiş reklamı / liste açılışı öncesi bekleyen tarama sonucunu hazırlar
+- Restore / resume durumlarında mevcut session üzerinden devam edebilir
 
 MİMARİ:
-- SADECE CoreYoneticisi, ServicesYoneticisi ve Root bağımlılık katmanı kullanılır
-- Eski helper/dict/fallback yapısı yoktur
-- UI tamamen servislerden izole tutulur
-- Session tabanlı çalışma modeli korunur
-- Root paketinin alt akış modülüdür
-- Public API korunur
-- Arka plan thread'i yalnızca ağır iş yapar, UI güncellemesi ana thread'e döner
-- Aynı anda ikinci tarama başlatılmaz
-- Başarılı sonuçta loading overlay yavaşlayarak kapanır, sonra success overlay açılır
-- Tarama tamamlandıktan sonra fonksiyon listesine geçiş için bekleyen sonuç state'i hazırlanabilir
-- Fonksiyon listesi verisi, geçiş tamamlanmadan UI'ye uygulanmaz
-- Restore/resume senaryolarında mevcut oturumu gereksiz yere sıfırlamaz
-- Önce gerçek selection, sonra session/current_file_path fallback mantığı uygulanır
+- Root mixin yapısındadır
+- UI güncellemesi ana thread'e döner
+- Ağır tarama işini worker thread yapar
+- Yeni gerçek seçim varsa onu önceliklendirir
+- Gerçek seçim yoksa mevcut session/current_file_path fallback olarak kullanılabilir
+- Çeviri metinleri root üzerindeki self._m(...) hattından alınır
 
-API UYUMLULUK:
-- Android (SAF + content URI) uyumludur
-- API 34+ / API 35 güvenlidir
-- Public API değiştirilmeden tarama loading / success overlay desteği eklenmiştir
-- _reload_items_from_current_file yardımcı API'si korunmuştur
-
-SURUM: 22
-TARIH: 2026-03-26
+SURUM: 23
+TARIH: 2026-03-27
 IMZA: FY.
 """
 
 from __future__ import annotations
 
-import traceback
 from pathlib import Path
 from threading import Thread
 
@@ -52,17 +34,26 @@ from kivy.clock import Clock
 
 
 class RootDosyaAkisiMixin:
-    # =========================================================
-    # INTERNAL
-    # =========================================================
     def _services(self):
         return self._get_services_yoneticisi()
 
     def _belge(self):
-        return self._services().belge_yoneticisi()
+        services = self._services()
+        if services is None:
+            return None
+        return services.belge_yoneticisi()
 
     def _core(self):
         return self._get_core_yoneticisi()
+
+    def _ceviri(self, anahtar: str, varsayilan: str) -> str:
+        try:
+            metod = getattr(self, "_m", None)
+            if callable(metod):
+                return str(metod(anahtar, varsayilan) or varsayilan)
+        except Exception:
+            pass
+        return str(varsayilan)
 
     def _debug_scan(self, message: str) -> None:
         try:
@@ -94,8 +85,8 @@ class RootDosyaAkisiMixin:
 
     def _safe_exists_file(self, value) -> bool:
         try:
-            path_obj = Path(str(value or "").strip())
-            return path_obj.exists() and path_obj.is_file()
+            yol = Path(str(value or "").strip())
+            return yol.exists() and yol.is_file()
         except Exception:
             return False
 
@@ -105,24 +96,52 @@ class RootDosyaAkisiMixin:
         except Exception:
             return ""
 
-    # =========================================================
-    # TARAMA OVERLAY
-    # =========================================================
+    def _selection_identity(self, selection) -> str:
+        if selection is None:
+            return ""
+
+        for alan in ("uri", "local_path", "display_name"):
+            try:
+                deger = getattr(selection, alan, None)
+                metin = self._safe_path_text(deger)
+                if metin:
+                    return metin
+            except Exception:
+                continue
+
+        return ""
+
+    def _current_session_identity(self) -> str:
+        try:
+            if self.current_session is None:
+                return ""
+
+            belge = self._belge()
+            if belge is None:
+                return ""
+
+            kimlik = belge.oturum_identifier(self.current_session)
+            return self._safe_path_text(kimlik)
+        except Exception:
+            return ""
+
     def _show_scan_loading(
         self,
-        title: str = "Taranıyor...",
-        detail: str = "Fonksiyonlar analiz ediliyor",
+        title: str = "",
+        detail: str = "",
     ) -> None:
+        baslik = title or self._ceviri("scan_in_progress", "Taranıyor...")
+        detay = detail or self._ceviri(
+            "functions_analyzing",
+            "Fonksiyonlar analiz ediliyor",
+        )
+
         try:
             overlay = getattr(self, "tarama_loading_overlay", None)
-            self._debug_scan(f"loading overlay var mı = {overlay is not None}")
             if overlay is not None:
-                overlay.show(
-                    title=str(title or "Taranıyor..."),
-                    detail=str(detail or "Fonksiyonlar analiz ediliyor"),
-                )
+                overlay.show(title=str(baslik), detail=str(detay))
         except Exception as exc:
-            self._debug_scan(f"loading overlay show hatası = {exc}")
+            self._debug_scan(f"loading overlay show hatası: {exc}")
 
     def _hide_scan_loading(self) -> None:
         try:
@@ -135,28 +154,31 @@ class RootDosyaAkisiMixin:
     def _show_scan_success(self, item_count: int = 0) -> None:
         try:
             overlay = getattr(self, "tarama_success_overlay", None)
-            if overlay is not None:
-                detay = (
-                    f"{int(item_count or 0)} fonksiyon bulundu"
-                    if int(item_count or 0) > 0
-                    else "Fonksiyon listesi hazırlanıyor"
+            if overlay is None:
+                return
+
+            if int(item_count or 0) > 0:
+                detay = self._ceviri(
+                    "functions_found_count",
+                    f"{int(item_count)} fonksiyon bulundu",
                 )
-                overlay.show_then_hide(
-                    title="Tarama tamamlandı",
-                    detail=detay,
-                    duration=0.65,
+            else:
+                detay = self._ceviri(
+                    "function_list_preparing",
+                    "Fonksiyon listesi hazırlanıyor",
                 )
+
+            overlay.show_then_hide(
+                title=self._ceviri("scan_completed", "Tarama tamamlandı"),
+                detail=detay,
+                duration=0.65,
+            )
         except Exception:
             pass
 
     def _scan_finish_success_visual(self, item_count: int = 0) -> None:
-        """
-        Başarılı durumda loading bir anda kapanmaz.
-        Önce yavaşlayarak kapanır, ardından success overlay görünür.
-        """
         try:
             overlay = getattr(self, "tarama_loading_overlay", None)
-
             if overlay is not None and hasattr(overlay, "finish_and_hide"):
                 overlay.finish_and_hide(
                     on_done=lambda: self._show_scan_success(item_count=item_count)
@@ -181,9 +203,6 @@ class RootDosyaAkisiMixin:
         except Exception:
             pass
 
-    # =========================================================
-    # GEÇIŞ HAZIRLAMA
-    # =========================================================
     def _clear_pending_scan_transition(self) -> None:
         self._ensure_scan_state()
         self._pending_scan_result = None
@@ -203,12 +222,6 @@ class RootDosyaAkisiMixin:
         self._pending_scan_display_name = str(display_name or "").strip()
         self._pending_scan_ready = True
 
-        self._debug_scan(
-            "Geçiş için bekleyen tarama sonucu hazırlandı | "
-            f"item_count={self._pending_scan_item_count} "
-            f"display_name={self._pending_scan_display_name}"
-        )
-
     def _open_function_list_directly(self) -> None:
         try:
             if self.function_list is not None:
@@ -222,10 +235,6 @@ class RootDosyaAkisiMixin:
             pass
 
     def _notify_scan_transition_ready(self, item_count: int, display_name: str) -> bool:
-        """
-        Root tarafında geçiş CTA / reklam akışı varsa ona devreder.
-        Yoksa False döner ve klasik davranış fallback olarak çalışır.
-        """
         try:
             hook = getattr(self, "_on_scan_transition_ready", None)
             if callable(hook):
@@ -250,33 +259,30 @@ class RootDosyaAkisiMixin:
 
         return False
 
-    # =========================================================
-    # STATE / FILE
-    # =========================================================
     def _working_file_ready(self) -> bool:
         try:
             if self.current_session is None:
                 return False
 
-            calisma_yolu = str(
-                self._belge().calisma_dosyasi_yolu(self.current_session) or ""
-            ).strip()
+            belge = self._belge()
+            if belge is None:
+                return False
+
+            calisma_yolu = self._safe_path_text(
+                belge.calisma_dosyasi_yolu(self.current_session)
+            )
 
             if calisma_yolu:
                 self.current_file_path = calisma_yolu
 
-            if not str(self.current_file_path or "").strip():
+            if not self._safe_path_text(self.current_file_path):
                 return False
 
-            return bool(self._belge().calisma_kopyasi_var_mi(self.current_session))
+            return bool(belge.calisma_kopyasi_var_mi(self.current_session))
         except Exception:
             return False
 
     def _reload_items_from_current_file(self) -> None:
-        """
-        Güncel çalışma dosyasını yeniden tarar ve function list ile senkronize eder.
-        Bu yardımcı method diğer akışlar tarafından da kullanılabilir.
-        """
         if not self._working_file_ready():
             self.items = []
 
@@ -289,9 +295,7 @@ class RootDosyaAkisiMixin:
             return
 
         try:
-            self.items = self._core().scan_functions_from_file(
-                self.current_file_path
-            )
+            self.items = self._core().scan_functions_from_file(self.current_file_path)
         except Exception:
             self.items = []
             raise
@@ -303,9 +307,6 @@ class RootDosyaAkisiMixin:
             pass
 
     def _selection_from_ui(self):
-        """
-        UI üzerindeki gerçek selection nesnesini almaya çalışır.
-        """
         try:
             if self.dosya_secici is not None and hasattr(self.dosya_secici, "get_selection"):
                 secim = self.dosya_secici.get_selection()
@@ -334,11 +335,9 @@ class RootDosyaAkisiMixin:
 
         try:
             if self.dosya_secici is not None and hasattr(self.dosya_secici, "get_path"):
-                ham_yol = str(self.dosya_secici.get_path() or "").strip()
-
-                if ham_yol and Path(ham_yol).exists() and Path(ham_yol).is_file():
+                ham_yol = self._safe_path_text(self.dosya_secici.get_path())
+                if ham_yol and self._safe_exists_file(ham_yol):
                     DocumentSelection = self._get_document_selection_class()
-
                     return DocumentSelection(
                         source="filesystem",
                         uri="",
@@ -352,45 +351,42 @@ class RootDosyaAkisiMixin:
         return None
 
     def _selection_from_file_path(self, file_path: str):
-        """
-        Dışarıdan gelen file_path değerinden gerekiyorsa geçici seçim nesnesi üretir.
-        """
         temiz_yol = self._safe_path_text(file_path)
         if not temiz_yol:
             return None
 
         try:
-            path_obj = Path(temiz_yol)
-            if not path_obj.exists() or not path_obj.is_file():
+            yol = Path(temiz_yol)
+            if not yol.exists() or not yol.is_file():
                 return None
 
             DocumentSelection = self._get_document_selection_class()
             return DocumentSelection(
                 source="filesystem",
                 uri="",
-                local_path=str(path_obj),
-                display_name=path_obj.name,
+                local_path=str(yol),
+                display_name=yol.name,
                 mime_type="",
             )
         except Exception:
             return None
 
     def _selection_from_current_session(self):
-        """
-        Mümkünse mevcut session/current_file_path üzerinden geçici selection üretir.
-        """
         try:
             if self.current_session is not None:
                 belge = self._belge()
-                kaynak_kimligi = str(
-                    belge.oturum_identifier(self.current_session) or ""
-                ).strip()
-                gosterim_adi = str(
-                    belge.oturum_display_name(self.current_session) or ""
-                ).strip()
-                calisma_yolu = str(
-                    belge.calisma_dosyasi_yolu(self.current_session) or ""
-                ).strip()
+                if belge is None:
+                    return None
+
+                kaynak_kimligi = self._safe_path_text(
+                    belge.oturum_identifier(self.current_session)
+                )
+                gosterim_adi = self._safe_path_text(
+                    belge.oturum_display_name(self.current_session)
+                )
+                calisma_yolu = self._safe_path_text(
+                    belge.calisma_dosyasi_yolu(self.current_session)
+                )
 
                 if kaynak_kimligi or calisma_yolu:
                     DocumentSelection = self._get_document_selection_class()
@@ -413,14 +409,6 @@ class RootDosyaAkisiMixin:
         return None
 
     def _resolve_scan_selection(self, file_path: str = ""):
-        """
-        Tarama için kullanılacak selection nesnesini çözmeye çalışır.
-
-        Öncelik:
-        1) dosya_secici üstündeki selection
-        2) file_path parametresi
-        3) mevcut session/current_file_path
-        """
         selection = self._selection_from_ui()
         if selection is not None:
             return selection
@@ -435,16 +423,91 @@ class RootDosyaAkisiMixin:
 
         return None
 
+    def _new_selection_requested(self, selection, file_path: str = "") -> bool:
+        """
+        Yeni gerçek seçim isteği varsa bunu mevcut session fallback'inden ayırır.
+        """
+        ui_selection = self._selection_from_ui()
+        if ui_selection is not None:
+            ui_id = self._selection_identity(ui_selection)
+            session_id = self._current_session_identity()
+            return bool(ui_id and ui_id != session_id)
+
+        temiz_yol = self._safe_path_text(file_path)
+        if temiz_yol:
+            mevcut_yol = self._safe_path_text(self.current_file_path)
+            return temiz_yol != mevcut_yol
+
+        return False
+
+    def _reset_before_new_scan(self) -> None:
+        """
+        Yeni dosya taraması öncesi önceki session ve seçim state'ini sıfırlar.
+        """
+        try:
+            self.current_session = None
+        except Exception:
+            pass
+
+        try:
+            self.current_file_path = ""
+        except Exception:
+            pass
+
+        try:
+            self.items = []
+        except Exception:
+            pass
+
+        try:
+            self.selected_item = None
+        except Exception:
+            pass
+
+        try:
+            self._clear_pending_scan_transition()
+        except Exception:
+            pass
+
+        try:
+            if hasattr(self, "_editor_state_cache_temizle"):
+                self._editor_state_cache_temizle()
+        except Exception:
+            pass
+
+        try:
+            if hasattr(self, "_app_state_cache_temizle"):
+                self._app_state_cache_temizle()
+        except Exception:
+            pass
+
+        try:
+            if self.function_list is not None:
+                self.function_list.clear_all()
+        except Exception:
+            pass
+
+        try:
+            if self.editor is not None:
+                if hasattr(self.editor, "clear_all"):
+                    self.editor.clear_all()
+                elif hasattr(self.editor, "clear_selection"):
+                    self.editor.clear_selection()
+        except Exception:
+            pass
+
+        try:
+            self._reset_selection_only()
+        except Exception:
+            pass
+
     def _scan_from_existing_session_worker(self) -> dict:
-        """
-        Mevcut session ve çalışma kopyası hazırsa yeni session açmadan yeniden tarar.
-        """
         try:
             if not self._working_file_ready():
                 return {
                     "ok": False,
                     "kind": "warning",
-                    "message": "Dosya seçilmedi.",
+                    "message": self._ceviri("file_not_selected", "Dosya seçilmedi."),
                 }
 
             calisma_yolu = self._safe_path_text(self.current_file_path)
@@ -452,24 +515,27 @@ class RootDosyaAkisiMixin:
                 return {
                     "ok": False,
                     "kind": "warning",
-                    "message": "Dosya seçilmedi.",
+                    "message": self._ceviri("file_not_selected", "Dosya seçilmedi."),
                 }
 
             session = self.current_session
+            belge = self._belge()
+            if belge is None:
+                return {
+                    "ok": False,
+                    "kind": "error",
+                    "message": self._ceviri("session_start_failed", "Oturum başlatılamadı."),
+                }
+
             gosterim_adi = ""
             kaynak_kimligi = ""
 
             try:
                 if session is not None:
-                    gosterim_adi = str(
-                        self._belge().oturum_display_name(session) or ""
-                    ).strip()
-                    kaynak_kimligi = str(
-                        self._belge().oturum_identifier(session) or ""
-                    ).strip()
+                    gosterim_adi = self._safe_path_text(belge.oturum_display_name(session))
+                    kaynak_kimligi = self._safe_path_text(belge.oturum_identifier(session))
             except Exception:
-                gosterim_adi = ""
-                kaynak_kimligi = ""
+                pass
 
             items = self._core().scan_functions_from_file(calisma_yolu)
 
@@ -487,89 +553,95 @@ class RootDosyaAkisiMixin:
             return {
                 "ok": False,
                 "kind": "error",
-                "message": f"Tarama hatası oluştu: {exc}",
-                "detail": self._format_exception_details(
-                    exc,
-                    title="Tarama Hatası",
-                ),
-                "popup_title": "Tarama Hatası",
+                "message": f"{self._ceviri('scan_error', 'Tarama hatası oluştu')}: {exc}",
+                "detail": self._format_exception_details(exc, title="Tarama Hatası"),
+                "popup_title": self._ceviri("scan_error_title", "Tarama Hatası"),
             }
 
-    # =========================================================
-    # WORKER LOGIC
-    # =========================================================
     def _scan_or_refresh_worker(self, selection) -> dict:
         if selection is None:
             return {
                 "ok": False,
                 "kind": "warning",
-                "message": "Dosya seçilmedi.",
+                "message": self._ceviri("file_not_selected", "Dosya seçilmedi."),
+            }
+
+        belge = self._belge()
+        if belge is None:
+            return {
+                "ok": False,
+                "kind": "error",
+                "message": self._ceviri("session_start_failed", "Oturum başlatılamadı."),
             }
 
         try:
-            session = self._belge().oturum_baslat(selection)
+            session = belge.oturum_baslat(selection)
         except Exception as exc:
             return {
                 "ok": False,
                 "kind": "error",
-                "message": f"Oturum başlatılamadı: {exc}",
+                "message": f"{self._ceviri('session_start_failed', 'Oturum başlatılamadı')}: {exc}",
                 "detail": self._format_exception_details(
                     exc,
-                    title="Oturum Başlatma Hatası",
+                    title=self._ceviri("session_start_error_title", "Oturum Başlatma Hatası"),
                 ),
-                "popup_title": "Oturum Başlatma Hatası",
+                "popup_title": self._ceviri("session_start_error_title", "Oturum Başlatma Hatası"),
             }
 
-        calisma_yolu = str(
-            self._belge().calisma_dosyasi_yolu(session) or ""
-        ).strip()
-
-        kaynak_kimligi = str(
-            self._belge().oturum_identifier(session) or ""
-        ).strip()
-
-        gosterim_adi = str(
-            self._belge().oturum_display_name(session) or ""
-        ).strip()
+        calisma_yolu = self._safe_path_text(belge.calisma_dosyasi_yolu(session))
+        kaynak_kimligi = self._safe_path_text(belge.oturum_identifier(session))
+        gosterim_adi = self._safe_path_text(belge.oturum_display_name(session))
 
         if not calisma_yolu:
             return {
                 "ok": False,
                 "kind": "error",
-                "message": "Çalışma dosyası oluşturulamadı.",
+                "message": self._ceviri(
+                    "working_file_not_created",
+                    "Çalışma dosyası oluşturulamadı.",
+                ),
                 "detail": (
-                    "BASLIK:\nÇalışma Dosyası Hatası\n\n"
-                    "DETAY:\nBelge oturumu oluştu ancak çalışma dosyası yolu boş geldi.\n\n"
+                    f"BASLIK:\n{self._ceviri('working_file_error_title', 'Çalışma Dosyası Hatası')}\n\n"
+                    f"DETAY:\n{self._ceviri('working_file_path_empty', 'Belge oturumu oluştu ancak çalışma dosyası yolu boş geldi.')}\n\n"
                     f"KAYNAK KİMLİĞİ:\n{kaynak_kimligi or 'bilinmiyor'}\n\n"
                     f"BELGE:\n{gosterim_adi or 'bilinmiyor'}"
                 ),
-                "popup_title": "Çalışma Dosyası Hatası",
+                "popup_title": self._ceviri("working_file_error_title", "Çalışma Dosyası Hatası"),
             }
 
         try:
-            if not self._belge().calisma_kopyasi_var_mi(session):
+            if not belge.calisma_kopyasi_var_mi(session):
                 return {
                     "ok": False,
                     "kind": "error",
-                    "message": "Çalışma dosyası bulunamadı.",
+                    "message": self._ceviri(
+                        "working_copy_missing",
+                        "Çalışma dosyası bulunamadı.",
+                    ),
                     "detail": (
-                        "BASLIK:\nÇalışma Kopyası Bulunamadı\n\n"
+                        f"BASLIK:\n{self._ceviri('working_copy_error_title', 'Çalışma Kopyası Hatası')}\n\n"
                         f"DOSYA:\n{calisma_yolu}\n\n"
                         f"KAYNAK KİMLİĞİ:\n{kaynak_kimligi or 'bilinmiyor'}\n\n"
                         f"BELGE:\n{gosterim_adi or 'bilinmiyor'}"
                     ),
-                    "popup_title": "Çalışma Kopyası Hatası",
+                    "popup_title": self._ceviri("working_copy_error_title", "Çalışma Kopyası Hatası"),
                 }
         except Exception as exc:
             return {
                 "ok": False,
                 "kind": "error",
-                "message": f"Çalışma kopyası doğrulanamadı: {exc}",
+                "message": f"{self._ceviri('working_copy_validate_failed', 'Çalışma kopyası doğrulanamadı')}: {exc}",
                 "detail": self._format_exception_details(
                     exc,
-                    title="Çalışma Kopyası Doğrulama Hatası",
+                    title=self._ceviri(
+                        "working_copy_validate_error_title",
+                        "Çalışma Kopyası Doğrulama Hatası",
+                    ),
                 ),
-                "popup_title": "Çalışma Kopyası Doğrulama Hatası",
+                "popup_title": self._ceviri(
+                    "working_copy_validate_error_title",
+                    "Çalışma Kopyası Doğrulama Hatası",
+                ),
             }
 
         try:
@@ -578,12 +650,12 @@ class RootDosyaAkisiMixin:
             return {
                 "ok": False,
                 "kind": "error",
-                "message": f"Tarama hatası oluştu: {exc}",
+                "message": f"{self._ceviri('scan_error', 'Tarama hatası oluştu')}: {exc}",
                 "detail": self._format_exception_details(
                     exc,
-                    title="Tarama Hatası",
+                    title=self._ceviri("scan_error_title", "Tarama Hatası"),
                 ),
-                "popup_title": "Tarama Hatası",
+                "popup_title": self._ceviri("scan_error_title", "Tarama Hatası"),
             }
 
         return {
@@ -597,9 +669,6 @@ class RootDosyaAkisiMixin:
             "used_existing_session": False,
         }
 
-    # =========================================================
-    # UI APPLY
-    # =========================================================
     def _apply_scan_result(self, result: dict) -> None:
         self._ensure_scan_state()
         self._scan_in_progress = False
@@ -609,27 +678,29 @@ class RootDosyaAkisiMixin:
             self._clear_pending_scan_transition()
             self._clear_state()
 
-            kind = str(result.get("kind", "") or "").strip().lower()
-            message = str(result.get("message", "") or "").strip()
-            detail = str(result.get("detail", "") or "").strip()
-            popup_title = str(result.get("popup_title", "") or "").strip()
+            kind = self._safe_path_text(result.get("kind", "")).lower()
+            message = self._safe_path_text(result.get("message", ""))
+            detail = self._safe_path_text(result.get("detail", ""))
+            popup_title = self._safe_path_text(result.get("popup_title", ""))
 
             if kind == "warning":
-                self.set_status_warning(message or "Dosya seçilmedi.")
+                self.set_status_warning(
+                    message or self._ceviri("file_not_selected", "Dosya seçilmedi.")
+                )
                 return
 
             self.set_status_error(
-                message or "Tarama hatası oluştu.",
+                message or self._ceviri("scan_error", "Tarama hatası oluştu."),
                 detailed_text=detail,
-                popup_title=popup_title or "Tarama Hatası",
+                popup_title=popup_title or self._ceviri("scan_error_title", "Tarama Hatası"),
             )
             return
 
         selection = result.get("selection")
         session = result.get("session")
-        calisma_yolu = str(result.get("calisma_yolu", "") or "").strip()
-        kaynak_kimligi = str(result.get("kaynak_kimligi", "") or "").strip()
-        gosterim_adi = str(result.get("gosterim_adi", "") or "").strip()
+        calisma_yolu = self._safe_path_text(result.get("calisma_yolu", ""))
+        kaynak_kimligi = self._safe_path_text(result.get("kaynak_kimligi", ""))
+        gosterim_adi = self._safe_path_text(result.get("gosterim_adi", ""))
         items = list(result.get("items") or [])
         item_count = len(items)
         used_existing_session = bool(result.get("used_existing_session", False))
@@ -655,18 +726,24 @@ class RootDosyaAkisiMixin:
         try:
             if self.function_list is not None:
                 self.function_list.clear_all()
-                print("LISTE GEÇİŞ ÖNCESİ TEMİZLENDİ | item_count =", len(self.items))
-            else:
-                print("LISTE GEÇİŞ ÖNCESİ TEMİZLENEMEDİ (function_list yok)")
         except Exception as exc:
             self._scan_finish_error_visual()
             self.set_status_error(
-                "Fonksiyon listesi geçiş için hazırlanırken hata oluştu.",
+                self._ceviri(
+                    "function_list_prepare_failed",
+                    "Fonksiyon listesi geçiş için hazırlanırken hata oluştu.",
+                ),
                 detailed_text=self._format_exception_details(
                     exc,
-                    title="Fonksiyon Listesi Hazırlama Hatası",
+                    title=self._ceviri(
+                        "function_list_prepare_error_title",
+                        "Fonksiyon Listesi Hazırlama Hatası",
+                    ),
                 ),
-                popup_title="Fonksiyon Listesi Hazırlama Hatası",
+                popup_title=self._ceviri(
+                    "function_list_prepare_error_title",
+                    "Fonksiyon Listesi Hazırlama Hatası",
+                ),
             )
             return
 
@@ -680,22 +757,32 @@ class RootDosyaAkisiMixin:
         if gosterim_adi:
             if used_existing_session:
                 self.set_status_success(
-                    f"Oturum korundu. {item_count} fonksiyon hazır. "
-                    f"Belge: {gosterim_adi}"
+                    self._ceviri(
+                        "session_preserved_scan_ready",
+                        f"Oturum korundu. {item_count} fonksiyon hazır. Belge: {gosterim_adi}",
+                    )
                 )
             else:
                 self.set_status_success(
-                    f"Tarama tamamlandı. {item_count} fonksiyon bulundu. "
-                    f"Belge: {gosterim_adi}"
+                    self._ceviri(
+                        "scan_completed_count_with_doc",
+                        f"Tarama tamamlandı. {item_count} fonksiyon bulundu. Belge: {gosterim_adi}",
+                    )
                 )
         else:
             if used_existing_session:
                 self.set_status_success(
-                    f"Oturum korundu. {item_count} fonksiyon hazır."
+                    self._ceviri(
+                        "session_preserved_scan_ready_no_doc",
+                        f"Oturum korundu. {item_count} fonksiyon hazır.",
+                    )
                 )
             else:
                 self.set_status_success(
-                    f"Tarama tamamlandı. {item_count} fonksiyon bulundu."
+                    self._ceviri(
+                        "scan_completed_count",
+                        f"Tarama tamamlandı. {item_count} fonksiyon bulundu.",
+                    )
                 )
 
         self._scan_finish_success_visual(item_count=item_count)
@@ -706,14 +793,8 @@ class RootDosyaAkisiMixin:
         ):
             return
 
-        self._debug_scan(
-            "Geçiş hook bulunamadı. Klasik liste açma davranışına dönülüyor."
-        )
         self._open_function_list_directly()
 
-    # =========================================================
-    # START
-    # =========================================================
     def _start_scan_or_refresh(self, file_path: str = "") -> None:
         self._ensure_scan_state()
 
@@ -721,16 +802,38 @@ class RootDosyaAkisiMixin:
             self._debug_scan("Tarama zaten sürüyor. Yeni istek yok sayıldı.")
             return
 
+        yeni_secim_istendi = False
+        selection = None
+
+        try:
+            selection = self._resolve_scan_selection(file_path=file_path)
+            yeni_secim_istendi = self._new_selection_requested(selection, file_path=file_path)
+        except Exception:
+            selection = None
+            yeni_secim_istendi = False
+
+        if yeni_secim_istendi:
+            self._debug_scan("Yeni dosya seçimi algılandı. Eski session temizleniyor.")
+            self._reset_before_new_scan()
+
+            try:
+                selection = self._resolve_scan_selection(file_path=file_path)
+            except Exception:
+                selection = None
+
+        mevcut_session_korunabilir = False
+        if not yeni_secim_istendi:
+            try:
+                mevcut_session_korunabilir = self._working_file_ready()
+            except Exception:
+                mevcut_session_korunabilir = False
+
         self._scan_in_progress = True
         self._clear_pending_scan_transition()
-        self._debug_scan("_start_scan_or_refresh çağrıldı")
-
-        selection = self._resolve_scan_selection(file_path=file_path)
-        mevcut_session_korunabilir = self._working_file_ready()
 
         self._show_scan_loading(
-            title="Taranıyor...",
-            detail="Fonksiyonlar analiz ediliyor",
+            title=self._ceviri("scan_in_progress", "Taranıyor..."),
+            detail=self._ceviri("functions_analyzing", "Fonksiyonlar analiz ediliyor"),
         )
 
         def _worker():
@@ -743,12 +846,12 @@ class RootDosyaAkisiMixin:
                 result = {
                     "ok": False,
                     "kind": "error",
-                    "message": f"Tarama hatası oluştu: {exc}",
+                    "message": f"{self._ceviri('scan_error', 'Tarama hatası oluştu')}: {exc}",
                     "detail": self._format_exception_details(
                         exc,
-                        title="Tarama Hatası",
+                        title=self._ceviri("scan_error_title", "Tarama Hatası"),
                     ),
-                    "popup_title": "Tarama Hatası",
+                    "popup_title": self._ceviri("scan_error_title", "Tarama Hatası"),
                 }
 
             Clock.schedule_once(lambda *_: self._apply_scan_result(result), 0)
@@ -760,17 +863,14 @@ class RootDosyaAkisiMixin:
             self._scan_finish_error_visual()
             self._clear_pending_scan_transition()
             self.set_status_error(
-                f"Tarama başlatılamadı: {exc}",
+                f"{self._ceviri('scan_start_failed', 'Tarama başlatılamadı')}: {exc}",
                 detailed_text=self._format_exception_details(
                     exc,
-                    title="Tarama Başlatma Hatası",
+                    title=self._ceviri("scan_start_error_title", "Tarama Başlatma Hatası"),
                 ),
-                popup_title="Tarama Başlatma Hatası",
+                popup_title=self._ceviri("scan_start_error_title", "Tarama Başlatma Hatası"),
             )
 
-    # =========================================================
-    # PUBLIC API
-    # =========================================================
     def refresh_file(self, file_path: str) -> None:
         try:
             self._start_scan_or_refresh(file_path)
@@ -781,14 +881,13 @@ class RootDosyaAkisiMixin:
             self._clear_state()
             self._scan_finish_error_visual()
             self.set_status_error(
-                f"Yenileme hatası oluştu: {exc}",
+                f"{self._ceviri('refresh_error', 'Yenileme hatası oluştu')}: {exc}",
                 detailed_text=self._format_exception_details(
                     exc,
-                    title="Yenileme Hatası",
+                    title=self._ceviri("refresh_error_title", "Yenileme Hatası"),
                 ),
-                popup_title="Yenileme Hatası",
+                popup_title=self._ceviri("refresh_error_title", "Yenileme Hatası"),
             )
-            print(traceback.format_exc())
 
     def scan_file(self, file_path: str) -> None:
         try:
@@ -800,11 +899,10 @@ class RootDosyaAkisiMixin:
             self._clear_state()
             self._scan_finish_error_visual()
             self.set_status_error(
-                f"Tarama hatası oluştu: {exc}",
+                f"{self._ceviri('scan_error', 'Tarama hatası oluştu')}: {exc}",
                 detailed_text=self._format_exception_details(
                     exc,
-                    title="Tarama Hatası",
+                    title=self._ceviri("scan_error_title", "Tarama Hatası"),
                 ),
-                popup_title="Tarama Hatası",
-            )
-            print(traceback.format_exc())
+                popup_title=self._ceviri("scan_error_title", "Tarama Hatası"),
+          )
