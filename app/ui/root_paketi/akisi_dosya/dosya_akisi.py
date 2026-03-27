@@ -905,4 +905,4 @@ class RootDosyaAkisiMixin:
                     title=self._ceviri("scan_error_title", "Tarama Hatası"),
                 ),
                 popup_title=self._ceviri("scan_error_title", "Tarama Hatası"),
-      )
+        )
