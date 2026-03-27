@@ -3,38 +3,24 @@
 DOSYA: app/ui/editor_paketi/popup/editor_popuplari.py
 
 ROL:
-- Editör paneli için popup içeriklerini oluşturmak
-- Mevcut kod görüntüleme popup'ını açmak
-- Yeni kod düzenleme popup'ını açmak
-- Popup içinden doğrulama ve ana alana aktarma akışını yönetmek
-- Görünen metinlerde services tabanlı dil desteğine hazır olmak
-- Panodan yapıştırılan içeriklerde güvenli normalize akışı uygulamak
-- Boşluk / satır başı-sonu / sekme / satır sonu farklarını güvenli biçimde temizlemek
-- Popup içi yapıştırma akışında Android uzun bas -> Yapıştır davranışına
-  görsel olarak yakın ama kontrollü bir metin aktarımı uygulamak
+- Editör paneli için popup içeriklerini oluşturur
+- Mevcut kod görüntüleme popup'ını açar
+- Yeni kod düzenleme popup'ını açar
+- Popup içinden doğrulama ve ana alana aktarma akışını yönetir
+- Görünen metinlerde services tabanlı dil desteğine hazırdır
+- Panodan yapıştırılan içeriklerde güvenli normalize akışı uygular
 
 MİMARİ:
 - Üst katman bu modüle doğrudan değil, popup/yoneticisi.py üzerinden erişmelidir
 - Bileşen, doğrulama ve yardımcı akışlar ilgili yöneticiler üzerinden çağrılır
 - Popup yaşam döngüsü panel üzerinde tutulur
-- Davranış korunur, bağımlılıklar sadeleştirilmiştir
-- services verilirse sabit metinler dil servisi üzerinden alınabilir
+- Davranış korunur
+- services verilirse metinler dil servisi üzerinden alınabilir
 - services verilmezse güvenli fallback ile çalışır
-- Clipboard içeriği yoksa veya erişilemezse fail-soft davranır
-- Kullanıcıya görünen sabit metinler _m(...) ile çözülür
-- Yapıştırma akışında ham native paste kullanılmaz; bunun yerine
-  clipboard -> normalize -> güvenli set_text zinciri uygulanır
-- Popup editöründe siyah blok / bozuk render riskini azaltmak için
-  insert_text yerine tam metin atama yaklaşımı kullanılır
-- Dil entegrasyonu bozulmadan yeni anahtar bazlı notice akışı korunur
+- Yapıştırma akışında clipboard -> normalize -> güvenli set_text zinciri uygulanır
 
-API UYUMLULUK:
-- Platform bağımsızdır
-- Android API 35 ile uyumludur
-- Doğrudan Android bridge çağrısı içermez
-
-SURUM: 7
-TARIH: 2026-03-26
+SURUM: 8
+TARIH: 2026-03-27
 IMZA: FY.
 """
 
@@ -52,23 +38,23 @@ from app.ui.tema import ACCENT, TEXT_MUTED
 
 def _bilesenler():
     from app.ui.editor_paketi.bilesenler import BilesenlerYoneticisi
-
     return BilesenlerYoneticisi()
 
 
 def _dogrulama():
     from app.ui.editor_paketi.dogrulama import DogrulamaYoneticisi
-
     return DogrulamaYoneticisi()
 
 
 def _yardimci():
     from app.ui.editor_paketi.yardimci import YardimciYoneticisi
-
     return YardimciYoneticisi()
 
 
 def _services_from_panel(panel):
+    """
+    Panel veya üst widget zinciri üzerinden services nesnesini bulur.
+    """
     try:
         services = getattr(panel, "services", None)
         if services is not None:
@@ -90,16 +76,30 @@ def _services_from_panel(panel):
 
 
 def _m(panel, anahtar: str, default: str = "") -> str:
+    """
+    Görünen metni services tabanlı çeviri hattından çözmeye çalışır.
+    """
     try:
         services = _services_from_panel(panel)
         if services is not None:
             return str(services.metin(anahtar, default) or default or anahtar)
     except Exception:
         pass
+
+    try:
+        panel_m = getattr(panel, "_m", None)
+        if callable(panel_m):
+            return str(panel_m(anahtar, default) or default or anahtar)
+    except Exception:
+        pass
+
     return str(default or anahtar)
 
 
 def _normalize_text(text, trim_outer_blank_lines: bool = True) -> str:
+    """
+    Kod metnini güvenli biçimde normalize eder.
+    """
     try:
         return _dogrulama().normalize_code_text(
             text,
@@ -138,18 +138,24 @@ def _normalize_text(text, trim_outer_blank_lines: bool = True) -> str:
 
 
 def _safe_scroll_to_top(widget) -> None:
+    """
+    Widget içinde mümkünse en üste kaydırır.
+    """
     try:
-        if widget is not None and hasattr(widget, "scroll_to_top"):
-            widget.scroll_to_top()
+        metod = getattr(widget, "scroll_to_top", None)
+        if callable(metod):
+            metod()
             return
     except Exception:
         pass
 
     try:
         editor = getattr(widget, "editor", None)
-        if editor is not None and hasattr(editor, "scroll_to_top"):
-            editor.scroll_to_top()
-            return
+        if editor is not None:
+            metod = getattr(editor, "scroll_to_top", None)
+            if callable(metod):
+                metod()
+                return
     except Exception:
         pass
 
@@ -162,13 +168,13 @@ def _safe_scroll_to_top(widget) -> None:
 
 
 def _safe_scroll_to_end(widget) -> None:
+    """
+    Widget içinde mümkünse en alta kaydırır.
+    """
     try:
         editor = getattr(widget, "editor", None)
         if editor is not None:
-            try:
-                editor.scroll_y = 0
-            except Exception:
-                pass
+            editor.scroll_y = 0
             return
     except Exception:
         pass
@@ -181,6 +187,9 @@ def _safe_scroll_to_end(widget) -> None:
 
 
 def _safe_popup_title_path(panel) -> str:
+    """
+    Popup başlığı için güvenli item yolunu döndürür.
+    """
     try:
         return str(getattr(getattr(panel, "current_item", None), "path", "-") or "-")
     except Exception:
@@ -188,6 +197,9 @@ def _safe_popup_title_path(panel) -> str:
 
 
 def _safe_clipboard_text() -> str:
+    """
+    Panodan metin almayı dener ve normalize eder.
+    """
     adaylar = (
         "text/plain;charset=utf-8",
         "UTF8_STRING",
@@ -206,7 +218,7 @@ def _safe_clipboard_text() -> str:
             if metin:
                 return metin
         except Exception:
-            pass
+            continue
 
     try:
         ham = Clipboard.paste()
@@ -218,16 +230,23 @@ def _safe_clipboard_text() -> str:
 
 
 def _is_blank_text(text: str) -> bool:
+    """
+    Metnin boş sayılıp sayılmayacağını kontrol eder.
+    """
     return not str(text or "").strip()
 
 
 def _safe_get_widget_text(widget) -> str:
+    """
+    Widget içindeki metni uyumlu biçimde okur.
+    """
     if widget is None:
         return ""
 
     try:
-        if hasattr(widget, "get_text") and callable(widget.get_text):
-            return str(widget.get_text() or "")
+        metod = getattr(widget, "get_text", None)
+        if callable(metod):
+            return str(metod() or "")
     except Exception:
         pass
 
@@ -248,14 +267,18 @@ def _safe_get_widget_text(widget) -> str:
 
 
 def _safe_set_widget_text(widget, text: str) -> bool:
+    """
+    Widget içine metin yazmayı dener.
+    """
     if widget is None:
         return False
 
     temiz = str(text or "")
 
     try:
-        if hasattr(widget, "set_text") and callable(widget.set_text):
-            widget.set_text(temiz)
+        metod = getattr(widget, "set_text", None)
+        if callable(metod):
+            metod(temiz)
             return True
     except Exception:
         pass
@@ -280,11 +303,7 @@ def _safe_set_widget_text(widget, text: str) -> bool:
 
 def _replace_popup_editor_text(editor_area, text: str) -> bool:
     """
-    Popup editöründe metni kontrollü biçimde tamamen değiştirir.
-
-    Not:
-    - insert_text/native paste kullanılmaz
-    - amaç render bozulmalarını azaltmaktır
+    Popup editöründeki metni kontrollü biçimde tamamen değiştirir.
     """
     temiz = _normalize_text(text, trim_outer_blank_lines=True)
 
@@ -306,6 +325,9 @@ def _replace_popup_editor_text(editor_area, text: str) -> bool:
 
 
 def build_popup_toolbar(actions):
+    """
+    Popup toolbar'ı üretir.
+    """
     toolbar = IconToolbar(spacing_dp=20, padding_dp=4)
     toolbar.size_hint_y = None
     toolbar.height = dp(86)
@@ -325,6 +347,9 @@ def build_popup_toolbar(actions):
 
 
 def open_current_code_popup(panel, *_args):
+    """
+    Mevcut kodu sadece okunur popup içinde açar.
+    """
     if panel._current_popup is not None or panel.current_item is None:
         return
 
@@ -379,6 +404,9 @@ def open_current_code_popup(panel, *_args):
 
 
 def open_new_code_editor_popup(panel, *_args):
+    """
+    Yeni kod düzenleme popup'ını açar.
+    """
     if panel._editor_popup is not None or panel.current_item is None:
         return
 
@@ -472,6 +500,7 @@ def open_new_code_editor_popup(panel, *_args):
             editor_area,
             _m(panel, message_key, default),
             0,
+            panel=panel,
         )
 
     def mevcuttan_al(*_args):
@@ -491,6 +520,7 @@ def open_new_code_editor_popup(panel, *_args):
                         "Mevcut kod popup düzenleyiciye aktarılamadı.",
                     ),
                     0,
+                    panel=panel,
                 )
                 return
 
@@ -504,6 +534,7 @@ def open_new_code_editor_popup(panel, *_args):
                 editor_area,
                 _m(panel, "an_error_occurred", "Bir hata oluştu"),
                 0,
+                panel=panel,
             )
 
     def panodan_yapistir(*_args):
@@ -519,6 +550,7 @@ def open_new_code_editor_popup(panel, *_args):
                         "Pano boş veya erişilemedi.",
                     ),
                     0,
+                    panel=panel,
                 )
                 return
 
@@ -533,11 +565,11 @@ def open_new_code_editor_popup(panel, *_args):
                         "Pano içeriği geçerli kod içermiyor.",
                     ),
                     0,
+                    panel=panel,
                 )
                 return
 
-            yazildi = _replace_popup_editor_text(editor_area, temiz)
-            if not yazildi:
+            if not _replace_popup_editor_text(editor_area, temiz):
                 _yardimci().set_popup_error(
                     popup_error,
                     editor_area,
@@ -547,6 +579,7 @@ def open_new_code_editor_popup(panel, *_args):
                         "Panodan yapıştırma başarısız oldu.",
                     ),
                     0,
+                    panel=panel,
                 )
                 return
 
@@ -559,6 +592,7 @@ def open_new_code_editor_popup(panel, *_args):
                     "Pano içeriği düzenleyiciye yapıştırıldı.",
                 ),
                 0,
+                panel=panel,
             )
             _safe_scroll_to_end(editor_area)
         except Exception:
@@ -571,6 +605,7 @@ def open_new_code_editor_popup(panel, *_args):
                     "Panodan yapıştırma başarısız oldu.",
                 ),
                 0,
+                panel=panel,
             )
 
     def kaydet(*_args):
@@ -589,16 +624,28 @@ def open_new_code_editor_popup(panel, *_args):
                     "Yeni kod alanı boş bırakılamaz.",
                 ),
                 0,
+                panel=panel,
             )
             return
 
         ok, hata, satir = _dogrulama().validate_new_code(yeni)
-
         if not ok:
-            _yardimci().set_popup_error(popup_error, editor_area, hata, satir)
+            _yardimci().set_popup_error(
+                popup_error,
+                editor_area,
+                hata,
+                satir,
+                panel=panel,
+            )
             return
 
-        _yardimci().set_popup_error(popup_error, editor_area, "", 0)
+        _yardimci().set_popup_error(
+            popup_error,
+            editor_area,
+            "",
+            0,
+            panel=panel,
+        )
         panel._set_new_code(yeni)
         popup.dismiss()
 
@@ -625,13 +672,14 @@ def open_new_code_editor_popup(panel, *_args):
             text_default="Popup içindeki düzenleme ana yeni kod alanına aktarıldı.",
         )
         _yardimci().toast(
-            _m(
+            text=_m(
                 panel,
                 "new_code_transferred_to_editor_area",
                 "Yeni kod düzenleme alanına aktarıldı.",
             ),
-            "onaylandi.png",
-            2.2,
+            icon_name="onaylandi.png",
+            duration=2.2,
+            panel=panel,
         )
 
     refs["copy_current"].bind(on_release=mevcuttan_al)
