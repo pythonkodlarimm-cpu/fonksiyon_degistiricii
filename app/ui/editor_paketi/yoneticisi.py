@@ -3,38 +3,26 @@
 DOSYA: app/ui/editor_paketi/yoneticisi.py
 
 ROL:
-- Editor paketine tek giriş noktası sağlamak
-- Alt paket yöneticilerini merkezileştirmek
-- Üst katmanın editor paketi iç yapısını bilmesini engellemek
-- Panel, root, aksiyon, popup, doğrulama, bildirim, bileşen ve yardımcı akışları tek yerden sunmak
-- Editör popup ve panel akışlarında seçili dil destekli metinlerin aşağı katmanda korunmasına aracılık etmek
-- Yeni eklenen yapıştır aksiyonunu ve ilgili bileşen erişimlerini üst katmana taşımak
+- Editor paketine tek giriş noktası sağlar
+- Alt paket yöneticilerini merkezileştirir
+- Üst katmanın editor paketi iç yapısını bilmesini engeller
+- Panel, root, aksiyon, popup, doğrulama, bildirim, bileşen ve yardımcı akışları tek yerden sunar
+- Editör popup ve panel akışlarında seçili dil destekli metinlerin aşağı katmanda korunmasına aracılık eder
 
 MİMARİ:
 - Üst katman sadece bu yöneticiyi bilir
 - Alt paketlere doğrudan erişim yerine ilgili yönetici sınıfları kullanılır
 - Lazy import + yönetici katmanı korunur
 - Paket dışına iç modül detayları sızdırılmaz
-- Editor paneli oluşturma akışı üst katmandan gelen callback'leri bozmadan aşağı taşır
-- Popup ve yardımcı akışlar ilgili alt yöneticiler üzerinden merkezi biçimde yürütülür
 - Tekrarlayan yönetici oluşturma maliyetini azaltmak için instance cache kullanılır
-- Cache bozulursa kendini toparlayacak şekilde yeniden resolve yapabilir
-- Dil entegrasyonu bozulmadan yeni anahtar bazlı bildirim akışlarını da taşıyabilir
-- Fail-soft yaklaşım korunur; alt yönetici yüklenemese bile üst katman çökmez
+- Fail-soft yaklaşım uygulanır
 
-API UYUMLULUK:
-- Platform bağımsızdır
-- Android API 35 ile uyumludur
-- Doğrudan Android bridge çağrısı içermez
-
-SURUM: 5
-TARIH: 2026-03-26
+SURUM: 6
+TARIH: 2026-03-27
 IMZA: FY.
 """
 
 from __future__ import annotations
-
-import traceback
 
 
 class EditorYoneticisi:
@@ -42,472 +30,269 @@ class EditorYoneticisi:
     Editor paketi için merkezi üst yönetici.
     """
 
+    YONETICI_HARITASI = {
+        "panel": ("app.ui.editor_paketi.panel", "PanelYoneticisi"),
+        "root": ("app.ui.editor_paketi.root", "RootYoneticisi"),
+        "aksiyon": ("app.ui.editor_paketi.aksiyon", "AksiyonYoneticisi"),
+        "popup": ("app.ui.editor_paketi.popup", "PopupYoneticisi"),
+        "dogrulama": ("app.ui.editor_paketi.dogrulama", "DogrulamaYoneticisi"),
+        "bildirim": ("app.ui.editor_paketi.bildirim", "BildirimYoneticisi"),
+        "bilesenler": ("app.ui.editor_paketi.bilesenler", "BilesenlerYoneticisi"),
+        "yardimci": ("app.ui.editor_paketi.yardimci", "YardimciYoneticisi"),
+    }
+
     def __init__(self) -> None:
         self._yonetici_cache: dict[str, object] = {}
 
     # =========================================================
-    # INTERNAL
+    # CACHE
     # =========================================================
-    def _cache_get(self, key: str):
-        """
-        Yönetici cache içinden güvenli biçimde değer döndürür.
-        """
-        try:
-            return self._yonetici_cache.get(key)
-        except Exception:
-            return None
-
-    def _cache_set(self, key: str, value) -> None:
-        """
-        Yönetici cache içine güvenli biçimde değer yazar.
-        """
-        try:
-            self._yonetici_cache[key] = value
-        except Exception:
-            pass
-
-    def _cache_delete(self, key: str) -> None:
-        """
-        Tek bir cache kaydını siler.
-        """
-        try:
-            if key in self._yonetici_cache:
-                del self._yonetici_cache[key]
-        except Exception:
-            pass
-
     def cache_temizle(self) -> None:
         """
         Tüm alt yönetici cache'lerini temizler.
         """
-        try:
-            self._yonetici_cache = {}
-        except Exception:
-            pass
+        self._yonetici_cache = {}
 
-    def _get_or_create_manager(
-        self,
-        cache_key: str,
-        import_path: str,
-        class_name: str,
-    ):
+    # =========================================================
+    # INTERNAL
+    # =========================================================
+    def _yonetici_al(self, ad: str):
         """
-        İstenen alt yöneticiyi lazy import + instance cache ile üretir.
+        Verilen ad için alt yöneticiyi lazy import ile yükler.
+
+        Args:
+            ad: Yönetici kısa adı
+
+        Returns:
+            object | None
         """
-        try:
-            cached = self._cache_get(cache_key)
-            if cached is not None:
-                return cached
-        except Exception:
-            self._cache_delete(cache_key)
+        if ad in self._yonetici_cache:
+            return self._yonetici_cache.get(ad)
 
-        try:
-            module = __import__(import_path, fromlist=[class_name])
-            cls = getattr(module, class_name, None)
-
-            if cls is None:
-                print(
-                    "[EDITOR_YONETICISI] "
-                    f"Yönetici sınıfı bulunamadı: {import_path}.{class_name}"
-                )
-                self._cache_delete(cache_key)
-                return None
-
-            instance = cls()
-            self._cache_set(cache_key, instance)
-            return instance
-
-        except Exception:
-            print(
-                "[EDITOR_YONETICISI] "
-                f"Yönetici yüklenemedi: {import_path}.{class_name}"
-            )
-            print(traceback.format_exc())
-            self._cache_delete(cache_key)
+        bilgi = self.YONETICI_HARITASI.get(ad)
+        if not bilgi:
+            print(f"[EDITOR_YONETICISI] Yönetici haritasında bulunamadı: {ad}")
             return None
 
-    # =========================================================
-    # ALT YONETICILER
-    # =========================================================
-    def _panel_yoneticisi(self):
-        return self._get_or_create_manager(
-            "panel_yoneticisi",
-            "app.ui.editor_paketi.panel",
-            "PanelYoneticisi",
-        )
+        modul_yolu, sinif_adi = bilgi
 
-    def _root_yoneticisi(self):
-        return self._get_or_create_manager(
-            "root_yoneticisi",
-            "app.ui.editor_paketi.root",
-            "RootYoneticisi",
-        )
+        try:
+            modul = __import__(modul_yolu, fromlist=[sinif_adi])
+            sinif = getattr(modul, sinif_adi, None)
+        except Exception as exc:
+            print(f"[EDITOR_YONETICISI] Yönetici yüklenemedi: {modul_yolu}.{sinif_adi}")
+            print(exc)
+            self._yonetici_cache.pop(ad, None)
+            return None
 
-    def _aksiyon_yoneticisi(self):
-        return self._get_or_create_manager(
-            "aksiyon_yoneticisi",
-            "app.ui.editor_paketi.aksiyon",
-            "AksiyonYoneticisi",
-        )
+        if sinif is None:
+            print(f"[EDITOR_YONETICISI] Yönetici sınıfı bulunamadı: {modul_yolu}.{sinif_adi}")
+            self._yonetici_cache.pop(ad, None)
+            return None
 
-    def _popup_yoneticisi(self):
-        return self._get_or_create_manager(
-            "popup_yoneticisi",
-            "app.ui.editor_paketi.popup",
-            "PopupYoneticisi",
-        )
+        try:
+            ornek = sinif()
+        except Exception as exc:
+            print(f"[EDITOR_YONETICISI] Yönetici örneği oluşturulamadı: {modul_yolu}.{sinif_adi}")
+            print(exc)
+            self._yonetici_cache.pop(ad, None)
+            return None
 
-    def _dogrulama_yoneticisi(self):
-        return self._get_or_create_manager(
-            "dogrulama_yoneticisi",
-            "app.ui.editor_paketi.dogrulama",
-            "DogrulamaYoneticisi",
-        )
+        self._yonetici_cache[ad] = ornek
+        return ornek
 
-    def _bildirim_yoneticisi(self):
-        return self._get_or_create_manager(
-            "bildirim_yoneticisi",
-            "app.ui.editor_paketi.bildirim",
-            "BildirimYoneticisi",
-        )
+    def _yonetici_cagir(self, yonetici_adi: str, metod_adi: str, *args, **kwargs):
+        """
+        Alt yönetici üstündeki metodu güvenli biçimde çağırır.
 
-    def _bilesenler_yoneticisi(self):
-        return self._get_or_create_manager(
-            "bilesenler_yoneticisi",
-            "app.ui.editor_paketi.bilesenler",
-            "BilesenlerYoneticisi",
-        )
+        Args:
+            yonetici_adi: Alt yönetici kısa adı
+            metod_adi: Çağrılacak metod adı
 
-    def _yardimci_yoneticisi(self):
-        return self._get_or_create_manager(
-            "yardimci_yoneticisi",
-            "app.ui.editor_paketi.yardimci",
-            "YardimciYoneticisi",
+        Returns:
+            Any | None
+        """
+        yonetici = self._yonetici_al(yonetici_adi)
+        if yonetici is None:
+            return None
+
+        try:
+            metod = getattr(yonetici, metod_adi, None)
+            if callable(metod):
+                return metod(*args, **kwargs)
+        except Exception as exc:
+            print(
+                f"[EDITOR_YONETICISI] Çağrı başarısız: "
+                f"{yonetici_adi}.{metod_adi}"
+            )
+            print(exc)
+            return None
+
+        print(
+            f"[EDITOR_YONETICISI] Metod bulunamadı: "
+            f"{yonetici_adi}.{metod_adi}"
         )
+        return None
 
     # =========================================================
     # PANEL
     # =========================================================
     def panel_sinifi(self):
-        """
-        EditorPaneli sınıfını döndürür.
-        """
-        yonetici = self._panel_yoneticisi()
-        return yonetici.panel_sinifi() if yonetici is not None else None
+        return self._yonetici_cagir("panel", "panel_sinifi")
 
     def panel_olustur(self, **kwargs):
-        """
-        EditorPaneli örneği oluşturur.
-        """
-        yonetici = self._panel_yoneticisi()
-        return yonetici.panel_olustur(**kwargs) if yonetici is not None else None
+        return self._yonetici_cagir("panel", "panel_olustur", **kwargs)
 
     # =========================================================
     # ROOT
     # =========================================================
     def root_sinifi(self):
-        """
-        Editor root sınıfını döndürür.
-        """
-        yonetici = self._root_yoneticisi()
-        return yonetici.root_sinifi() if yonetici is not None else None
+        return self._yonetici_cagir("root", "root_sinifi")
 
     def root_olustur(self, **kwargs):
-        """
-        Editor root örneği oluşturur.
-        """
-        yonetici = self._root_yoneticisi()
-        return yonetici.root_olustur(**kwargs) if yonetici is not None else None
+        return self._yonetici_cagir("root", "root_olustur", **kwargs)
 
     # =========================================================
     # AKSIYON
     # =========================================================
     def copy_current_to_new(self, panel, *_args):
-        """
-        Mevcut kodu yeni kod alanına kopyalar.
-        """
-        yonetici = self._aksiyon_yoneticisi()
-        return (
-            yonetici.copy_current_to_new(panel, *_args)
-            if yonetici is not None
-            else None
-        )
+        return self._yonetici_cagir("aksiyon", "copy_current_to_new", panel, *_args)
 
     def paste_new_code(self, panel, *_args):
-        """
-        Panodaki içeriği yeni kod alanına yapıştırır.
-        """
-        yonetici = self._aksiyon_yoneticisi()
-        return (
-            yonetici.paste_new_code(panel, *_args)
-            if yonetici is not None
-            else None
-        )
+        return self._yonetici_cagir("aksiyon", "paste_new_code", panel, *_args)
 
     def clear_new_code(self, panel, *_args):
-        """
-        Yeni kod alanını temizler.
-        """
-        yonetici = self._aksiyon_yoneticisi()
-        return (
-            yonetici.clear_new_code(panel, *_args)
-            if yonetici is not None
-            else None
-        )
+        return self._yonetici_cagir("aksiyon", "clear_new_code", panel, *_args)
 
     def check_new_code(self, panel, *_args):
-        """
-        Yeni kod doğrulamasını başlatır.
-        """
-        yonetici = self._aksiyon_yoneticisi()
-        return (
-            yonetici.check_new_code(panel, *_args)
-            if yonetici is not None
-            else None
-        )
+        return self._yonetici_cagir("aksiyon", "check_new_code", panel, *_args)
 
     def handle_update(self, panel, *_args):
-        """
-        Güncelleme akışını başlatır.
-        """
-        yonetici = self._aksiyon_yoneticisi()
-        return (
-            yonetici.handle_update(panel, *_args)
-            if yonetici is not None
-            else None
-        )
+        return self._yonetici_cagir("aksiyon", "handle_update", panel, *_args)
 
     def handle_restore(self, panel, *_args):
-        """
-        Geri yükleme akışını başlatır.
-        """
-        yonetici = self._aksiyon_yoneticisi()
-        return (
-            yonetici.handle_restore(panel, *_args)
-            if yonetici is not None
-            else None
-        )
+        return self._yonetici_cagir("aksiyon", "handle_restore", panel, *_args)
 
     # =========================================================
     # POPUP
     # =========================================================
     def build_popup_toolbar(self, actions):
-        """
-        Popup araç çubuğu oluşturur.
-        """
-        yonetici = self._popup_yoneticisi()
-        return yonetici.build_popup_toolbar(actions) if yonetici is not None else None
+        return self._yonetici_cagir("popup", "build_popup_toolbar", actions)
 
     def open_current_code_popup(self, panel, *_args):
-        """
-        Mevcut kod popup'ını açar.
-        """
-        yonetici = self._popup_yoneticisi()
-        return (
-            yonetici.open_current_code_popup(panel, *_args)
-            if yonetici is not None
-            else None
-        )
+        return self._yonetici_cagir("popup", "open_current_code_popup", panel, *_args)
 
     def open_new_code_editor_popup(self, panel, *_args):
-        """
-        Yeni kod düzenleme popup'ını açar.
-        """
-        yonetici = self._popup_yoneticisi()
-        return (
-            yonetici.open_new_code_editor_popup(panel, *_args)
-            if yonetici is not None
-            else None
+        return self._yonetici_cagir(
+            "popup",
+            "open_new_code_editor_popup",
+            panel,
+            *_args,
         )
 
     # =========================================================
     # DOGRULAMA
     # =========================================================
     def normalize_code_text(self, text, trim_outer_blank_lines: bool = False) -> str:
-        """
-        Kod metnini normalize eder.
-        """
-        yonetici = self._dogrulama_yoneticisi()
-        if yonetici is None:
-            try:
-                return str(text or "")
-            except Exception:
-                return ""
-        return yonetici.normalize_code_text(
+        sonuc = self._yonetici_cagir(
+            "dogrulama",
+            "normalize_code_text",
             text,
             trim_outer_blank_lines=trim_outer_blank_lines,
         )
+        try:
+            return str(sonuc if sonuc is not None else text or "")
+        except Exception:
+            return ""
 
     def first_meaningful_line(self, text: str) -> str:
-        """
-        İlk anlamlı satırı döndürür.
-        """
-        yonetici = self._dogrulama_yoneticisi()
-        return yonetici.first_meaningful_line(text) if yonetici is not None else ""
+        sonuc = self._yonetici_cagir("dogrulama", "first_meaningful_line", text)
+        return str(sonuc or "")
 
     def looks_like_full_function(self, text: str) -> bool:
-        """
-        Metnin tam fonksiyon gibi görünüp görünmediğini döndürür.
-        """
-        yonetici = self._dogrulama_yoneticisi()
-        return (
-            yonetici.looks_like_full_function(text) if yonetici is not None else False
-        )
+        sonuc = self._yonetici_cagir("dogrulama", "looks_like_full_function", text)
+        return bool(sonuc)
 
-    def basic_parse_check(self, text: str) -> None:
-        """
-        Temel parse kontrolü yapar.
-        """
-        yonetici = self._dogrulama_yoneticisi()
-        return yonetici.basic_parse_check(text) if yonetici is not None else None
+    def basic_parse_check(self, text: str):
+        return self._yonetici_cagir("dogrulama", "basic_parse_check", text)
 
     def extract_line_number(self, exc) -> int:
-        """
-        Exception içinden satır numarası çıkarmaya çalışır.
-        """
-        yonetici = self._dogrulama_yoneticisi()
-        return yonetici.extract_line_number(exc) if yonetici is not None else 0
+        sonuc = self._yonetici_cagir("dogrulama", "extract_line_number", exc)
+        try:
+            return int(sonuc or 0)
+        except Exception:
+            return 0
 
     def validate_new_code(self, text: str) -> tuple[bool, str, int]:
-        """
-        Yeni kodu doğrular.
-
-        Returns:
-            tuple[bool, str, int]
-        """
-        yonetici = self._dogrulama_yoneticisi()
-        if yonetici is None:
-            return False, "Doğrulama yöneticisi yüklenemedi.", 0
-        return yonetici.validate_new_code(text)
+        sonuc = self._yonetici_cagir("dogrulama", "validate_new_code", text)
+        if isinstance(sonuc, tuple) and len(sonuc) == 3:
+            return sonuc
+        return False, "Doğrulama yöneticisi yüklenemedi.", 0
 
     # =========================================================
     # BILDIRIM
     # =========================================================
     def bildirim_sinifi(self):
-        """
-        EditorAksiyonBildirimi sınıfını döndürür.
-        """
-        yonetici = self._bildirim_yoneticisi()
-        return yonetici.bildirim_sinifi() if yonetici is not None else None
+        return self._yonetici_cagir("bildirim", "bildirim_sinifi")
 
     def bildirim_olustur(self, **kwargs):
-        """
-        Bildirim bileşeni örneği oluşturur.
-        """
-        yonetici = self._bildirim_yoneticisi()
-        return yonetici.bildirim_olustur(**kwargs) if yonetici is not None else None
+        return self._yonetici_cagir("bildirim", "bildirim_olustur", **kwargs)
 
     # =========================================================
     # BILESENLER
     # =========================================================
     def kod_editoru_sinifi(self):
-        """
-        KodEditoru sınıfını döndürür.
-        """
-        yonetici = self._bilesenler_yoneticisi()
-        return yonetici.kod_editoru_sinifi() if yonetici is not None else None
+        return self._yonetici_cagir("bilesenler", "kod_editoru_sinifi")
 
     def kod_paneli_sinifi(self):
-        """
-        KodPaneli sınıfını döndürür.
-        """
-        yonetici = self._bilesenler_yoneticisi()
-        return yonetici.kod_paneli_sinifi() if yonetici is not None else None
+        return self._yonetici_cagir("bilesenler", "kod_paneli_sinifi")
 
     def bilgi_kutusu_sinifi(self):
-        """
-        BilgiKutusu sınıfını döndürür.
-        """
-        yonetici = self._bilesenler_yoneticisi()
-        return yonetici.bilgi_kutusu_sinifi() if yonetici is not None else None
+        return self._yonetici_cagir("bilesenler", "bilgi_kutusu_sinifi")
 
     def sade_kod_alani_sinifi(self):
-        """
-        SadeKodAlani sınıfını döndürür.
-        """
-        yonetici = self._bilesenler_yoneticisi()
-        return yonetici.sade_kod_alani_sinifi() if yonetici is not None else None
+        return self._yonetici_cagir("bilesenler", "sade_kod_alani_sinifi")
 
     def aksiyon_ikon_butonu_sinifi(self):
-        """
-        Aksiyon ikon butonu sınıfını döndürür.
-        """
-        yonetici = self._bilesenler_yoneticisi()
-        return (
-            yonetici.aksiyon_ikon_butonu_sinifi()
-            if yonetici is not None
-            else None
-        )
+        return self._yonetici_cagir("bilesenler", "aksiyon_ikon_butonu_sinifi")
 
     def aksiyon_cubugu_sinifi(self):
-        """
-        Aksiyon çubuğu sınıfını döndürür.
-        """
-        yonetici = self._bilesenler_yoneticisi()
-        return yonetici.aksiyon_cubugu_sinifi() if yonetici is not None else None
+        return self._yonetici_cagir("bilesenler", "aksiyon_cubugu_sinifi")
 
     def sade_kod_alani_olustur(self, **kwargs):
-        """
-        Sade kod alanı örneği oluşturur.
-        """
-        yonetici = self._bilesenler_yoneticisi()
-        return (
-            yonetici.sade_kod_alani_olustur(**kwargs)
-            if yonetici is not None
-            else None
-        )
+        return self._yonetici_cagir("bilesenler", "sade_kod_alani_olustur", **kwargs)
 
     def bilgi_kutusu_olustur(self, **kwargs):
-        """
-        Bilgi kutusu örneği oluşturur.
-        """
-        yonetici = self._bilesenler_yoneticisi()
-        return (
-            yonetici.bilgi_kutusu_olustur(**kwargs)
-            if yonetici is not None
-            else None
-        )
+        return self._yonetici_cagir("bilesenler", "bilgi_kutusu_olustur", **kwargs)
 
     def aksiyon_cubugu_olustur(self, **kwargs):
-        """
-        Aksiyon çubuğu örneği oluşturur.
-        """
-        yonetici = self._bilesenler_yoneticisi()
-        return (
-            yonetici.aksiyon_cubugu_olustur(**kwargs)
-            if yonetici is not None
-            else None
-        )
+        return self._yonetici_cagir("bilesenler", "aksiyon_cubugu_olustur", **kwargs)
 
     # =========================================================
     # YARDIMCI
     # =========================================================
-    def toast(self, text: str, icon_name: str = "", duration: float = 2.2) -> None:
-        """
-        Sistem toast bildirimi gösterir.
-        """
-        yonetici = self._yardimci_yoneticisi()
-        if yonetici is None:
-            return None
-        return yonetici.toast(
+    def toast(
+        self,
+        text: str,
+        icon_name: str = "",
+        duration: float = 2.2,
+        panel=None,
+    ) -> None:
+        return self._yonetici_cagir(
+            "yardimci",
+            "toast",
             text=text,
             icon_name=icon_name,
             duration=duration,
+            panel=panel,
         )
 
     def close_popups(self, panel) -> None:
-        """
-        Editör paneline ait popup'ları kapatır.
-        """
-        yonetici = self._yardimci_yoneticisi()
-        return yonetici.close_popups(panel) if yonetici is not None else None
+        return self._yonetici_cagir("yardimci", "close_popups", panel)
 
     def current_item_display(self, panel) -> str:
-        """
-        Seçili item için kullanıcıya gösterilecek metni döndürür.
-        """
-        yonetici = self._yardimci_yoneticisi()
-        return yonetici.current_item_display(panel) if yonetici is not None else "-"
+        sonuc = self._yonetici_cagir("yardimci", "current_item_display", panel)
+        return str(sonuc or "-")
 
     def show_inline_notice(
         self,
@@ -523,15 +308,9 @@ class EditorYoneticisi:
         text_key: str = "",
         text_default: str = "",
     ) -> None:
-        """
-        Editör paneli içinde inline notice gösterir.
-        Dil anahtarları desteklenir.
-        """
-        yonetici = self._yardimci_yoneticisi()
-        if yonetici is None:
-            return None
-
-        return yonetici.show_inline_notice(
+        return self._yonetici_cagir(
+            "yardimci",
+            "show_inline_notice",
             panel=panel,
             title=title,
             text=text,
@@ -546,47 +325,39 @@ class EditorYoneticisi:
         )
 
     def set_status_info(self, panel, message: str = "", line_no: int = 0):
-        """
-        Bilgi durumunu uygular.
-        """
-        yonetici = self._yardimci_yoneticisi()
-        return (
-            yonetici.set_status_info(panel, message, line_no)
-            if yonetici is not None
-            else None
+        return self._yonetici_cagir(
+            "yardimci",
+            "set_status_info",
+            panel,
+            message,
+            line_no,
         )
 
     def set_status_warning(self, panel, message: str = "", line_no: int = 0):
-        """
-        Uyarı durumunu uygular.
-        """
-        yonetici = self._yardimci_yoneticisi()
-        return (
-            yonetici.set_status_warning(panel, message, line_no)
-            if yonetici is not None
-            else None
+        return self._yonetici_cagir(
+            "yardimci",
+            "set_status_warning",
+            panel,
+            message,
+            line_no,
         )
 
     def set_status_error(self, panel, message: str = "", line_no: int = 0):
-        """
-        Hata durumunu uygular.
-        """
-        yonetici = self._yardimci_yoneticisi()
-        return (
-            yonetici.set_status_error(panel, message, line_no)
-            if yonetici is not None
-            else None
+        return self._yonetici_cagir(
+            "yardimci",
+            "set_status_error",
+            panel,
+            message,
+            line_no,
         )
 
     def set_status_success(self, panel, message: str = "", line_no: int = 0):
-        """
-        Başarı durumunu uygular.
-        """
-        yonetici = self._yardimci_yoneticisi()
-        return (
-            yonetici.set_status_success(panel, message, line_no)
-            if yonetici is not None
-            else None
+        return self._yonetici_cagir(
+            "yardimci",
+            "set_status_success",
+            panel,
+            message,
+            line_no,
         )
 
     def set_popup_error(
@@ -595,13 +366,14 @@ class EditorYoneticisi:
         editor_area,
         message: str = "",
         line_no: int = 0,
+        panel=None,
     ):
-        """
-        Popup içi hata metni ve hata satırını uygular.
-        """
-        yonetici = self._yardimci_yoneticisi()
-        return (
-            yonetici.set_popup_error(label, editor_area, message, line_no)
-            if yonetici is not None
-            else None
-    )
+        return self._yonetici_cagir(
+            "yardimci",
+            "set_popup_error",
+            label,
+            editor_area,
+            message,
+            line_no,
+            panel=panel,
+        )
