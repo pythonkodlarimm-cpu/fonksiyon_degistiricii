@@ -3,24 +3,20 @@
 DOSYA: app/ui/root_paketi/akisi_secim/secim_akisi.py
 
 ROL:
-- Fonksiyon seçimi sonrası UI durumunu güncellemek
-- Seçilen öğeyi function list ve editor ile senkronize etmek
-- Güncelleme sonrası yenilenmiş öğeyi listede tekrar bulmak
-- Seçim akışını UI donmasını azaltacak şekilde kademeli yürütmek
-- Android restore akışında eksik/yarım item kaynaklı UI çökmesini azaltmak
-- Restore sonrası seçili item'in editor ve liste tarafına tekrar güvenli biçimde bağlanmasını sağlamak
+- Fonksiyon seçimi sonrası UI durumunu günceller
+- Seçilen öğeyi function list ve editor ile senkronize eder
+- Güncelleme sonrası yenilenmiş öğeyi listede tekrar bulur
+- Restore sonrası seçili item'i editor ve liste tarafına tekrar güvenli biçimde bağlar
 
 MİMARİ:
-- CoreYoneticisi üzerinden kimlik eşleme yapar
-- UI davranışını korur
+- Core yöneticisi üzerinden kimlik eşleme yapabilir
 - Servis katmanına değil, mevcut taranmış item listesine dayanır
 - Root paketinin alt seçim akışı modülüdür
-- Editor ve liste güncellemesi güvenli fallback ile yürütülür
-- Seçim uygulanırken function_list/editor yoksa fail-soft davranır
-- Restore senaryosunda eski/yarım item gelirse ek güvenlik kontrolleri devrededir
+- Editor ve liste güncellemesi fail-soft yürütülür
+- Çeviri için root üzerindeki self._m(...) hattını kullanır
 
-SURUM: 7
-TARIH: 2026-03-26
+SURUM: 8
+TARIH: 2026-03-27
 IMZA: FY.
 """
 
@@ -30,52 +26,43 @@ from kivy.clock import Clock
 
 
 class RootSecimAkisiMixin:
-    # =========================================================
-    # INTERNAL
-    # =========================================================
     def _core(self):
         try:
             return self._get_core_yoneticisi()
         except Exception:
             return None
 
-    def _m_secim(self, anahtar: str, default: str) -> str:
+    def _ceviri(self, anahtar: str, varsayilan: str) -> str:
         """
         Varsa root içindeki çeviri metodunu kullanır.
         """
         try:
-            if hasattr(self, "_m") and callable(getattr(self, "_m")):
-                return str(self._m(anahtar, default) or default or anahtar)
+            metod = getattr(self, "_m", None)
+            if callable(metod):
+                return str(metod(anahtar, varsayilan) or varsayilan)
         except Exception:
             pass
-        return str(default or anahtar)
+        return str(varsayilan)
 
     def _item_gecerli_mi(self, item) -> bool:
         if item is None:
             return False
 
-        try:
-            path_value = str(getattr(item, "path", "") or "").strip()
-            name_value = str(getattr(item, "name", "") or "").strip()
-            source_value = str(getattr(item, "source", "") or "").strip()
-            identity_value = str(getattr(item, "identity", "") or "").strip()
-            dotted_value = str(getattr(item, "dotted_path", "") or "").strip()
+        for alan in ("path", "name", "source", "identity", "dotted_path"):
+            try:
+                deger = str(getattr(item, alan, "") or "").strip()
+                if deger:
+                    return True
+            except Exception:
+                continue
 
-            return bool(
-                path_value
-                or name_value
-                or source_value
-                or identity_value
-                or dotted_value
-            )
-        except Exception:
-            return False
+        return False
 
     def _item_labeli(self, item) -> str:
         if item is None:
-            return self._m_secim("function_generic", "Fonksiyon")
+            return self._ceviri("function_generic", "Fonksiyon")
 
-        for attr_name in (
+        for alan in (
             "path",
             "name",
             "signature",
@@ -84,78 +71,75 @@ class RootSecimAkisiMixin:
             "source",
         ):
             try:
-                value = str(getattr(item, attr_name, "") or "").strip()
-                if value:
-                    return value
+                deger = str(getattr(item, alan, "") or "").strip()
+                if deger:
+                    return deger
             except Exception:
-                pass
+                continue
 
-        return self._m_secim("function_generic", "Fonksiyon")
+        return self._ceviri("function_generic", "Fonksiyon")
 
     def _listeye_secili_item_yaz(self, item) -> None:
         """
         Function list tarafına seçili item bilgisini güvenli biçimde yazar.
         """
+        function_list = getattr(self, "function_list", None)
+        if function_list is None:
+            return
+
         try:
-            function_list = getattr(self, "function_list", None)
-            if function_list is None:
-                return
+            function_list.selected_item = item
+        except Exception:
+            pass
 
-            try:
-                function_list.selected_item = item
-            except Exception:
-                pass
+        try:
+            metod = getattr(function_list, "set_selected_item", None)
+            if callable(metod):
+                metod(item)
+        except Exception:
+            pass
 
-            try:
-                if hasattr(function_list, "set_selected_item"):
-                    function_list.set_selected_item(item)
-            except Exception:
-                pass
+        try:
+            metod = getattr(function_list, "set_selected_preview", None)
+            if callable(metod):
+                metod(str(getattr(item, "source", "") or ""))
+        except Exception:
+            pass
 
-            try:
-                if hasattr(function_list, "set_selected_preview"):
-                    function_list.set_selected_preview(
-                        str(getattr(item, "source", "") or "")
-                    )
-            except Exception:
-                pass
-
-            try:
-                if hasattr(function_list, "clear_new_preview"):
-                    function_list.clear_new_preview()
-            except Exception:
-                pass
+        try:
+            metod = getattr(function_list, "clear_new_preview", None)
+            if callable(metod):
+                metod()
         except Exception:
             pass
 
     def _editoru_temizlemeden_item_uygula(self, item) -> None:
         """
-        Editöre seçili item'i uygular. Yeni kod alanını yalnızca gerekiyorsa temizler.
-        Restore akışında kullanıldığında mevcut yazıyı korumaya yardımcı olur.
+        Editöre seçili item'i uygular.
+        Restore akışında mevcut yeni kod içeriğini korumaya yardımcı olur.
         """
         if not self._item_gecerli_mi(item):
             return
 
+        editor = getattr(self, "editor", None)
+        if editor is None:
+            return
+
         try:
-            editor = getattr(self, "editor", None)
-            if editor is None:
-                return
-
-            if not hasattr(editor, "set_item"):
-                return
-
-            editor.set_item(item)
+            metod = getattr(editor, "set_item", None)
+            if callable(metod):
+                metod(item)
         except Exception:
             pass
 
-    # =========================================================
-    # SELECTION FLOW
-    # =========================================================
     def select_item(self, item) -> None:
+        """
+        Seçilen item'i liste ve editör ile senkronize eder.
+        """
         if not self._item_gecerli_mi(item):
             try:
                 self.set_status_warning(
-                    self._m_secim(
+                    self._ceviri(
                         "function_select_error",
                         "Seçilen fonksiyon bilgisi geçersiz.",
                     )
@@ -165,32 +149,22 @@ class RootSecimAkisiMixin:
             return
 
         self.selected_item = item
-
-        # -----------------------------------------------------
-        # LISTE SENKRON
-        # -----------------------------------------------------
         self._listeye_secili_item_yaz(item)
 
-        # -----------------------------------------------------
-        # STATUS
-        # -----------------------------------------------------
         try:
             self.set_status_info(
-                f"{self._m_secim('selected_prefix', 'Seçildi:')} {self._item_labeli(item)}",
+                f"{self._ceviri('selected_prefix', 'Seçildi:')} {self._item_labeli(item)}",
                 "visibility_on.png",
             )
         except Exception:
             try:
                 self.set_status_info(
-                    self._m_secim("function_selected", "Fonksiyon seçildi."),
+                    self._ceviri("function_selected", "Fonksiyon seçildi."),
                     "visibility_on.png",
                 )
             except Exception:
                 pass
 
-        # -----------------------------------------------------
-        # SCROLL + EDITOR APPLY (ASYNC)
-        # -----------------------------------------------------
         try:
             self._scroll_to_editor()
         except Exception:
@@ -205,36 +179,36 @@ class RootSecimAkisiMixin:
             0.08,
         )
 
-    # =========================================================
-    # EDITOR APPLY
-    # =========================================================
     def _apply_selected_item_to_editor_guvenli(self, item) -> None:
+        """
+        Seçili item'i editöre uygular ve yeni kod alanını temizler.
+        """
         if not self._item_gecerli_mi(item):
             return
 
+        editor = getattr(self, "editor", None)
+        if editor is None:
+            return
+
         try:
-            editor = getattr(self, "editor", None)
-            if editor is None:
-                return
-
-            if not hasattr(editor, "set_item"):
-                return
-
-            editor.set_item(item)
-
-            try:
-                if hasattr(editor, "set_new_code_text"):
-                    editor.set_new_code_text("")
-            except Exception:
-                pass
-
+            metod = getattr(editor, "set_item", None)
+            if callable(metod):
+                metod(item)
         except Exception as exc:
             try:
                 self.set_status_warning(
-                    f"{self._m_secim('function_select_error', 'Editör seçimi uygulanamadı:')} {exc}"
+                    f"{self._ceviri('function_select_error', 'Editör seçimi uygulanamadı:')} {exc}"
                 )
             except Exception:
                 pass
+            return
+
+        try:
+            metod = getattr(editor, "set_new_code_text", None)
+            if callable(metod):
+                metod("")
+        except Exception:
+            pass
 
     def _focus_new_code_area_guvenli(self) -> None:
         try:
@@ -263,9 +237,6 @@ class RootSecimAkisiMixin:
 
         return True
 
-    # =========================================================
-    # REFRESH MATCHING
-    # =========================================================
     def _find_refreshed_item(self, old_item):
         """
         Tarama sonrası eski item'ın yeni karşılığını bulur.
@@ -279,62 +250,55 @@ class RootSecimAkisiMixin:
 
         core = self._core()
 
-        # -----------------------------------------------------
-        # PRIMARY: CORE IDENTITY MATCH
-        # -----------------------------------------------------
         try:
-            if core is not None and hasattr(core, "find_item_by_identity"):
-                refreshed = core.find_item_by_identity(
+            metod = getattr(core, "find_item_by_identity", None) if core is not None else None
+            if callable(metod):
+                bulunan = metod(
                     items,
                     path=str(getattr(old_item, "path", "") or ""),
                     name=str(getattr(old_item, "name", "") or ""),
                     lineno=int(getattr(old_item, "lineno", 0) or 0),
                     kind=str(getattr(old_item, "kind", "") or ""),
                 )
-                if refreshed is not None:
-                    return refreshed
+                if bulunan is not None:
+                    return bulunan
         except Exception:
             pass
 
-        # -----------------------------------------------------
-        # FALLBACK 0: IDENTITY / DOTTED PATH
-        # -----------------------------------------------------
+        eski_identity = ""
+        eski_dotted = ""
         try:
-            old_identity = str(getattr(old_item, "identity", "") or "").strip()
-            old_dotted = str(getattr(old_item, "dotted_path", "") or "").strip()
+            eski_identity = str(getattr(old_item, "identity", "") or "").strip()
+        except Exception:
+            pass
+        try:
+            eski_dotted = str(getattr(old_item, "dotted_path", "") or "").strip()
+        except Exception:
+            pass
 
+        if eski_identity or eski_dotted:
             for current in items:
                 try:
-                    current_identity = str(
-                        getattr(current, "identity", "") or ""
-                    ).strip()
-                    current_dotted = str(
-                        getattr(current, "dotted_path", "") or ""
-                    ).strip()
+                    current_identity = str(getattr(current, "identity", "") or "").strip()
+                    current_dotted = str(getattr(current, "dotted_path", "") or "").strip()
 
-                    if old_identity and current_identity == old_identity:
+                    if eski_identity and current_identity == eski_identity:
                         return current
 
-                    if old_dotted and current_dotted == old_dotted:
+                    if eski_dotted and current_dotted == eski_dotted:
                         return current
                 except Exception:
                     continue
-        except Exception:
-            pass
 
-        # -----------------------------------------------------
-        # FALLBACK 1: PATH + END LINENO
-        # -----------------------------------------------------
         try:
-            old_path = str(getattr(old_item, "path", "") or "")
-            old_end_lineno = int(getattr(old_item, "end_lineno", 0) or 0)
+            eski_path = str(getattr(old_item, "path", "") or "")
+            eski_end_lineno = int(getattr(old_item, "end_lineno", 0) or 0)
 
             for current in items:
                 try:
                     if (
-                        str(getattr(current, "path", "") or "") == old_path
-                        and int(getattr(current, "end_lineno", 0) or 0)
-                        == old_end_lineno
+                        str(getattr(current, "path", "") or "") == eski_path
+                        and int(getattr(current, "end_lineno", 0) or 0) == eski_end_lineno
                     ):
                         return current
                 except Exception:
@@ -342,20 +306,17 @@ class RootSecimAkisiMixin:
         except Exception:
             pass
 
-        # -----------------------------------------------------
-        # FALLBACK 2: PATH + LINENO + NAME
-        # -----------------------------------------------------
         try:
-            old_path = str(getattr(old_item, "path", "") or "")
-            old_lineno = int(getattr(old_item, "lineno", 0) or 0)
-            old_name = str(getattr(old_item, "name", "") or "").strip()
+            eski_path = str(getattr(old_item, "path", "") or "")
+            eski_lineno = int(getattr(old_item, "lineno", 0) or 0)
+            eski_name = str(getattr(old_item, "name", "") or "").strip()
 
             for current in items:
                 try:
                     if (
-                        str(getattr(current, "path", "") or "") == old_path
-                        and int(getattr(current, "lineno", 0) or 0) == old_lineno
-                        and str(getattr(current, "name", "") or "").strip() == old_name
+                        str(getattr(current, "path", "") or "") == eski_path
+                        and int(getattr(current, "lineno", 0) or 0) == eski_lineno
+                        and str(getattr(current, "name", "") or "").strip() == eski_name
                     ):
                         return current
                 except Exception:
@@ -363,19 +324,15 @@ class RootSecimAkisiMixin:
         except Exception:
             pass
 
-        # -----------------------------------------------------
-        # FALLBACK 3: PATH + SIGNATURE
-        # -----------------------------------------------------
         try:
-            old_path = str(getattr(old_item, "path", "") or "")
-            old_signature = str(getattr(old_item, "signature", "") or "").strip()
+            eski_path = str(getattr(old_item, "path", "") or "")
+            eski_signature = str(getattr(old_item, "signature", "") or "").strip()
 
             for current in items:
                 try:
                     if (
-                        str(getattr(current, "path", "") or "") == old_path
-                        and str(getattr(current, "signature", "") or "").strip()
-                        == old_signature
+                        str(getattr(current, "path", "") or "") == eski_path
+                        and str(getattr(current, "signature", "") or "").strip() == eski_signature
                     ):
                         return current
                 except Exception:
