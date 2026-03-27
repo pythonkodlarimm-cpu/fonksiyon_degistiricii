@@ -3,36 +3,25 @@
 DOSYA: app/ui/editor_paketi/aksiyon/yoneticisi.py
 
 ROL:
-- Aksiyon alt paketine tek giriş noktası sağlamak
-- Editör panelindeki kullanıcı aksiyonlarını merkezileştirmek
-- Üst katmanın aksiyon modülü detaylarını bilmesini engellemek
-- Aksiyon çağrılarını güvenli ve kontrollü biçimde alt modüle yönlendirmek
-- Yapıştırma dahil editör kontrol paneli aksiyonlarını tek merkezde toplamak
+- Aksiyon alt paketine tek giriş noktası sağlar
+- Editör panelindeki kullanıcı aksiyonlarını merkezileştirir
+- Üst katmanın aksiyon modülü detaylarını bilmesini engeller
+- Aksiyon çağrılarını güvenli biçimde alt modüle yönlendirir
+- Yapıştırma dahil editör kontrol paneli aksiyonlarını tek merkezde toplar
 
 MİMARİ:
 - Üst katman sadece bu yöneticiyi bilir
 - Alt aksiyon modülü doğrudan dışarı açılmaz
-- Kopyalama, yapıştırma, temizleme, doğrulama, güncelleme ve geri yükleme akışlarını toplar
-- Lazy import + cache kullanır
-- Fail-soft yaklaşım için tanılama logu bırakır
-- Cache bozulursa kendini toparlayacak şekilde yeniden resolve yapabilir
-- Fonksiyon haritası doğrulanmadan cache'e alınmaz
-- Cache içindeki harita tekrar çağrılarda yeniden kullanılabilir
-- Hata halinde cache temizlenir ve sonraki çağrıda yeniden yükleme denenir
+- Aksiyon fonksiyonları lazy import ile yüklenir
+- Başarılı yükleme sonrası fonksiyon haritası cache içinde tutulur
+- Fail-soft yaklaşım uygulanır
 
-API UYUMLULUK:
-- Platform bağımsızdır
-- Android API 35 ile uyumludur
-- Doğrudan Android bridge çağrısı içermez
-
-SURUM: 5
-TARIH: 2026-03-26
+SURUM: 6
+TARIH: 2026-03-27
 IMZA: FY.
 """
 
 from __future__ import annotations
-
-import traceback
 
 
 class AksiyonYoneticisi:
@@ -40,96 +29,24 @@ class AksiyonYoneticisi:
     Editör aksiyon modülü için merkezi erişim yöneticisi.
     """
 
-    modul_yolu = "app.ui.editor_paketi.aksiyon.editor_aksiyonlari"
-
     def __init__(self) -> None:
-        self._cached_modul_haritasi = None
-
-    # =========================================================
-    # CACHE
-    # =========================================================
-    def _cache_var_mi(self) -> bool:
-        """
-        Fonksiyon haritası cache'inin geçerli bir dict olup olmadığını kontrol eder.
-
-        Returns:
-            bool
-        """
-        try:
-            return isinstance(self._cached_modul_haritasi, dict)
-        except Exception:
-            return False
-
-    def _cache_temizle(self) -> None:
-        """
-        İç fonksiyon haritası cache'ini temizler.
-        """
-        try:
-            self._cached_modul_haritasi = None
-        except Exception:
-            pass
+        self._fonksiyonlar = None
 
     def cache_temizle(self) -> None:
         """
         Aksiyon fonksiyon cache'ini temizler.
         """
-        self._cache_temizle()
+        self._fonksiyonlar = None
 
-    # =========================================================
-    # VALIDATION
-    # =========================================================
-    def _harita_gecerli_mi(self, harita) -> bool:
+    def _aksiyon_fonksiyonlarini_yukle(self) -> dict:
         """
-        Aksiyon haritasının beklenen anahtarları ve callable değerleri
-        içerip içermediğini doğrular.
-
-        Args:
-            harita: Kontrol edilecek fonksiyon haritası
+        Aksiyon modülündeki fonksiyonları lazy import ile yükler.
 
         Returns:
-            bool
+            dict
         """
-        try:
-            if not isinstance(harita, dict):
-                return False
-
-            gerekli_anahtarlar = (
-                "copy_current_to_new",
-                "paste_new_code",
-                "clear_new_code",
-                "check_new_code",
-                "handle_update",
-                "handle_restore",
-            )
-
-            for anahtar in gerekli_anahtarlar:
-                if anahtar not in harita:
-                    return False
-
-                if not callable(harita.get(anahtar)):
-                    return False
-
-            return True
-        except Exception:
-            return False
-
-    # =========================================================
-    # INTERNAL
-    # =========================================================
-    def _modul(self):
-        """
-        Aksiyon fonksiyon haritasını lazy import + cache ile döndürür.
-
-        Returns:
-            dict[str, callable]
-        """
-        try:
-            if self._cache_var_mi() and self._harita_gecerli_mi(
-                self._cached_modul_haritasi
-            ):
-                return self._cached_modul_haritasi
-        except Exception:
-            self._cache_temizle()
+        if isinstance(self._fonksiyonlar, dict) and self._fonksiyonlar:
+            return self._fonksiyonlar
 
         try:
             from app.ui.editor_paketi.aksiyon.editor_aksiyonlari import (
@@ -140,68 +57,65 @@ class AksiyonYoneticisi:
                 handle_update,
                 paste_new_code,
             )
+        except Exception as exc:
+            print("[EDITOR_AKSIYON] Aksiyon modülü yüklenemedi.")
+            print(exc)
+            self._fonksiyonlar = {}
+            return self._fonksiyonlar
 
-            harita = {
-                "copy_current_to_new": copy_current_to_new,
-                "paste_new_code": paste_new_code,
-                "clear_new_code": clear_new_code,
-                "check_new_code": check_new_code,
-                "handle_update": handle_update,
-                "handle_restore": handle_restore,
-            }
+        self._fonksiyonlar = {
+            "copy_current_to_new": copy_current_to_new,
+            "paste_new_code": paste_new_code,
+            "clear_new_code": clear_new_code,
+            "check_new_code": check_new_code,
+            "handle_update": handle_update,
+            "handle_restore": handle_restore,
+        }
+        return self._fonksiyonlar
 
-            if not self._harita_gecerli_mi(harita):
-                print(
-                    "[EDITOR_AKSIYON_YONETICI] "
-                    "Aksiyon modülü yüklendi ama fonksiyon haritası geçersiz."
-                )
-                self._cache_temizle()
-                raise RuntimeError("Aksiyon fonksiyon haritası geçersiz.")
+    def _fonksiyon(self, ad: str):
+        """
+        Verilen ad için aksiyon fonksiyonunu döndürür.
 
-            self._cached_modul_haritasi = harita
-            return harita
+        Args:
+            ad: Fonksiyon adı
 
+        Returns:
+            callable | None
+        """
+        try:
+            fonksiyon = self._aksiyon_fonksiyonlarini_yukle().get(ad)
+            if callable(fonksiyon):
+                return fonksiyon
         except Exception:
-            print("[EDITOR_AKSIYON_YONETICI] Aksiyon modülü yüklenemedi.")
-            print(traceback.format_exc())
-            self._cache_temizle()
-            raise
+            pass
+        return None
 
     def _cagir(self, aksiyon_adi: str, panel, *_args):
         """
         İstenen aksiyonu güvenli biçimde çağırır.
 
         Args:
-            aksiyon_adi: Çağrılacak aksiyon anahtarı
-            panel: Hedef editor paneli
+            aksiyon_adi: Çağrılacak aksiyon adı
+            panel: Hedef editör paneli
             *_args: Ek argümanlar
 
         Returns:
-            Any
+            Any | None
         """
         try:
-            harita = self._modul()
-            fonksiyon = harita.get(aksiyon_adi)
+            fonksiyon = self._fonksiyon(aksiyon_adi)
+            if callable(fonksiyon):
+                return fonksiyon(panel, *_args)
+        except Exception as exc:
+            print(f"[EDITOR_AKSIYON] {aksiyon_adi} çağrısı başarısız.")
+            print(exc)
+            self.cache_temizle()
+            return None
 
-            if not callable(fonksiyon):
-                raise RuntimeError(
-                    f"Aksiyon bulunamadı veya callable değil: {aksiyon_adi}"
-                )
+        print(f"[EDITOR_AKSIYON] Aksiyon bulunamadı: {aksiyon_adi}")
+        return None
 
-            return fonksiyon(panel, *_args)
-
-        except Exception:
-            print(
-                "[EDITOR_AKSIYON_YONETICI] "
-                f"{aksiyon_adi} çağrısı başarısız."
-            )
-            print(traceback.format_exc())
-            self._cache_temizle()
-            raise
-
-    # =========================================================
-    # PUBLIC API
-    # =========================================================
     def copy_current_to_new(self, panel, *_args):
         """
         Mevcut kodu yeni kod alanına kopyalar.
