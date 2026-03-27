@@ -12,27 +12,13 @@ ROL:
 - Root içindeki oluşturulan UI bileşenlerine ortak ServicesYoneticisi instance'ını güvenli biçimde bağlar
 
 MİMARİ:
-- Dosya/Seçim/Güncelleme/Geri yükleme eski root_paketi mixin'leri korunur
-- Yeni root_akisi modülleri parçalı sorumluluk yaklaşımıyla eklenmiştir
-- UI kurulumu, banner, tarama geçişi, editor state, geçici status, dil akışı ve RAM state akışları
-  alt modüllerden gelir
-- Root sadece üst orkestrasyon ve kalan bağlayıcı metodları içerir
-- Lazy import sistemi alt paketlerde __init__.py ve yonetici.py üzerinden korunur
-- Tek ServicesYoneticisi instance'ı root içinde oluşturulur ve alt UI bileşenlerine enjekte edilir
-- Reklam akışında mevcut davranış korunur; sadece görünürlük ve bağlama tarafı güvenli hale getirilir
-- Dil akışı RootDilAkisiMixin ile birlikte çalışır ve root callback zinciri korunur
+- Root sadece üst orkestrasyon ve bağlayıcı metodları içerir
+- Alt modüllerden gelen akışları birleştirir
+- Tek ServicesYoneticisi instance'ı root içinde oluşturulur
+- Çeviri akışı root üzerindeki _m(...) hattı ile korunur
 - App state akışı RAM öncelikli, gerekirse disk fallback ile çalışır
 
-NOTLAR:
-- Android dışı platformlarda banner / interstitial akışları güvenli biçimde pas geçilir
-- Root method adları mevcut sistemle geriye uyumlu tutulmuştur
-- Reklam görünürlüğü için mevcut başlangıç akışı korunur; yalnızca fail-soft wrapper ve
-  ortak services bağlama desteği güçlendirilmiştir
-- Dil değişiminde hem doğrudan hem de schedule_once tabanlı tekrar refresh uygulanır
-- UI kurulduktan sonra restore denenir
-- Resume dönüşünde services bağlama + dil yenileme + state restore zinciri tekrar tetiklenebilir
-
-SURUM: 73
+SURUM: 74
 TARIH: 2026-03-27
 IMZA: FY.
 """
@@ -60,21 +46,15 @@ from app.ui.root_paketi.bagimlilik.lazy_imports import RootLazyImportsMixin
 from app.ui.root_paketi.durum.status import RootStatusMixin
 from app.ui.root_paketi.kaydirma.scroll import RootScrollMixin
 from app.ui.root_paketi.yardimci.yardimcilari import RootYardimcilariMixin
-from .root_akisi.app_state_kaydet_geri_yukle import (
-    RootAppStateKaydetGeriYukleMixin,
-)
+from .root_akisi.app_state_kaydet_geri_yukle import RootAppStateKaydetGeriYukleMixin
 from .root_akisi.banner_akisi import RootBannerAkisiMixin
 from .root_akisi.dil_akisi import RootDilAkisiMixin
 from .root_akisi.dil_yardimcilari import RootDilYardimcilariMixin
 from .root_akisi.editor_state import RootEditorStateMixin
 from .root_akisi.gecici_status import RootGeciciStatusMixin
-from .root_akisi.gecis_reklami_on_yukleme import (
-    RootGecisReklamiOnYuklemeMixin,
-)
+from .root_akisi.gecis_reklami_on_yukleme import RootGecisReklamiOnYuklemeMixin
 from .root_akisi.sistem_ve_app_state import RootSistemVeAppStateMixin
-from .root_akisi.tarama_gecis_ve_liste_acma import (
-    RootTaramaGecisVeListeAcmaMixin,
-)
+from .root_akisi.tarama_gecis_ve_liste_acma import RootTaramaGecisVeListeAcmaMixin
 from .root_akisi.ui_kurulumu import RootUiKurulumuMixin
 
 
@@ -101,8 +81,6 @@ class RootWidget(
 ):
     """
     Uygulamanın ana root widget'ı.
-
-    Alt modüllerden gelen akışları tek yerde birleştirir.
     """
 
     def __init__(self, **kwargs):
@@ -162,7 +140,7 @@ class RootWidget(
         self._scan_transition_busy = False
 
         self._update_cta_visible = False
-        self._update_state: dict = {}
+        self._update_state = {}
         self._update_check_in_progress = False
 
         try:
@@ -173,7 +151,7 @@ class RootWidget(
         try:
             self._build_ui()
             self._bind_services_to_ui()
-            self._full_language_refresh()
+            self._run_language_refresh_pipeline()
             self.set_status_info(self._m("app_ready", "Hazır."), "onaylandi.png")
 
             Clock.schedule_once(self._post_build_refresh, 0.08)
@@ -189,22 +167,12 @@ class RootWidget(
             self.add_widget(self._build_fallback_error_ui(hata))
 
     # =========================================================
-    # UI <-> SERVICES BAGLAMA
+    # UI <-> SERVICES BAĞLAMA
     # =========================================================
     def _bind_service_to_widget(self, widget) -> bool:
         """
-        Verilen widget üzerinde services alanı varsa root'taki ortak
-        ServicesYoneticisi instance'ını bağlar.
-
-        Not:
-        - Widget services alanı expose etmiyorsa sessizce geçilir
-        - Mevcut davranışı bozmamak için zorlayıcı yapı kullanılmaz
-
-        Args:
-            widget: Services bağlanacak hedef widget
-
-        Returns:
-            bool: Başarılı bağlandıysa True
+        Widget üzerinde services alanı veya set_services metodu varsa
+        root içindeki ortak ServicesYoneticisi instance'ını bağlar.
         """
         if widget is None:
             return False
@@ -224,9 +192,9 @@ class RootWidget(
             pass
 
         try:
-            setter = getattr(widget, "set_services", None)
-            if callable(setter):
-                setter(self.services)
+            set_services = getattr(widget, "set_services", None)
+            if callable(set_services):
+                set_services(self.services)
                 return True
         except Exception:
             pass
@@ -237,64 +205,27 @@ class RootWidget(
         """
         Root içindeki ana UI bileşenlerine ortak services instance'ını bağlar.
         """
-        try:
-            self._bind_service_to_widget(self.file_access_panel)
-        except Exception:
-            pass
-
-        try:
-            self._bind_service_to_widget(self.dosya_secici)
-        except Exception:
-            pass
-
-        try:
-            self._bind_service_to_widget(self.function_list)
-        except Exception:
-            pass
-
-        try:
-            self._bind_service_to_widget(self.editor)
-        except Exception:
-            pass
-
-        try:
-            self._bind_service_to_widget(self.status)
-        except Exception:
-            pass
-
-        try:
-            self._bind_service_to_widget(self.version_wrap)
-        except Exception:
-            pass
-
-        try:
-            self._bind_service_to_widget(self.version_label)
-        except Exception:
-            pass
-
-        try:
-            self._bind_service_to_widget(self.bottom_bar)
-        except Exception:
-            pass
-
-        try:
-            self._bind_service_to_widget(self.main_root)
-        except Exception:
-            pass
-
-        try:
-            self._bind_service_to_widget(self.main_column)
-        except Exception:
-            pass
-
-        try:
-            self._bind_service_to_widget(self.scroll)
-        except Exception:
-            pass
+        for widget in (
+            self.file_access_panel,
+            self.dosya_secici,
+            self.function_list,
+            self.editor,
+            self.status,
+            self.version_wrap,
+            self.version_label,
+            self.bottom_bar,
+            self.main_root,
+            self.main_column,
+            self.scroll,
+        ):
+            try:
+                self._bind_service_to_widget(widget)
+            except Exception:
+                continue
 
     def _rebinding_ui_services_after_layout(self, *_args) -> None:
         """
-        UI layout kurulduktan kısa süre sonra services bağını tekrar doğrular.
+        Layout kurulduktan kısa süre sonra services bağını tekrar doğrular.
         """
         try:
             self._bind_services_to_ui()
@@ -307,11 +238,6 @@ class RootWidget(
     def _run_language_refresh_pipeline(self) -> None:
         """
         Dil değişimi veya resume sonrası ortak UI yenileme zinciri.
-
-        Bu zincir:
-        - services bağlarını yeniler
-        - çeviri cache'ini temizler
-        - görünür UI metinlerini tazeler
         """
         try:
             self._bind_services_to_ui()
@@ -332,8 +258,7 @@ class RootWidget(
 
     def _schedule_language_refresh_burst(self) -> None:
         """
-        Dil değişimi sonrası anlık UI güncellenmesi için kısa aralıklı
-        tekrar yenileme zinciri çalıştırır.
+        Dil değişimi sonrası kısa aralıklı tekrar refresh zinciri çalıştırır.
         """
         try:
             if self._language_refresh_scheduled:
@@ -388,11 +313,6 @@ class RootWidget(
     def resume_sonrasi_yenile(self, *_args) -> None:
         """
         Uygulama arka plandan geri geldiğinde UI zincirini yeniler.
-
-        Bu metod:
-        - services bağlarını tazeler
-        - dil cache / UI refresh akışını tekrar çalıştırır
-        - gerekiyorsa state restore'u yeniden dener
         """
         try:
             self._run_language_refresh_pipeline()
@@ -419,8 +339,7 @@ class RootWidget(
 
     def uygulama_resume_akisini_tetikle(self) -> None:
         """
-        main.py veya başka bir üst akıştan güvenli resume çağrısı almak için
-        ortak giriş noktasıdır.
+        Dış akışlardan güvenli resume çağrısı almak için ortak giriş noktasıdır.
         """
         try:
             if self._resume_refresh_scheduled:
@@ -453,7 +372,7 @@ class RootWidget(
     # =========================================================
     def _try_preload_interstitial(self, *_args) -> None:
         """
-        Geçiş reklamı preload akışını fail-soft şekilde başlatır.
+        Geçiş reklamı preload akışını fail-soft biçimde başlatır.
         """
         try:
             self._preload_interstitial()
@@ -467,9 +386,6 @@ class RootWidget(
     def _on_language_changed(self, code: str = "") -> None:
         """
         Dil değişimi callback akışını yönetir.
-
-        Args:
-            code: Yeni dil kodu.
         """
         temiz_kod = str(code or "").strip()
 
@@ -508,10 +424,7 @@ class RootWidget(
             pass
 
         try:
-            Clock.schedule_once(
-                lambda *_: self.uygulama_resume_akisini_tetikle(),
-                0.05,
-            )
+            Clock.schedule_once(lambda *_: self.uygulama_resume_akisini_tetikle(), 0.05)
         except Exception:
             pass
 
@@ -532,9 +445,6 @@ class RootWidget(
     def _current_app_version(self) -> str:
         """
         Mevcut uygulama sürüm metnini döndürür.
-
-        Returns:
-            str
         """
         try:
             return str(self.app_version_text or "").strip()
@@ -578,9 +488,6 @@ class RootWidget(
     def _apply_update_check_result(self, result: dict) -> None:
         """
         Güncelleme kontrol sonucunu root state ve status CTA'ya uygular.
-
-        Args:
-            result: Services katmanından gelen sürüm kontrol çıktısı.
         """
         self._update_check_in_progress = False
 
@@ -609,9 +516,6 @@ class RootWidget(
     def _show_update_cta(self, force: bool = False) -> None:
         """
         Status üzerinde güncelleme CTA aksiyonu gösterir.
-
-        Args:
-            force: Zorunlu güncelleme durumu.
         """
         if self._pending_scan_ready:
             return
@@ -627,15 +531,13 @@ class RootWidget(
         try:
             if self.status is not None and hasattr(self.status, "set_action"):
                 self.status.set_action(
-                    text=mesaj
-                    or self._m("new_version_available", "Yeni sürüm mevcut."),
+                    text=mesaj or self._m("new_version_available", "Yeni sürüm mevcut."),
                     button_text=self.services.guncelleme_buton_metni(),
                     callback=self._open_play_store_for_update,
                     icon_name="warning.png",
                     tone="warning",
                 )
                 self._update_cta_visible = True
-                print("[ROOT] Güncelleme CTA gösterildi.")
         except Exception:
             print("[ROOT] Güncelleme CTA gösterilemedi.")
             print(traceback.format_exc())
@@ -645,6 +547,7 @@ class RootWidget(
         Status üzerindeki güncelleme CTA aksiyonunu temizler.
         """
         self._update_cta_visible = False
+
         try:
             if (
                 self.status is not None
