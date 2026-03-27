@@ -3,33 +3,23 @@
 DOSYA: app/ui/editor_paketi/panel/editor_paneli.py
 
 ROL:
-- Editör panelinin ana UI organizatörü
+- Editör panelinin ana UI organizatörüdür
 - Mevcut kod, yeni kod ve aksiyon alanlarını bir araya getirir
 - Aksiyon, bildirim, popup, doğrulama ve yardımcı akışları ilgili yöneticiler üzerinden yürütür
-- Büyük kod içeriklerinde UI donmasını azaltmak için içerik yüklemeyi sade ve güvenli şekilde erteler
+- Büyük kod içeriklerinde UI donmasını azaltmak için içerik yüklemeyi güvenli biçimde erteler
 - Üst katmanların editör iç yapısını bilmeden metin okuyup yazabilmesi için public text API sağlar
-- Android restore akışında eksik item / geç zamanlama kaynaklı UI çökmesini azaltır
 - Aktif dile göre görünür metinleri üretir ve yeniler
-- Yeni kod alanı için araç çubuğunda doğrudan yapıştır aksiyonu sağlar
 
 MİMARİ:
 - Alt modüllere doğrudan erişmez
-- Sadece ilgili alt paket yöneticileri ile konuşur
+- İlgili alt paket yöneticileri ile konuşur
 - UI burada, iş akışı yöneticiler ve alt modüllerdedir
-- Davranış korunur, bağımlılık yapısı sadeleştirilmiştir
-- set_item akışı tek bir ertelenmiş yükleme ile stabil tutulur
-- Root ve diğer üst katmanlar editör iç widget yapısını bilmeden public API üzerinden içerik okuyup yazabilir
+- set_item akışı tek ertelenmiş yükleme ile stabil tutulur
+- Root ve diğer üst katmanlar public API üzerinden içerik okuyup yazabilir
 - Widget hazır değilken veya item eksik gelirse güvenli fallback uygulanır
-- Kullanıcıya görünen metinler services -> sistem -> dil_servisi zincirinden alınır
-- Yapıştırma butonu mevcut Android uzun bas -> yapıştır davranışına yakın çalışan aksiyon yöneticisine bağlanır
 
-API UYUMLULUK:
-- Platform bağımsızdır
-- Android API 35 ile uyumludur
-- Doğrudan Android bridge çağrısı içermez
-
-SURUM: 34
-TARIH: 2026-03-26
+SURUM: 35
+TARIH: 2026-03-27
 IMZA: FY.
 """
 
@@ -120,86 +110,82 @@ class EditorPaneli(BoxLayout):
 
     def refresh_language(self) -> None:
         try:
-            if self.path_label is not None:
-                if self.current_item is None:
-                    self.path_label.set_text(
-                        self._m("selected_function", "Seçili fonksiyon: -")
-                    )
-                else:
-                    self.path_label.set_text(
-                        f"{self._selected_function_prefix()}: "
-                        f"{self._item_path_text(self.current_item)}"
-                    )
+            self._refresh_path_label_language()
         except Exception:
             pass
 
         try:
-            if self.current_title is not None:
-                if hasattr(self.current_title, "set_text") and callable(
-                    self.current_title.set_text
-                ):
-                    self.current_title.set_text(
-                        self._m("current_code", "Mevcut Kod")
-                    )
-                elif hasattr(self.current_title, "text"):
-                    self.current_title.text = self._m("current_code", "Mevcut Kod")
+            self._refresh_title_widgets_language()
         except Exception:
             pass
 
         try:
-            if self.new_title is not None:
-                if hasattr(self.new_title, "set_text") and callable(
-                    self.new_title.set_text
-                ):
-                    self.new_title.set_text(
-                        self._m("new_function_code", "Yeni Fonksiyon Kodu")
-                    )
-                elif hasattr(self.new_title, "text"):
-                    self.new_title.text = self._m(
-                        "new_function_code",
-                        "Yeni Fonksiyon Kodu",
-                    )
+            self._refresh_code_areas_language()
         except Exception:
             pass
 
         try:
-            if self.current_open_tool is not None:
-                if hasattr(self.current_open_tool, "set_text") and callable(
-                    self.current_open_tool.set_text
-                ):
-                    self.current_open_tool.set_text(self._m("open", "Aç"))
-                elif hasattr(self.current_open_tool, "text"):
-                    self.current_open_tool.text = self._m("open", "Aç")
+            if self.error_box is not None and hasattr(self.error_box, "refresh_language"):
+                self.error_box.refresh_language()
         except Exception:
             pass
 
         try:
-            if self.new_edit_tool is not None:
-                if hasattr(self.new_edit_tool, "set_text") and callable(
-                    self.new_edit_tool.set_text
-                ):
-                    self.new_edit_tool.set_text(self._m("edit", "Düzenle"))
-                elif hasattr(self.new_edit_tool, "text"):
-                    self.new_edit_tool.text = self._m("edit", "Düzenle")
+            if self.inline_notice is not None and hasattr(self.inline_notice, "refresh_language"):
+                self.inline_notice.refresh_language()
         except Exception:
             pass
 
+        try:
+            self._refresh_action_toolbar_language()
+        except Exception:
+            pass
+
+    def _refresh_path_label_language(self) -> None:
+        if self.path_label is None:
+            return
+
+        try:
+            if self.current_item is None:
+                self.path_label.set_text(
+                    self._m("selected_function", "Seçili fonksiyon: -")
+                )
+            else:
+                self.path_label.set_text(
+                    f"{self._selected_function_prefix()}: {self._item_path_text(self.current_item)}"
+                )
+        except Exception:
+            pass
+
+    def _refresh_title_widgets_language(self) -> None:
+        self._set_text_on_widget(
+            self.current_title,
+            self._m("current_code", "Mevcut Kod"),
+        )
+        self._set_text_on_widget(
+            self.new_title,
+            self._m("new_function_code", "Yeni Fonksiyon Kodu"),
+        )
+        self._set_text_on_widget(
+            self.current_open_tool,
+            self._m("open", "Aç"),
+        )
+        self._set_text_on_widget(
+            self.new_edit_tool,
+            self._m("edit", "Düzenle"),
+        )
+
+    def _refresh_code_areas_language(self) -> None:
         try:
             if self.current_code_area is not None:
                 if hasattr(self.current_code_area, "refresh_language") and callable(
                     self.current_code_area.refresh_language
                 ):
                     self.current_code_area.refresh_language()
-                elif hasattr(self.current_code_area, "set_hint_text") and callable(
-                    self.current_code_area.set_hint_text
-                ):
-                    self.current_code_area.set_hint_text(
-                        self._m("preview_empty", "Henüz önizleme yok.")
-                    )
-                elif hasattr(self.current_code_area, "hint_text"):
-                    self.current_code_area.hint_text = self._m(
-                        "preview_empty",
-                        "Henüz önizleme yok.",
+                else:
+                    self._set_hint_text_on_widget(
+                        self.current_code_area,
+                        self._m("preview_empty", "Henüz önizleme yok."),
                     )
         except Exception:
             pass
@@ -210,43 +196,14 @@ class EditorPaneli(BoxLayout):
                     self.new_code_area.refresh_language
                 ):
                     self.new_code_area.refresh_language()
-                elif hasattr(self.new_code_area, "set_hint_text") and callable(
-                    self.new_code_area.set_hint_text
-                ):
-                    self.new_code_area.set_hint_text(
+                else:
+                    self._set_hint_text_on_widget(
+                        self.new_code_area,
                         self._m(
                             "new_function_hint",
                             "Tam fonksiyon kodunu buraya yaz veya yapıştır.",
-                        )
+                        ),
                     )
-                elif hasattr(self.new_code_area, "hint_text"):
-                    self.new_code_area.hint_text = self._m(
-                        "new_function_hint",
-                        "Tam fonksiyon kodunu buraya yaz veya yapıştır.",
-                    )
-        except Exception:
-            pass
-
-        try:
-            if self.error_box is not None and hasattr(
-                self.error_box,
-                "refresh_language",
-            ):
-                self.error_box.refresh_language()
-        except Exception:
-            pass
-
-        try:
-            if self.inline_notice is not None and hasattr(
-                self.inline_notice,
-                "refresh_language",
-            ):
-                self.inline_notice.refresh_language()
-        except Exception:
-            pass
-
-        try:
-            self._refresh_action_toolbar_language()
         except Exception:
             pass
 
@@ -261,15 +218,7 @@ class EditorPaneli(BoxLayout):
         ]
 
         for tool, key, default in tool_map:
-            try:
-                if tool is None:
-                    continue
-                if hasattr(tool, "set_text") and callable(tool.set_text):
-                    tool.set_text(self._m(key, default))
-                elif hasattr(tool, "text"):
-                    tool.text = self._m(key, default)
-            except Exception:
-                pass
+            self._set_text_on_widget(tool, self._m(key, default))
 
     # =========================================================
     # YONETICILER
@@ -513,25 +462,13 @@ class EditorPaneli(BoxLayout):
         self.current_item = None
         self._new_code_buffer = ""
 
-        try:
-            if self.path_label is not None:
-                self.path_label.set_text(
-                    self._m("selected_function", "Seçili fonksiyon: -")
-                )
-        except Exception:
-            pass
+        self._set_text_on_widget(
+            self.path_label,
+            self._m("selected_function", "Seçili fonksiyon: -"),
+        )
 
-        try:
-            if self.current_code_area is not None:
-                self.current_code_area.text = ""
-        except Exception:
-            pass
-
-        try:
-            if self.new_code_area is not None:
-                self.new_code_area.text = ""
-        except Exception:
-            pass
+        self._set_text_on_widget(self.current_code_area, "")
+        self._set_text_on_widget(self.new_code_area, "")
 
         try:
             if self.inline_notice is not None:
@@ -633,6 +570,40 @@ class EditorPaneli(BoxLayout):
             return text_value.split(":", 1)[0].strip()
         return text_value.strip() or self._m("selected_prefix", "Seçildi")
 
+    def _set_text_on_widget(self, widget, text: str) -> None:
+        if widget is None:
+            return
+
+        try:
+            if hasattr(widget, "set_text") and callable(widget.set_text):
+                widget.set_text(str(text or ""))
+                return
+        except Exception:
+            pass
+
+        try:
+            if hasattr(widget, "text"):
+                widget.text = str(text or "")
+        except Exception:
+            pass
+
+    def _set_hint_text_on_widget(self, widget, text: str) -> None:
+        if widget is None:
+            return
+
+        try:
+            if hasattr(widget, "set_hint_text") and callable(widget.set_hint_text):
+                widget.set_hint_text(str(text or ""))
+                return
+        except Exception:
+            pass
+
+        try:
+            if hasattr(widget, "hint_text"):
+                widget.hint_text = str(text or "")
+        except Exception:
+            pass
+
     # =========================================================
     # KOD
     # =========================================================
@@ -647,12 +618,15 @@ class EditorPaneli(BoxLayout):
             if self.new_code_area is not None:
                 self.new_code_area.text = metin
                 self.new_code_area.scroll_to_top()
+                return
         except Exception:
-            try:
-                if self.new_code_area is not None:
-                    self.new_code_area.text = metin
-            except Exception:
-                pass
+            pass
+
+        try:
+            if self.new_code_area is not None:
+                self.new_code_area.text = metin
+        except Exception:
+            pass
 
     def set_item(self, item) -> None:
         self._cancel_pending_set_item()
@@ -678,37 +652,21 @@ class EditorPaneli(BoxLayout):
             except Exception:
                 pass
 
-            try:
-                if self.path_label is not None:
-                    self.path_label.set_text(
-                        self._m("selected_function", "Seçili fonksiyon: -")
-                    )
-            except Exception:
-                pass
-
-            try:
-                if self.current_code_area is not None:
-                    self.current_code_area.text = ""
-            except Exception:
-                pass
-
-            try:
-                if self.new_code_area is not None:
-                    self.new_code_area.text = ""
-            except Exception:
-                pass
+            self._set_text_on_widget(
+                self.path_label,
+                self._m("selected_function", "Seçili fonksiyon: -"),
+            )
+            self._set_text_on_widget(self.current_code_area, "")
+            self._set_text_on_widget(self.new_code_area, "")
 
             self._new_code_buffer = ""
             self.refresh_language()
             return
 
-        try:
-            if self.path_label is not None:
-                self.path_label.set_text(
-                    f"{self._selected_function_prefix()}: {yeni_path}"
-                )
-        except Exception:
-            pass
+        self._set_text_on_widget(
+            self.path_label,
+            f"{self._selected_function_prefix()}: {yeni_path}",
+        )
 
         if onceki_path != yeni_path:
             self._new_code_buffer = ""
@@ -746,21 +704,8 @@ class EditorPaneli(BoxLayout):
             except Exception:
                 new_text = new_buffer_raw
 
-            try:
-                self.current_code_area.text = str(current_text or "")
-            except Exception:
-                try:
-                    self.current_code_area.text = ""
-                except Exception:
-                    pass
-
-            try:
-                self.new_code_area.text = str(new_text or "")
-            except Exception:
-                try:
-                    self.new_code_area.text = ""
-                except Exception:
-                    pass
+            self._set_text_on_widget(self.current_code_area, str(current_text or ""))
+            self._set_text_on_widget(self.new_code_area, str(new_text or ""))
 
             try:
                 self.current_code_area.scroll_to_top()
