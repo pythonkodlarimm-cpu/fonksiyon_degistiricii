@@ -3,34 +3,22 @@
 DOSYA: app/ui/editor_paketi/aksiyon/editor_aksiyonlari.py
 
 ROL:
-- Editör panelindeki kullanıcı aksiyonlarını yürütmek
-- Kopyalama, yapıştırma, temizleme, doğrulama, güncelleme ve geri yükleme akışlarını yönetmek
-- Bildirim ve durum güncellemelerini ilgili yöneticiler üzerinden tetiklemek
-- Aktif dile göre kullanıcıya görünen metinleri üretmek
-- Android tarafında editörün yerel yapıştırma davranışına en yakın akışı güvenli fallback zinciriyle uygulamak
-- Panodan gelen görünmeyen/bozuk karakterleri temizleyerek kontrol aşamasında sahte doğrulama hatalarını azaltmak
-- Native paste başarılı olsa bile son metni normalize edip editör alanını güvenli biçimde tek parça yeniden yazmak
+- Editör panelindeki kullanıcı aksiyonlarını yürütür
+- Kopyalama, yapıştırma, temizleme, doğrulama, güncelleme ve geri yükleme akışlarını yönetir
+- Bildirim ve durum güncellemelerini ilgili yöneticiler üzerinden tetikler
+- Aktif dile göre kullanıcıya görünen metinleri üretir
+- Panodan gelen görünmeyen / bozucu karakterleri temizler
+- Yapıştırma akışında güvenli fallback zinciri uygular
 
 MİMARİ:
 - Doğrudan üst katman tarafından değil, aksiyon/yoneticisi.py üzerinden kullanılmalıdır
 - Doğrulama ve yardımcı akışlar alt paket yöneticileri üzerinden çağrılır
 - Panel davranışı korunur
-- UI ile iş akışı ayrımı güçlendirilmiştir
-- Görünen metinler panel/services üzerinden çözülebilir
-- Low-level doğrulama mesajı UI katmanında kullanıcı diliyle sunulabilir
-- Başarı metinlerinde placeholder çözümü güvenli biçimde yapılır
-- Callback sonucu False dönerse başarı bildirimi verilmez
-- Yapıştırma akışında önce widget yerel paste davranışı, sonra insert, en son güvenli text fallback denenir
-- Native paste sonrası bile içerik normalize edilerek editör alanı güvenli biçimde yeniden yazılır
-- Kontrol paneli yapıştırması ile popup yapıştırması aynı normalize mantığına yakın olacak şekilde sadeleştirilmiştir
+- Çeviri metinleri panel._m(...) hattından çözülür
+- Fail-soft yaklaşım korunur
 
-API UYUMLULUK:
-- Platform bağımsızdır
-- Android API 35 ile uyumludur
-- Doğrudan Android bridge çağrısı içermez
-
-SURUM: 8
-TARIH: 2026-03-26
+SURUM: 9
+TARIH: 2026-03-27
 IMZA: FY.
 """
 
@@ -47,26 +35,38 @@ _YARDIMCI = YardimciYoneticisi()
 
 
 def _m(panel, anahtar: str, default: str = "") -> str:
+    """
+    Panel üzerindeki çeviri hattını kullanır.
+    """
     try:
-        if panel is not None and hasattr(panel, "_m"):
-            return str(panel._m(anahtar, default) or default or anahtar)
+        metod = getattr(panel, "_m", None)
+        if callable(metod):
+            return str(metod(anahtar, default) or default or anahtar)
     except Exception:
         pass
     return str(default or anahtar)
 
 
 def _safe_scroll_to_top(widget) -> None:
+    """
+    Widget içinde mümkünse en üste kaydırır.
+    """
     try:
-        if widget is not None and hasattr(widget, "scroll_to_top"):
-            widget.scroll_to_top()
+        metod = getattr(widget, "scroll_to_top", None)
+        if callable(metod):
+            metod()
     except Exception:
         pass
 
 
 def _safe_scroll_to_end(widget) -> None:
+    """
+    Widget içinde mümkünse en alta kaydırır.
+    """
     try:
-        if widget is not None and hasattr(widget, "scroll_to_bottom"):
-            widget.scroll_to_bottom()
+        metod = getattr(widget, "scroll_to_bottom", None)
+        if callable(metod):
+            metod()
             return
     except Exception:
         pass
@@ -79,6 +79,9 @@ def _safe_scroll_to_end(widget) -> None:
 
 
 def _current_item_display_text(panel) -> str:
+    """
+    Mevcut item için kullanıcıya gösterilecek metni döndürür.
+    """
     try:
         return str(_YARDIMCI.current_item_display(panel) or "").strip() or "-"
     except Exception:
@@ -86,6 +89,9 @@ def _current_item_display_text(panel) -> str:
 
 
 def _resolve_template_text(panel, anahtar: str, default: str = "", **values) -> str:
+    """
+    Çeviri metni içindeki placeholder alanlarını güvenli şekilde doldurur.
+    """
     metin = _m(panel, anahtar, default)
 
     try:
@@ -99,8 +105,7 @@ def _resolve_template_text(panel, anahtar: str, default: str = "", **values) -> 
 
 def _normalize_clipboard_text(value) -> str:
     """
-    Android pano içeriğinde gelebilen görünmeyen / bozucu karakterleri temizler.
-    Native paste davranışına yaklaşmak için metni mümkün olduğunca sadeleştirir.
+    Panodan gelen metni görünmeyen / bozucu karakterlerden temizler.
     """
     try:
         metin = str(value or "")
@@ -142,14 +147,9 @@ def _normalize_clipboard_text(value) -> str:
 
         for satir in satirlar:
             try:
-                temiz_satir = str(satir or "")
+                temiz_satir = str(satir or "").rstrip()
             except Exception:
                 temiz_satir = ""
-
-            try:
-                temiz_satir = temiz_satir.rstrip()
-            except Exception:
-                pass
 
             temiz_satirlar.append(temiz_satir)
 
@@ -172,6 +172,9 @@ def _normalize_clipboard_text(value) -> str:
 
 
 def _get_new_code_widget(panel):
+    """
+    Yeni kod alanı widget'ını döndürür.
+    """
     try:
         return getattr(panel, "new_code_area", None)
     except Exception:
@@ -179,6 +182,9 @@ def _get_new_code_widget(panel):
 
 
 def _focus_widget(widget) -> None:
+    """
+    Mümkünse widget veya iç editörü odaklar.
+    """
     if widget is None:
         return
 
@@ -190,28 +196,32 @@ def _focus_widget(widget) -> None:
     except Exception:
         pass
 
-    for attr_name in ("focus",):
-        try:
-            if hasattr(widget, attr_name):
-                setattr(widget, attr_name, True)
-                return
-        except Exception:
-            pass
+    try:
+        if hasattr(widget, "focus"):
+            widget.focus = True
+            return
+    except Exception:
+        pass
 
     try:
-        if hasattr(widget, "editor_input") and widget.editor_input is not None:
-            widget.editor_input.focus = True
+        editor_input = getattr(widget, "editor_input", None)
+        if editor_input is not None:
+            editor_input.focus = True
     except Exception:
         pass
 
 
 def _get_widget_text(widget) -> str:
+    """
+    Widget içindeki mevcut metni uyumlu biçimde okur.
+    """
     if widget is None:
         return ""
 
     try:
-        if hasattr(widget, "editor") and widget.editor is not None:
-            return str(getattr(widget.editor, "text", "") or "")
+        editor = getattr(widget, "editor", None)
+        if editor is not None:
+            return str(getattr(editor, "text", "") or "")
     except Exception:
         pass
 
@@ -221,11 +231,12 @@ def _get_widget_text(widget) -> str:
             if callable(method):
                 return str(method() or "")
         except Exception:
-            pass
+            continue
 
     try:
-        if hasattr(widget, "editor_input") and widget.editor_input is not None:
-            return str(getattr(widget.editor_input, "text", "") or "")
+        editor_input = getattr(widget, "editor_input", None)
+        if editor_input is not None:
+            return str(getattr(editor_input, "text", "") or "")
     except Exception:
         pass
 
@@ -234,22 +245,25 @@ def _get_widget_text(widget) -> str:
             if hasattr(widget, attr_name):
                 return str(getattr(widget, attr_name, "") or "")
         except Exception:
-            pass
+            continue
 
     return ""
 
 
 def _set_widget_text(widget, text: str) -> bool:
+    """
+    Widget içine metin yazmayı dener.
+    """
     if widget is None:
         return False
 
     temiz = str(text or "")
 
     try:
-        if hasattr(widget, "editor") and widget.editor is not None:
-            if hasattr(widget.editor, "text"):
-                widget.editor.text = temiz
-                return True
+        editor = getattr(widget, "editor", None)
+        if editor is not None and hasattr(editor, "text"):
+            editor.text = temiz
+            return True
     except Exception:
         pass
 
@@ -260,13 +274,13 @@ def _set_widget_text(widget, text: str) -> bool:
                 method(temiz)
                 return True
         except Exception:
-            pass
+            continue
 
     try:
-        if hasattr(widget, "editor_input") and widget.editor_input is not None:
-            if hasattr(widget.editor_input, "text"):
-                widget.editor_input.text = temiz
-                return True
+        editor_input = getattr(widget, "editor_input", None)
+        if editor_input is not None and hasattr(editor_input, "text"):
+            editor_input.text = temiz
+            return True
     except Exception:
         pass
 
@@ -276,15 +290,14 @@ def _set_widget_text(widget, text: str) -> bool:
                 setattr(widget, attr_name, temiz)
                 return True
         except Exception:
-            pass
+            continue
 
     return False
 
 
 def _try_widget_native_paste(widget) -> bool:
     """
-    Widget'ın kendi yerel paste akışını çağırmayı dener.
-    Android uzun bas -> Paste davranışına en yakın adımdır.
+    Widget'ın kendi yerel paste davranışını çağırmayı dener.
     """
     if widget is None:
         return False
@@ -308,13 +321,10 @@ def _try_widget_native_paste(widget) -> bool:
                             method()
                             return True
                         except TypeError:
-                            try:
-                                method(None)
-                                return True
-                            except Exception:
-                                pass
+                            method(None)
+                            return True
                 except Exception:
-                    pass
+                    continue
     except Exception:
         pass
 
@@ -326,13 +336,10 @@ def _try_widget_native_paste(widget) -> bool:
                     method()
                     return True
                 except TypeError:
-                    try:
-                        method(None)
-                        return True
-                    except Exception:
-                        pass
+                    method(None)
+                    return True
         except Exception:
-            pass
+            continue
 
     try:
         editor_input = getattr(widget, "editor_input", None)
@@ -345,13 +352,10 @@ def _try_widget_native_paste(widget) -> bool:
                             method()
                             return True
                         except TypeError:
-                            try:
-                                method(None)
-                                return True
-                            except Exception:
-                                pass
+                            method(None)
+                            return True
                 except Exception:
-                    pass
+                    continue
     except Exception:
         pass
 
@@ -360,7 +364,7 @@ def _try_widget_native_paste(widget) -> bool:
 
 def _try_widget_insert_text(widget, text: str) -> bool:
     """
-    Widget/TextInput insert_text akışını dener.
+    Widget / TextInput insert_text akışını dener.
     """
     if widget is None:
         return False
@@ -419,7 +423,7 @@ def _clipboard_text() -> str:
             if metin:
                 return metin
         except Exception:
-            pass
+            continue
 
     try:
         metin = Clipboard.paste()
@@ -435,7 +439,6 @@ def _clipboard_text() -> str:
 def _panel_set_new_code(panel, text: str) -> bool:
     """
     Panelin kendi güvenli set akışını kullanır.
-    Bu sayede editör alanı normalize + scroll davranışıyla güncellenir.
     """
     try:
         temiz = _DOGRULAMA.normalize_code_text(
@@ -446,8 +449,9 @@ def _panel_set_new_code(panel, text: str) -> bool:
         temiz = _normalize_clipboard_text(text)
 
     try:
-        if panel is not None and hasattr(panel, "_set_new_code"):
-            panel._set_new_code(temiz)
+        metod = getattr(panel, "_set_new_code", None)
+        if callable(metod):
+            metod(temiz)
             return True
     except Exception:
         pass
@@ -464,9 +468,7 @@ def _panel_set_new_code(panel, text: str) -> bool:
 
 def _write_clipboard_text_safely(panel, widget, clipboard_text: str) -> bool:
     """
-    En güvenli yapıştırma davranışı:
-    - Panodaki metni normalize et
-    - Panelin kendi set akışıyla tek parça yaz
+    Panodaki metni normalize edip güvenli biçimde yazar.
     """
     try:
         temiz = _normalize_clipboard_text(clipboard_text)
@@ -492,7 +494,36 @@ def _write_clipboard_text_safely(panel, widget, clipboard_text: str) -> bool:
     return False
 
 
+def _show_paste_success(panel, widget, detay_key: str, detay_default: str) -> None:
+    """
+    Yapıştırma başarı bildirimlerini tek yerde toplar.
+    """
+    _YARDIMCI.set_status_success(
+        panel,
+        _m(panel, "clipboard_pasted", "Pano içeriği yapıştırıldı."),
+        0,
+    )
+    _YARDIMCI.show_inline_notice(
+        panel,
+        title=_m(panel, "paste_completed", "Yapıştırma tamamlandı"),
+        text=_m(panel, detay_key, detay_default),
+        icon_name="yapistir.png",
+        tone="success",
+        duration=3.6,
+        on_tap=lambda: _safe_scroll_to_end(widget),
+    )
+    _YARDIMCI.toast(
+        text=_m(panel, "clipboard_pasted", "Pano içeriği yapıştırıldı."),
+        icon_name="yapistir.png",
+        duration=2.2,
+        panel=panel,
+    )
+
+
 def copy_current_to_new(panel, *_args):
+    """
+    Mevcut kodu yeni kod alanına kopyalar.
+    """
     panel._set_new_code(panel.current_code_area.text)
 
     _YARDIMCI.set_status_info(
@@ -514,27 +545,16 @@ def copy_current_to_new(panel, *_args):
         on_tap=lambda: _safe_scroll_to_top(panel.new_code_area),
     )
     _YARDIMCI.toast(
-        _m(panel, "code_copied_to_edit_area", "Kod düzenleme alanına kopyalandı."),
-        "file_copy.png",
-        2.4,
+        text=_m(panel, "code_copied_to_edit_area", "Kod düzenleme alanına kopyalandı."),
+        icon_name="file_copy.png",
+        duration=2.4,
+        panel=panel,
     )
 
 
 def paste_new_code(panel, *_args):
     """
     Yeni kod alanına pano içeriğini yapıştırır.
-
-    Öncelik sırası:
-    1) Pano metnini al ve normalize et
-    2) Native paste dene
-    3) Native paste sonrası sonucu normalize edip tek parça yeniden yaz
-    4) insert_text dene
-    5) insert_text sonrası sonucu normalize edip tek parça yeniden yaz
-    6) Son fallback olarak temiz pano metnini doğrudan panel set akışıyla yaz
-
-    Kritik not:
-    - Nihai hedef native davranışı birebir taklit etmek değil,
-      kullanıcıya temiz ve doğrulanabilir kod bırakmaktır.
     """
     widget = _get_new_code_widget(panel)
     if widget is None:
@@ -556,9 +576,10 @@ def paste_new_code(panel, *_args):
             duration=3.8,
         )
         _YARDIMCI.toast(
-            _m(panel, "paste_could_not_be_done", "Yapıştırma yapılamadı."),
-            "warning.png",
-            2.0,
+            text=_m(panel, "paste_could_not_be_done", "Yapıştırma yapılamadı."),
+            icon_name="warning.png",
+            duration=2.0,
+            panel=panel,
         )
         return
 
@@ -582,9 +603,10 @@ def paste_new_code(panel, *_args):
             duration=3.8,
         )
         _YARDIMCI.toast(
-            _m(panel, "clipboard_empty_or_unavailable", "Pano boş veya erişilemedi."),
-            "warning.png",
-            2.0,
+            text=_m(panel, "clipboard_empty_or_unavailable", "Pano boş veya erişilemedi."),
+            icon_name="warning.png",
+            duration=2.0,
+            panel=panel,
         )
         return
 
@@ -593,7 +615,6 @@ def paste_new_code(panel, *_args):
     except Exception:
         pass
 
-    # 1) Native paste dene, sonra sonucu normalize edip yeniden yaz
     try:
         onceki = _get_widget_text(widget)
         native_ok = _try_widget_native_paste(widget)
@@ -601,34 +622,16 @@ def paste_new_code(panel, *_args):
 
         if native_ok and str(sonraki) != str(onceki):
             if _write_clipboard_text_safely(panel, widget, sonraki):
-                _YARDIMCI.set_status_success(
+                _show_paste_success(
                     panel,
-                    _m(panel, "clipboard_pasted", "Pano içeriği yapıştırıldı."),
-                    0,
-                )
-                _YARDIMCI.show_inline_notice(
-                    panel,
-                    title=_m(panel, "paste_completed", "Yapıştırma tamamlandı"),
-                    text=_m(
-                        panel,
-                        "clipboard_pasted_into_new_code_area",
-                        "Pano içeriği yeni kod alanına yapıştırıldı.",
-                    ),
-                    icon_name="yapistir.png",
-                    tone="success",
-                    duration=3.4,
-                    on_tap=lambda: _safe_scroll_to_end(widget),
-                )
-                _YARDIMCI.toast(
-                    _m(panel, "clipboard_pasted", "Pano içeriği yapıştırıldı."),
-                    "yapistir.png",
-                    2.2,
+                    widget,
+                    "clipboard_pasted_into_new_code_area",
+                    "Pano içeriği yeni kod alanına yapıştırıldı.",
                 )
                 return
     except Exception:
         pass
 
-    # 2) insert_text dene, sonra sonucu normalize edip yeniden yaz
     try:
         onceki = _get_widget_text(widget)
         insert_ok = _try_widget_insert_text(widget, clipboard_text)
@@ -636,59 +639,23 @@ def paste_new_code(panel, *_args):
 
         if insert_ok and str(sonraki) != str(onceki):
             if _write_clipboard_text_safely(panel, widget, sonraki):
-                _YARDIMCI.set_status_success(
+                _show_paste_success(
                     panel,
-                    _m(panel, "clipboard_pasted", "Pano içeriği yapıştırıldı."),
-                    0,
-                )
-                _YARDIMCI.show_inline_notice(
-                    panel,
-                    title=_m(panel, "paste_completed", "Yapıştırma tamamlandı"),
-                    text=_m(
-                        panel,
-                        "clipboard_pasted_into_new_code_area",
-                        "Pano içeriği yeni kod alanına yapıştırıldı.",
-                    ),
-                    icon_name="yapistir.png",
-                    tone="success",
-                    duration=3.4,
-                    on_tap=lambda: _safe_scroll_to_end(widget),
-                )
-                _YARDIMCI.toast(
-                    _m(panel, "clipboard_pasted", "Pano içeriği yapıştırıldı."),
-                    "yapistir.png",
-                    2.2,
+                    widget,
+                    "clipboard_pasted_into_new_code_area",
+                    "Pano içeriği yeni kod alanına yapıştırıldı.",
                 )
                 return
     except Exception:
         pass
 
-    # 3) En güvenli fallback: doğrudan panodaki temiz metni tek parça yaz
     try:
-        yazildi = _write_clipboard_text_safely(panel, widget, clipboard_text)
-        if yazildi:
-            _YARDIMCI.set_status_success(
+        if _write_clipboard_text_safely(panel, widget, clipboard_text):
+            _show_paste_success(
                 panel,
-                _m(panel, "clipboard_pasted", "Pano içeriği yapıştırıldı."),
-                0,
-            )
-            _YARDIMCI.show_inline_notice(
-                panel,
-                title=_m(panel, "paste_completed", "Yapıştırma tamamlandı"),
-                text=_m(
-                    panel,
-                    "clipboard_pasted_with_safe_fallback",
-                    "Pano içeriği güvenli yapıştırma yöntemiyle yeni kod alanına aktarıldı.",
-                ),
-                icon_name="yapistir.png",
-                tone="success",
-                duration=3.8,
-                on_tap=lambda: _safe_scroll_to_end(widget),
-            )
-            _YARDIMCI.toast(
-                _m(panel, "clipboard_pasted", "Pano içeriği yapıştırıldı."),
-                "yapistir.png",
-                2.2,
+                widget,
+                "clipboard_pasted_with_safe_fallback",
+                "Pano içeriği güvenli yapıştırma yöntemiyle yeni kod alanına aktarıldı.",
             )
             return
     except Exception:
@@ -713,13 +680,17 @@ def paste_new_code(panel, *_args):
         on_tap=lambda: _safe_scroll_to_top(widget),
     )
     _YARDIMCI.toast(
-        _m(panel, "clipboard_paste_failed", "Panodan yapıştırma başarısız oldu."),
-        "warning.png",
-        2.2,
+        text=_m(panel, "clipboard_paste_failed", "Panodan yapıştırma başarısız oldu."),
+        icon_name="warning.png",
+        duration=2.2,
+        panel=panel,
     )
 
 
 def clear_new_code(panel, *_args):
+    """
+    Yeni kod alanını temizler.
+    """
     panel._set_new_code("")
 
     _YARDIMCI.set_status_info(
@@ -741,13 +712,17 @@ def clear_new_code(panel, *_args):
         on_tap=lambda: _safe_scroll_to_top(panel.new_code_area),
     )
     _YARDIMCI.toast(
-        _m(panel, "new_code_area_cleared", "Yeni kod alanı temizlendi."),
-        "clear.png",
-        2.0,
+        text=_m(panel, "new_code_area_cleared", "Yeni kod alanı temizlendi."),
+        icon_name="clear.png",
+        duration=2.0,
+        panel=panel,
     )
 
 
 def check_new_code(panel, *_args):
+    """
+    Yeni kod alanını doğrular.
+    """
     ok, hata, satir = _DOGRULAMA.validate_new_code(panel.new_code_area.text)
 
     if ok:
@@ -770,9 +745,10 @@ def check_new_code(panel, *_args):
             on_tap=lambda: _safe_scroll_to_top(panel.new_code_area),
         )
         _YARDIMCI.toast(
-            _m(panel, "code_validation_successful", "Kod doğrulaması başarılı."),
-            "code_check.png",
-            2.2,
+            text=_m(panel, "code_validation_successful", "Kod doğrulaması başarılı."),
+            icon_name="code_check.png",
+            duration=2.2,
+            panel=panel,
         )
         return
 
@@ -787,13 +763,17 @@ def check_new_code(panel, *_args):
         on_tap=lambda: _safe_scroll_to_top(panel.new_code_area),
     )
     _YARDIMCI.toast(
-        _m(panel, "code_validation_failed", "Kod doğrulaması başarısız."),
-        "warning.png",
-        2.2,
+        text=_m(panel, "code_validation_failed", "Kod doğrulaması başarısız."),
+        icon_name="warning.png",
+        duration=2.2,
+        panel=panel,
     )
 
 
 def handle_update(panel, *_args):
+    """
+    Güncelleme akışını yürütür.
+    """
     if not panel.on_update or panel.current_item is None:
         _YARDIMCI.set_status_warning(
             panel,
@@ -813,9 +793,10 @@ def handle_update(panel, *_args):
             duration=3.8,
         )
         _YARDIMCI.toast(
-            _m(panel, "select_function_first", "Önce fonksiyon seçmelisiniz."),
-            "warning.png",
-            2.0,
+            text=_m(panel, "select_function_first", "Önce fonksiyon seçmelisiniz."),
+            icon_name="warning.png",
+            duration=2.0,
+            panel=panel,
         )
         return
 
@@ -838,13 +819,14 @@ def handle_update(panel, *_args):
             on_tap=lambda: _safe_scroll_to_top(panel.new_code_area),
         )
         _YARDIMCI.toast(
-            _m(
+            text=_m(
                 panel,
                 "pre_update_validation_failed",
                 "Güncelleme öncesi doğrulama başarısız.",
             ),
-            "warning.png",
-            2.2,
+            icon_name="warning.png",
+            duration=2.2,
+            panel=panel,
         )
         return
 
@@ -872,20 +854,17 @@ def handle_update(panel, *_args):
             _YARDIMCI.show_inline_notice(
                 panel,
                 title=_m(panel, "update_error", "Güncelleme hatası"),
-                text=_m(
-                    panel,
-                    "update_error_occurred",
-                    "Güncelleme hatası oluştu.",
-                ),
+                text=_m(panel, "update_error_occurred", "Güncelleme hatası oluştu."),
                 icon_name="warning.png",
                 tone="warning",
                 duration=4.2,
                 on_tap=lambda: _safe_scroll_to_top(panel.new_code_area),
             )
             _YARDIMCI.toast(
-                _m(panel, "update_error_occurred", "Güncelleme hatası oluştu."),
-                "warning.png",
-                2.2,
+                text=_m(panel, "update_error_occurred", "Güncelleme hatası oluştu."),
+                icon_name="warning.png",
+                duration=2.2,
+                panel=panel,
             )
             return
 
@@ -911,15 +890,13 @@ def handle_update(panel, *_args):
             on_tap=lambda: _safe_scroll_to_top(panel.current_code_area),
         )
         _YARDIMCI.toast(
-            _m(panel, "function_updated", "Fonksiyon güncellendi."),
-            "upload.png",
-            2.4,
+            text=_m(panel, "function_updated", "Fonksiyon güncellendi."),
+            icon_name="upload.png",
+            duration=2.4,
+            panel=panel,
         )
     except Exception as exc:
-        hata = str(
-            exc
-            or _m(panel, "update_error_occurred", "Güncelleme hatası oluştu.")
-        )
+        hata = str(exc or _m(panel, "update_error_occurred", "Güncelleme hatası oluştu."))
         _YARDIMCI.set_status_error(panel, hata, _DOGRULAMA.extract_line_number(exc))
         _YARDIMCI.show_inline_notice(
             panel,
@@ -931,13 +908,17 @@ def handle_update(panel, *_args):
             on_tap=lambda: _safe_scroll_to_top(panel.new_code_area),
         )
         _YARDIMCI.toast(
-            _m(panel, "update_error_occurred", "Güncelleme hatası oluştu."),
-            "error.png",
-            2.4,
+            text=_m(panel, "update_error_occurred", "Güncelleme hatası oluştu."),
+            icon_name="error.png",
+            duration=2.4,
+            panel=panel,
         )
 
 
 def handle_restore(panel, *_args):
+    """
+    Geri yükleme akışını yürütür.
+    """
     if not panel.on_restore:
         _YARDIMCI.set_status_warning(
             panel,
@@ -951,23 +932,16 @@ def handle_restore(panel, *_args):
         _YARDIMCI.show_inline_notice(
             panel,
             title=_m(panel, "restore_not_connected", "Geri yükleme bağlı değil"),
-            text=_m(
-                panel,
-                "restore_callback_missing",
-                "Geri yükleme callback bulunamadı.",
-            ),
+            text=_m(panel, "restore_callback_missing", "Geri yükleme callback bulunamadı."),
             icon_name="warning.png",
             tone="warning",
             duration=3.6,
         )
         _YARDIMCI.toast(
-            _m(
-                panel,
-                "restore_service_not_connected",
-                "Geri yükleme servisi bağlı değil.",
-            ),
-            "warning.png",
-            2.0,
+            text=_m(panel, "restore_service_not_connected", "Geri yükleme servisi bağlı değil."),
+            icon_name="warning.png",
+            duration=2.0,
+            panel=panel,
         )
         return
 
@@ -995,20 +969,17 @@ def handle_restore(panel, *_args):
             _YARDIMCI.show_inline_notice(
                 panel,
                 title=_m(panel, "restore_error", "Geri yükleme hatası"),
-                text=_m(
-                    panel,
-                    "restore_error_occurred",
-                    "Geri yükleme hatası oluştu.",
-                ),
+                text=_m(panel, "restore_error_occurred", "Geri yükleme hatası oluştu."),
                 icon_name="warning.png",
                 tone="warning",
                 duration=4.2,
                 on_tap=lambda: _safe_scroll_to_top(panel.current_code_area),
             )
             _YARDIMCI.toast(
-                _m(panel, "restore_error_occurred", "Geri yükleme hatası oluştu."),
-                "warning.png",
-                2.2,
+                text=_m(panel, "restore_error_occurred", "Geri yükleme hatası oluştu."),
+                icon_name="warning.png",
+                duration=2.2,
+                panel=panel,
             )
             return
 
@@ -1031,19 +1002,17 @@ def handle_restore(panel, *_args):
             on_tap=lambda: _safe_scroll_to_top(panel.current_code_area),
         )
         _YARDIMCI.toast(
-            _m(
+            text=_m(
                 panel,
                 "restore_completed_from_last_backup",
                 "Son yedekten geri yükleme tamamlandı.",
             ),
-            "geri_yukle.png",
-            2.4,
+            icon_name="geri_yukle.png",
+            duration=2.4,
+            panel=panel,
         )
     except Exception as exc:
-        hata = str(
-            exc
-            or _m(panel, "restore_error_occurred", "Geri yükleme hatası oluştu.")
-        )
+        hata = str(exc or _m(panel, "restore_error_occurred", "Geri yükleme hatası oluştu."))
         _YARDIMCI.set_status_error(panel, hata, _DOGRULAMA.extract_line_number(exc))
         _YARDIMCI.show_inline_notice(
             panel,
@@ -1055,7 +1024,8 @@ def handle_restore(panel, *_args):
             on_tap=lambda: _safe_scroll_to_top(panel.current_code_area),
         )
         _YARDIMCI.toast(
-            _m(panel, "restore_error_occurred", "Geri yükleme hatası oluştu."),
-            "error.png",
-            2.4,
-        )
+            text=_m(panel, "restore_error_occurred", "Geri yükleme hatası oluştu."),
+            icon_name="error.png",
+            duration=2.4,
+            panel=panel,
+                             )
