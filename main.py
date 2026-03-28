@@ -3,18 +3,23 @@
 DOSYA: main.py
 
 ROL:
-- Uygulama giriş noktasıdır
-- Kivy App sınıfını başlatır
-- RootWidget oluşturur
-- Uygulama başlığında sürüm bilgisini gösterir
-- Proje kökünü sys.path içine ekler
-- Hata olursa fallback hata ekranı göstermeye çalışır
-- Lifecycle yönetimini yapar
-- Pause sırasında root state kaydını tetikler
-- Resume sonrası root refresh zincirini başlatır
+- Uygulamanın giriş noktasıdır
+- UI katmanını başlatır
+- Servis ve UI entegrasyonunu tetikler
+- Android / Pydroid3 / masaüstü uyumlu çalışır
+- UI guard ve genel başlatma hatalarını kopyalanabilir hata kartında gösterir
+- İsteğe bağlı icon debug çıktısı üretir
 
-SURUM: 4
-TARIH: 2026-03-27
+MİMARİ:
+- UI -> Services -> Core zinciri
+- Core doğrudan çağrılmaz
+- UIYoneticisi tek giriş noktasıdır
+- UI build öncesi guard kontrolü çalıştırılır
+- Hata durumunda çökme yerine okunabilir hata kartı gösterilir
+- Debug çıktısı kontrollü ve tek noktadan yönetilir
+
+SURUM: 6
+TARIH: 2026-03-28
 IMZA: FY.
 """
 
@@ -22,217 +27,148 @@ from __future__ import annotations
 
 import sys
 import traceback
-from pathlib import Path
 
 from kivy.app import App
-from kivy.clock import Clock
-from kivy.metrics import dp
-from kivy.uix.boxlayout import BoxLayout
-from kivy.uix.label import Label
+from kivy.config import Config
 
 
-def _safe_resolve(path: Path) -> Path:
+# ---------------------------------------------------------
+# KIVY AYARLARI
+# ---------------------------------------------------------
+Config.set("graphics", "resizable", "0")
+Config.set("kivy", "exit_on_escape", "0")
+
+
+# ---------------------------------------------------------
+# DEBUG
+# ---------------------------------------------------------
+ICON_DEBUG_AKTIF = True
+GUARD_DEBUG_AKTIF = True
+
+
+def _debug_yaz(*args: object) -> None:
     """
-    Path nesnesini güvenli biçimde resolve etmeye çalışır.
-    """
-    try:
-        return path.resolve()
-    except Exception:
-        try:
-            return path.absolute()
-        except Exception:
-            return path
-
-
-def _proje_koku_bul() -> Path:
-    """
-    Proje kökünü güvenli biçimde bulur.
+    Güvenli debug yazdırma yardımcısı.
     """
     try:
-        return _safe_resolve(Path(__file__).parent)
+        print(*args)
     except Exception:
-        try:
-            return _safe_resolve(Path.cwd())
-        except Exception:
-            return Path(".")
+        pass
 
 
-PROJE_ROOT = _proje_koku_bul()
-
-if str(PROJE_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJE_ROOT))
-
-
-def _build_error_root(hata_metni: str) -> BoxLayout:
+def _icon_debug_yazdir() -> None:
     """
-    Uygulama açılış hatalarında gösterilecek basit fallback root'u üretir.
+    Icon çözümleme debug çıktısı üretir.
     """
-    root = BoxLayout(
-        orientation="vertical",
-        padding=dp(18),
-        spacing=dp(12),
-    )
+    if not ICON_DEBUG_AKTIF:
+        return
 
-    baslik = Label(
-        text="Fonksiyon Degistirici",
-        size_hint_y=None,
-        height=dp(42),
-        font_size="20sp",
-        bold=True,
-        color=(1, 1, 1, 1),
-        halign="center",
-        valign="middle",
-        shorten=True,
-        shorten_from="right",
-        max_lines=1,
-    )
-    baslik.bind(size=lambda inst, size: setattr(inst, "text_size", size))
-    root.add_widget(baslik)
+    try:
+        from app.ui.ortak.ikonlar import (
+            icon_mevcut_mu,
+            ikon_kok_dizini,
+            ikon_yolu,
+        )
 
-    mesaj = Label(
-        text="Uygulama açılırken hata oluştu.\n\n" + str(hata_metni or ""),
-        color=(1, 0.82, 0.82, 1),
-        halign="left",
-        valign="top",
-    )
-    mesaj.bind(size=lambda inst, size: setattr(inst, "text_size", (size[0], None)))
-    root.add_widget(mesaj)
+        _debug_yaz("ICON ROOT =", ikon_kok_dizini())
+        _debug_yaz("ICON menu =", ikon_yolu("menu.png"))
+        _debug_yaz("ICON menu exists =", icon_mevcut_mu("menu.png"))
+        _debug_yaz("ICON dosya_sec =", ikon_yolu("dosya_sec.png"))
+        _debug_yaz("ICON dosya_sec exists =", icon_mevcut_mu("dosya_sec.png"))
+        _debug_yaz("ICON settings =", ikon_yolu("settings.png"))
+        _debug_yaz("ICON settings exists =", icon_mevcut_mu("settings.png"))
+    except Exception:
+        _debug_yaz("Icon debug yazdırılamadı:")
+        traceback.print_exc()
 
-    return root
+
+def _ui_guard_calistir() -> None:
+    """
+    UI build öncesi guard kontrolünü çalıştırır.
+
+    Guard modülü yoksa veya import edilemezse hata yukarı taşınır.
+    Guard fonksiyonu mevcutsa doğrudan çalıştırılır.
+    """
+    from app.ui.ortak.guard import ui_guard_kontrolu
+
+    if GUARD_DEBUG_AKTIF:
+        _debug_yaz("UI GUARD: başlatılıyor...")
+
+    ui_guard_kontrolu()
+
+    if GUARD_DEBUG_AKTIF:
+        _debug_yaz("UI GUARD: başarılı.")
 
 
 class FonksiyonDegistiriciApp(App):
     """
-    Uygulamanın ana App sınıfı.
+    Ana uygulama sınıfı.
     """
+
+    __slots__ = ("_ui",)
+
+    def __init__(self, **kwargs):
+        """
+        App nesnesini oluşturur.
+        """
+        super().__init__(**kwargs)
+        self._ui = None
 
     def build(self):
         """
-        Root widget'ı oluşturur.
+        Root widget üretimi.
         """
         try:
-            self._window_ayarlarini_uygula()
+            _icon_debug_yazdir()
+            _ui_guard_calistir()
 
-            from app.core import CoreYoneticisi
-            from app.ui.root_paketi import RootWidget
+            from app.ui import UIYoneticisi
 
-            core = CoreYoneticisi()
-            self.title = f"{core.uygulama_adi()} v{core.tam_surum()}"
+            self._ui = UIYoneticisi()
+            return self._ui.create_root()
 
-            self.root_widget = RootWidget()
-            return self.root_widget
+        except Exception as exc:
+            return self._fallback_hata_karti(exc)
 
-        except Exception:
-            hata = traceback.format_exc()
-
-            try:
-                print(hata)
-            except Exception:
-                pass
-
-            self.root_widget = None
-            return _build_error_root(hata)
-
-    def _window_ayarlarini_uygula(self) -> None:
+    def _fallback_hata_karti(self, exc: Exception):
         """
-        Pencere / klavye davranışı ile ilgili güvenli ayarları uygular.
+        Hata durumunda kullanıcıya okunabilir hata kartı döndürür.
         """
-        try:
-            from kivy.core.window import Window
-            Window.softinput_mode = "below_target"
-        except Exception:
-            pass
-
-    def on_start(self):
-        """
-        Uygulama başlatıldıktan sonra debug amaçlı proje kökünü loglar.
-        """
-        try:
-            print("PROJE_ROOT =", PROJE_ROOT)
-        except Exception:
-            pass
-
-    def on_pause(self):
-        """
-        Uygulama arka plana geçerken root state kaydını tetikler.
-        """
-        try:
-            print("[APP] on_pause")
-        except Exception:
-            pass
+        from app.ui.bilesenler.hata_karti import HataKarti
 
         try:
-            root_widget = getattr(self, "root_widget", None)
-            if root_widget is not None:
-                kaydet = getattr(root_widget, "uygulama_durumu_kaydet", None)
-                if callable(kaydet):
-                    kaydet()
+            from app.ui.ortak.guard import UIGuardHatasi, ui_guard_hata_metni
         except Exception:
-            try:
-                print(traceback.format_exc())
-            except Exception:
-                pass
+            UIGuardHatasi = type("_TmpGuardErr", (Exception,), {})
 
-        return True
+            def ui_guard_hata_metni(err: Exception) -> str:
+                return f"{err.__class__.__name__}: {err}"
 
-    def on_resume(self):
-        """
-        Uygulama arka plandan geri gelince root refresh zincirini tetikler.
-        """
-        try:
-            print("[APP] on_resume")
-        except Exception:
-            pass
+        if isinstance(exc, UIGuardHatasi):
+            detay = ui_guard_hata_metni(exc)
+            baslik = "UI Guard Hatası"
+            aciklama = (
+                "Arayüz ortak yapı kontrolünden geçemedi. "
+                "Aşağıdaki detay kopyalanabilir ve nokta atışı çözüm içerir."
+            )
+        else:
+            detay = (
+                f"{exc.__class__.__name__}: {exc}\n\n"
+                f"{traceback.format_exc()}"
+            )
+            baslik = "Başlatma Hatası"
+            aciklama = (
+                "Uygulama başlatılırken beklenmeyen bir hata oluştu. "
+                "Aşağıdaki detay kopyalanabilir."
+            )
 
-        try:
-            root_widget = getattr(self, "root_widget", None)
-            if root_widget is None:
-                return
+        _debug_yaz(detay)
 
-            geri_yukle = getattr(root_widget, "uygulama_durumu_geri_yukle", None)
-            if callable(geri_yukle):
-                try:
-                    geri_yukle()
-                except Exception:
-                    try:
-                        print(traceback.format_exc())
-                    except Exception:
-                        pass
-
-            Clock.schedule_once(self._resume_ui_refresh, 0.10)
-        except Exception:
-            try:
-                print(traceback.format_exc())
-            except Exception:
-                pass
-
-    def _resume_ui_refresh(self, _dt):
-        """
-        Resume sonrası root üstünde genel yenileme zincirini çalıştırır.
-        """
-        try:
-            root_widget = getattr(self, "root_widget", None)
-            if root_widget is None:
-                return
-
-            resume_akisi = getattr(root_widget, "uygulama_resume_akisini_tetikle", None)
-            if callable(resume_akisi):
-                resume_akisi()
-                return
-
-            resume_yenile = getattr(root_widget, "resume_sonrasi_yenile", None)
-            if callable(resume_yenile):
-                resume_yenile()
-                return
-
-            post_build_refresh = getattr(root_widget, "_post_build_refresh", None)
-            if callable(post_build_refresh):
-                post_build_refresh()
-        except Exception:
-            try:
-                print(traceback.format_exc())
-            except Exception:
-                pass
+        return HataKarti(
+            baslik=baslik,
+            aciklama=aciklama,
+            detay=detay,
+        )
 
 
 def main() -> None:
@@ -242,10 +178,9 @@ def main() -> None:
     try:
         FonksiyonDegistiriciApp().run()
     except Exception:
-        try:
-            print(traceback.format_exc())
-        except Exception:
-            pass
+        _debug_yaz("Uygulama başlatılamadı:")
+        traceback.print_exc()
+        sys.exit(1)
 
 
 if __name__ == "__main__":
