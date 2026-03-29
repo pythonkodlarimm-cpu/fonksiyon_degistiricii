@@ -1,4 +1,4 @@
-name: Android Build (APK + AAB)
+name: Android Build (AAB)
 
 on:
   workflow_dispatch:
@@ -293,7 +293,7 @@ jobs:
           rm -rf dist_artifacts
           rm -rf adid_check
           rm -rf symbols_export
-          rm -f build_apk.log build_aab.log build.log
+          rm -f build_aab.log build.log
           rm -f summary.md env_dump.txt sdk_list.txt ndk_p4a_summary.md
           rm -f bundletool.jar bundletool_version.txt symbols_so_list.txt symbols_export_warning.txt
           rm -f symbols_export/flat_symbols_list.txt
@@ -305,75 +305,6 @@ jobs:
           set -euxo pipefail
           env | sort > env_dump.txt
           "$ANDROID_SDK_ROOT/tools/bin/sdkmanager" --list > sdk_list.txt || true
-
-      - name: buildozer.spec artifact tipini güncelle (APK)
-        shell: bash
-        run: |
-          set -euxo pipefail
-          python - <<'PY'
-          from pathlib import Path
-          import re
-
-          spec_path = Path("buildozer.spec")
-          text = spec_path.read_text(encoding="utf-8")
-          pattern = r"(?m)^android\.release_artifact\s*=\s*.*$"
-
-          if re.search(pattern, text):
-              text = re.sub(pattern, "android.release_artifact = apk", text, count=1)
-          else:
-              if not text.endswith("\n"):
-                  text += "\n"
-              text += "\nandroid.release_artifact = apk\n"
-
-          spec_path.write_text(text, encoding="utf-8")
-          PY
-
-          grep -n "^android.release_artifact" buildozer.spec || true
-
-      - name: APK derle
-        shell: bash
-        env:
-          P4A_RELEASE_KEYSTORE: ${{ github.workspace }}/release.keystore
-          P4A_RELEASE_KEYSTORE_PASSWD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          P4A_RELEASE_KEYALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          P4A_RELEASE_KEYALIAS_PASSWD: ${{ secrets.ANDROID_KEY_ALIAS_PASSWORD }}
-          ANDROIDNDK: /usr/local/lib/android/sdk/ndk/25.2.9519653
-          ANDROID_NDK_HOME: /usr/local/lib/android/sdk/ndk/25.2.9519653
-          ANDROIDSDK: /usr/local/lib/android/sdk
-          ANDROIDSDKROOT: /usr/local/lib/android/sdk
-        run: |
-          set -euxo pipefail
-          echo "ANDROIDNDK=$ANDROIDNDK"
-          echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME"
-          echo "ANDROIDSDK=$ANDROIDSDK"
-          echo "ANDROIDSDKROOT=$ANDROIDSDKROOT"
-          ls -la "$ANDROIDNDK"
-          buildozer android release 2>&1 | tee build_apk.log
-
-      - name: APK dosyasını ayır
-        shell: bash
-        run: |
-          set -euxo pipefail
-          APK_PATH="$(find bin -type f -name '*.apk' ! -name '*unsigned*' | sort | head -n 1)"
-          test -n "$APK_PATH"
-          cp "$APK_PATH" "dist_artifacts/fonksiyon-degistirici-${APP_VERSION}.apk"
-          ls -lh dist_artifacts
-
-      - name: APK imzasını doğrula
-        shell: bash
-        run: |
-          set -euxo pipefail
-          APK_PATH="dist_artifacts/fonksiyon-degistirici-${APP_VERSION}.apk"
-          test -f "$APK_PATH"
-          "$ANDROID_SDK_ROOT/build-tools/35.0.0/apksigner" verify --verbose "$APK_PATH"
-
-      - name: APK 16 KB page size uyumluluğunu kontrol et
-        shell: bash
-        run: |
-          set -euxo pipefail
-          APK_PATH="dist_artifacts/fonksiyon-degistirici-${APP_VERSION}.apk"
-          test -f "$APK_PATH"
-          "$ANDROID_SDK_ROOT/build-tools/35.0.0/zipalign" -c -P 16 -v 4 "$APK_PATH"
 
       - name: buildozer.spec artifact tipini güncelle (AAB)
         shell: bash
@@ -626,7 +557,7 @@ jobs:
                   return ""
               return p.read_text(encoding="utf-8", errors="ignore")
 
-          log_text = (oku("build_apk.log") + "\n" + oku("build_aab.log")).splitlines()
+          log_text = oku("build_aab.log").splitlines()
 
           patterns = [
               r"ndk",
@@ -742,7 +673,7 @@ jobs:
                   return ""
               return p.read_text(encoding="utf-8", errors="ignore")
 
-          log_text = (oku("build_apk.log") + "\n\n" + oku("build_aab.log")).strip()
+          log_text = oku("build_aab.log").strip()
           ansi_re = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
           clean = ansi_re.sub("", log_text)
           lines = clean.splitlines()
@@ -751,8 +682,8 @@ jobs:
               "error", "failed", "exception", "traceback", "build failed",
               "requested api target", "sdkmanager", "command failed", "android api",
               "ndk", "gradle", "no such file", "sdk path", "does not exist",
-              "keystore", "apksigner", "zipalign", "bundle", "aab", "apk",
-              "alias", "release", "unsigned", "p4a_release", "validatesigningrelease",
+              "keystore", "apksigner", "zipalign", "bundle", "aab",
+              "alias", "release", "p4a_release", "validatesigningrelease",
               "ad_id", "advertising", "bundletool", "canceled", "cancelled"
           )
 
@@ -829,7 +760,6 @@ jobs:
         with:
           name: build-diagnostics-${{ env.APP_VERSION }}
           path: |
-            build_apk.log
             build_aab.log
             summary.md
             ndk_p4a_summary.md
@@ -844,14 +774,6 @@ jobs:
             symbols_export/**
             symbols_export_warning.txt
           if-no-files-found: warn
-
-      - name: APK yükle
-        if: ${{ success() }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: fonksiyon-degistirici-apk-${{ env.APP_VERSION }}
-          path: dist_artifacts/*.apk
-          if-no-files-found: error
 
       - name: AAB yükle
         if: ${{ success() }}
