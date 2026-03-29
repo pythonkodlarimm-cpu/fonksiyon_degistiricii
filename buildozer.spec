@@ -38,8 +38,6 @@ android.release_artifact = aab
 android.gradle_dependencies = com.google.android.gms:play-services-ads:22.6.0
 android.meta_data = com.google.android.gms.ads.APPLICATION_ID=ca-app-pub-5522917995813710~6900495663
 
-android.add_assets = app/services/sistem/diller:app/assets/lang
-
 android.archs = arm64-v8a, armeabi-v7a
 
 log_level = 2
