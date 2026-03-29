@@ -6,9 +6,10 @@ ROL:
 - Ana ekranın yerleşim kurulumunu içerir
 - Widget ağaç yapısını tek yerde toplar
 - Üst alanı hazır toolbar bileşeni ile kurar
-- Banner reklam rezerv alanını oluşturur
+- Banner reklam rezerv alanını en alt bölgede oluşturur
 - Seçili işlem başlığını dil entegre biçimde gösterir
 - APK sürüm bilgisini üst toolbar üzerinde dil entegre biçimde gösterir
+- İşlem geri bildirimlerini BilgiKutusu ile üst bölgede görünür biçimde sunar
 - Orta alanı kurar
 - Alt aksiyon çubuğunu hazır bileşen ile kurar
 - Kod panellerini ortak bileşen üzerinden üretir
@@ -25,8 +26,9 @@ MİMARİ:
 - Dil entegrasyonunda mevcut anahtar seti korunur
 - State / iş akışı mantığı ana_ekran.py içinde kalır
 - Bu dosya yalnızca layout ve widget üretir
+- BilgiKutusu reklamdan önce ve daha görünür konumda tutulur
 
-SURUM: 30
+SURUM: 31
 TARIH: 2026-03-29
 IMZA: FY.
 """
@@ -67,7 +69,7 @@ from app.ui.ortak.renkler import (
 
 class _BannerRezervAlani(BoxLayout):
     """
-    Üst bölümde banner reklam için yer ayıran sade kapsayıcı.
+    Alt bölümde banner reklam için yer ayıran sade kapsayıcı.
     """
 
     __slots__ = ("_bg_rect", "_line")
@@ -132,12 +134,12 @@ class AnaEkranYerlesimMixin:
         self.clear_widgets()
 
         self.add_widget(self._ust_toolbar_olustur())
-        self.add_widget(self._banner_alani_olustur())
         self.add_widget(self._aktif_islem_basligi_olustur())
+        self._bilgi_alani_kur()
         self._dosya_alani_bolumu_kur()
         self.add_widget(self._orta_alan_olustur())
         self.add_widget(self._alt_aksiyon_cubugu_olustur())
-        self._bilgi_alani_kur()
+        self.add_widget(self._banner_alani_olustur())
         self._baslangic_dosya_yolunu_uygula()
 
         # ---------------------------------------------------------
@@ -185,13 +187,6 @@ class AnaEkranYerlesimMixin:
             version_text=surum_metni,
         )
 
-    def _banner_alani_olustur(self) -> _BannerRezervAlani:
-        """
-        Banner reklam için üstte rezerv alan üretir.
-        """
-        self._banner_alani = _BannerRezervAlani()
-        return self._banner_alani
-
     def _aktif_islem_basligi_olustur(self) -> Label:
         """
         Seçili işlem başlığını gösteren etiketi üretir.
@@ -210,6 +205,17 @@ class AnaEkranYerlesimMixin:
             size=lambda inst, _val: setattr(inst, "text_size", inst.size)
         )
         return self._aktif_islem_baslik_label
+
+    # =========================================================
+    # BİLGİ ALANI
+    # =========================================================
+    def _bilgi_alani_kur(self) -> None:
+        """
+        Üst bilgi / geri bildirim kutusunu kurar.
+        """
+        self._bilgi = BilgiKutusu(t=self._t)
+        self._bilgi.mesaj(self._t("app_ready"))
+        self.add_widget(self._bilgi)
 
     # =========================================================
     # DOSYA ALANI
@@ -369,15 +375,14 @@ class AnaEkranYerlesimMixin:
         return self._alt_kontroller
 
     # =========================================================
-    # ALT BİLGİ
+    # ALT REKLAM
     # =========================================================
-    def _bilgi_alani_kur(self) -> None:
+    def _banner_alani_olustur(self) -> _BannerRezervAlani:
         """
-        Alt bilgi kutusunu kurar.
+        Banner reklam için en altta rezerv alan üretir.
         """
-        self._bilgi = BilgiKutusu(t=self._t)
-        self._bilgi.mesaj(self._t("app_ready"))
-        self.add_widget(self._bilgi)
+        self._banner_alani = _BannerRezervAlani()
+        return self._banner_alani
 
     # =========================================================
     # BAŞLANGIÇ DURUMU
