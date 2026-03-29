@@ -8,6 +8,7 @@ ROL:
 - Üst alanı hazır toolbar bileşeni ile kurar
 - Banner reklam rezerv alanını oluşturur
 - Seçili işlem başlığını dil entegre biçimde gösterir
+- APK sürüm bilgisini üst toolbar üzerinde dil entegre biçimde gösterir
 - Orta alanı kurar
 - Alt aksiyon çubuğunu hazır bileşen ile kurar
 - Kod panellerini ortak bileşen üzerinden üretir
@@ -25,8 +26,8 @@ MİMARİ:
 - State / iş akışı mantığı ana_ekran.py içinde kalır
 - Bu dosya yalnızca layout ve widget üretir
 
-SURUM: 28
-TARIH: 2026-03-28
+SURUM: 30
+TARIH: 2026-03-29
 IMZA: FY.
 """
 
@@ -159,9 +160,29 @@ class AnaEkranYerlesimMixin:
         """
         Üst toolbar bileşenini üretir.
         """
+        surum_metni = ""
+
+        try:
+            if hasattr(self, "_services") and self._services is not None:
+                apk_surumu_getir = getattr(self._services, "apk_surumu", None)
+                if callable(apk_surumu_getir):
+                    apk_surumu_servisi = apk_surumu_getir()
+
+                    version_label = self._t("version")
+                    if version_label == "version":
+                        version_label = "Sürüm"
+
+                    surum_metni = apk_surumu_servisi.goruntulenecek_surum_metni(
+                        label=version_label
+                    )
+                    surum_metni = str(surum_metni or "").strip()
+        except Exception:
+            surum_metni = ""
+
         return UstToolbar(
             on_menu=self._menu,
             t=self._t,
+            version_text=surum_metni,
         )
 
     def _banner_alani_olustur(self) -> _BannerRezervAlani:
