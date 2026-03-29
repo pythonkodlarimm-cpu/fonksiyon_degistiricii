@@ -7,6 +7,7 @@ ROL:
 - Tüm alt yöneticileri merkezileştirir (facade)
 - Bellek içi ve dosya üstü çekirdek işlemlerini tek API altında toplar
 - Dil geliştirici yöneticisini de merkezi API'ye ekler
+- Meta katmanındaki gerçek APK/AAB sürüm bilgilerini facade üzerinden erişilebilir kılar
 
 MİMARİ:
 - Lazy load + kesin instance cache
@@ -36,8 +37,8 @@ API UYUMLULUK:
 - Saf Python çalışır
 - Pydroid3 / masaüstü / test ortamlarında aynı mantıkla davranır
 
-SURUM: 15
-TARIH: 2026-03-28
+SURUM: 16
+TARIH: 2026-03-29
 IMZA: FY.
 """
 
@@ -700,6 +701,9 @@ class CoreYoneticisi:
     def meta_bilgisi(self) -> dict[str, str | int]:
         return self._meta_yoneticisi().meta_bilgisi()
 
+    def meta_ve_apk_bilgisi(self) -> dict[str, str | int]:
+        return self._meta_yoneticisi().meta_ve_apk_bilgisi()
+
     def uygulama_adi(self) -> str:
         return self._meta_yoneticisi().uygulama_adi()
 
@@ -712,11 +716,32 @@ class CoreYoneticisi:
     def imza(self) -> str:
         return self._meta_yoneticisi().imza()
 
+    def aciklama(self) -> str:
+        return self._meta_yoneticisi().aciklama()
+
     def surum_adi(self) -> str:
         return self._meta_yoneticisi().surum_adi()
 
     def surum_kodu(self) -> int:
         return self._meta_yoneticisi().surum_kodu()
 
+    def build_numarasi(self) -> int:
+        return self._meta_yoneticisi().build_numarasi()
+
     def tam_surum(self) -> str:
         return self._meta_yoneticisi().tam_surum()
+
+    def apk_surum_adi(self) -> str:
+        return self._meta_yoneticisi().apk_surum_adi()
+
+    def apk_surum_kodu(self) -> int:
+        return self._meta_yoneticisi().apk_surum_kodu()
+
+    def apk_tam_surum(self) -> str:
+        return self._meta_yoneticisi().apk_tam_surum()
+
+    def apk_surum_bilgisi(self) -> dict[str, str | int]:
+        return self._meta_yoneticisi().apk_surum_bilgisi()
+
+    def uygulama_etiketi(self) -> str:
+        return self._meta_yoneticisi().uygulama_etiketi()
