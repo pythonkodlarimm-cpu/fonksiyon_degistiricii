@@ -5,10 +5,10 @@ DOSYA: app/ui/bilesenler/ust_toolbar.py
 ROL:
 - Uygulama üst alanında kullanılacak sade toolbar bileşenini sağlar
 - Sol tarafta menü ikon aksiyonunu içerir
-- Orta alanda başlık metnini gösterir
+- Orta alanda başlık metnini ve isteğe bağlı sürüm bilgisini gösterir
 - Ortak UI stil ve boyut sistemine uyar
 - Dil entegrasyonuna uyumludur
-- Dil değişimlerinde başlığı güvenli şekilde yenileyebilir
+- Dil değişimlerinde başlık ve sürüm etiketini güvenli şekilde yenileyebilir
 
 MİMARİ:
 - UI bileşenidir
@@ -19,9 +19,10 @@ MİMARİ:
 - Geriye uyumluluk katmanı içermez
 - Mevcut dil anahtar seti korunur
 - Hardcoded başlık yerine anahtar + fallback sistemi kullanır
+- Sürüm metni dışarıdan verilir; toolbar bunu sadece gösterir
 
-SURUM: 3
-TARIH: 2026-03-28
+SURUM: 5
+TARIH: 2026-03-29
 IMZA: FY.
 """
 
@@ -30,6 +31,7 @@ from __future__ import annotations
 from typing import Callable
 
 from kivy.graphics import Color, Line, RoundedRectangle
+from kivy.metrics import dp
 from kivy.uix.anchorlayout import AnchorLayout
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.label import Label
@@ -48,6 +50,7 @@ from app.ui.ortak.renkler import (
     AYIRICI,
     KART_ALT,
     METIN,
+    METIN_SOLUK,
 )
 
 
@@ -108,15 +111,17 @@ class _ToolbarPanel(BoxLayout):
 
 class UstToolbar(_ToolbarPanel):
     """
-    Sol menü ikonu ve ortada başlık metni gösteren üst toolbar.
+    Sol menü ikonu, ortada başlık ve isteğe bağlı sürüm metni gösteren üst toolbar.
     """
 
     __slots__ = (
         "_t",
         "_on_menu",
         "_title_label",
+        "_version_label",
         "_title_key",
         "_fallback_title",
+        "_version_text",
     )
 
     def __init__(
@@ -126,22 +131,11 @@ class UstToolbar(_ToolbarPanel):
         t: Callable[[str], str] | None = None,
         title_key: str = "app_title",
         fallback_title: str = "Fonksiyon Değiştirici",
+        version_text: str = "",
         **kwargs,
     ):
         """
         Toolbar bileşenini oluşturur.
-
-        Args:
-            on_menu:
-                Menü ikonuna basıldığında çağrılacak callback.
-            t:
-                Çeviri fonksiyonu.
-            title_key:
-                Başlık için kullanılacak dil anahtarı.
-            fallback_title:
-                Dil çözülmezse kullanılacak varsayılan başlık.
-            **kwargs:
-                BoxLayout argümanları.
         """
         kwargs.setdefault("orientation", "horizontal")
         kwargs.setdefault("size_hint_y", None)
@@ -149,12 +143,13 @@ class UstToolbar(_ToolbarPanel):
         kwargs.setdefault("padding", (BOSLUK_SM, BOSLUK_XS, BOSLUK_SM, BOSLUK_XS))
         kwargs.setdefault("spacing", BOSLUK_SM)
 
-        super().__init__(**kwargs)
-
         self._t = t or (lambda key, **_kwargs: key)
         self._on_menu = on_menu
         self._title_key = str(title_key or "").strip()
         self._fallback_title = str(fallback_title or "").strip()
+        self._version_text = str(version_text or "").strip()
+
+        super().__init__(**kwargs)
 
         self._sol_alani_kur()
         self._orta_alani_kur()
@@ -185,11 +180,17 @@ class UstToolbar(_ToolbarPanel):
 
     def _orta_alani_kur(self) -> None:
         """
-        Başlık alanını kurar.
+        Başlık ve sürüm alanını kurar.
         """
         orta = AnchorLayout(
             anchor_x="center",
             anchor_y="center",
+        )
+
+        orta_icerik = BoxLayout(
+            orientation="vertical",
+            spacing=0,
+            size_hint=(1, 1),
         )
 
         self._title_label = Label(
@@ -198,13 +199,35 @@ class UstToolbar(_ToolbarPanel):
             bold=True,
             halign="center",
             valign="middle",
-            size_hint=(1, 1),
+            size_hint=(1, None),
+            height=dp(28),
+            font_size=dp(16),
         )
         self._title_label.bind(
             size=lambda inst, _val: setattr(inst, "text_size", inst.size)
         )
 
-        orta.add_widget(self._title_label)
+        self._version_label = Label(
+            text=self._version_text,
+            color=METIN_SOLUK,
+            halign="center",
+            valign="middle",
+            size_hint=(1, None),
+            height=dp(16),
+            font_size=dp(11),
+            shorten=True,
+            shorten_from="right",
+        )
+        self._version_label.bind(
+            size=lambda inst, _val: setattr(inst, "text_size", inst.size)
+        )
+
+        orta_icerik.add_widget(Widget())
+        orta_icerik.add_widget(self._title_label)
+        orta_icerik.add_widget(self._version_label)
+        orta_icerik.add_widget(Widget())
+
+        orta.add_widget(orta_icerik)
         self.add_widget(orta)
 
     def _sag_alani_kur(self) -> None:
@@ -271,16 +294,35 @@ class UstToolbar(_ToolbarPanel):
     def baslik_metni_ayarla(self, text: str) -> None:
         """
         Başlığı doğrudan verilen metin ile günceller.
-
-        Not:
-        - Bu kullanım dil anahtarı bağını sıfırlar.
-        - Geçici veya manuel başlık gerektiğinde kullanılmalıdır.
         """
         self._title_key = ""
         self._fallback_title = str(text or "")
         self._title_label.text = str(text or "")
 
+    def surum_metni_ayarla(self, text: str) -> None:
+        """
+        Sürüm etiketini günceller.
+        """
+        self._version_text = str(text or "").strip()
+
+        if self._version_label is not None:
+            self._version_label.text = self._version_text
+
+    def surum_metni_yenile(self) -> None:
+        """
+        Mevcut sürüm metnini yeniden uygular.
+        """
+        if self._version_label is not None:
+            self._version_label.text = self._version_text
+
+    def tum_metinleri_yenile(self) -> None:
+        """
+        Başlık ve sürüm etiketini birlikte yeniler.
+        """
+        self.baslik_yenile()
+        self.surum_metni_yenile()
+
 
 __all__ = (
     "UstToolbar",
-)
+        )
