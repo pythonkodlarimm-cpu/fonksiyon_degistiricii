@@ -7,13 +7,17 @@ ROL:
 - Sabitler modülünü dış katmandan tamamen izole eder
 - Uygulama adı, paket adı, sürüm ve açıklama bilgilerini merkezileştirir
 - Android sürüm bilgilerini tek ve güvenli bir noktadan sunar
+- APK içinden okunan gerçek sürüm bilgilerini facade üzerinden erişilebilir kılar
 
 MİMARİ:
 - Lazy import kullanır (ilk kullanımda yüklenir)
-- Modül referansı cache içinde tutulur (performans optimizasyonu)
+- Modül referansı cache içinde tutulur
 - Üst katman sabitler.py dosyasını doğrudan bilmez
 - Core, UI ve uygulama başlangıcı bu yöneticiyi kullanmalıdır
-- Deterministic davranır, runtime yan etkisi yoktur
+- Deterministic davranır
+- Runtime yan etkisi yoktur
+- Type güvenliği nettir
+- Geriye uyumluluk katmanı içermez
 
 BAĞIMLILIKLAR:
 - app/core/meta/sabitler.py
@@ -23,8 +27,8 @@ API UYUMLULUK:
 - Android API 35 ile uyumludur
 - APK/AAB build süreçleri ile uyumludur
 
-SURUM: 3
-TARIH: 2026-03-27
+SURUM: 4
+TARIH: 2026-03-28
 IMZA: FY.
 """
 
@@ -38,6 +42,8 @@ class MetaYoneticisi:
     Uygulama metadata erişim yöneticisi.
     """
 
+    __slots__ = ("_modul_cache",)
+
     def __init__(self) -> None:
         self._modul_cache: ModuleType | None = None
 
@@ -48,59 +54,116 @@ class MetaYoneticisi:
         """
         Sabitler modülünü lazy load eder ve cache'ler.
         """
-        if self._modul_cache is None:
+        modul = self._modul_cache
+        if modul is None:
             from app.core.meta import sabitler
-            self._modul_cache = sabitler
 
-        return self._modul_cache
+            modul = sabitler
+            self._modul_cache = modul
+
+        return modul
 
     # =========================================================
     # TEMEL META
     # =========================================================
     def uygulama_adi(self) -> str:
-        return self._modul().UYGULAMA_ADI
+        return str(self._modul().UYGULAMA_ADI)
 
     def paket_adi(self) -> str:
-        return self._modul().PAKET_ADI
+        return str(self._modul().PAKET_ADI)
 
     def tarih(self) -> str:
-        return self._modul().TARIH
+        return str(self._modul().TARIH)
 
     def imza(self) -> str:
-        return self._modul().IMZA
+        return str(self._modul().IMZA)
 
     def aciklama(self) -> str:
-        return self._modul().ACIKLAMA
+        return str(self._modul().ACIKLAMA)
 
     # =========================================================
     # SURUM
     # =========================================================
     def surum_adi(self) -> str:
-        return self._modul().SURUM_ADI
+        return str(self._modul().SURUM_ADI)
 
     def surum_kodu(self) -> int:
-        return self._modul().SURUM_KODU
+        return int(self._modul().SURUM_KODU)
 
     def build_numarasi(self) -> int:
-        return self._modul().BUILD_NUMARASI
+        return int(self._modul().BUILD_NUMARASI)
 
     def tam_surum(self) -> str:
-        return self._modul().get_tam_surum()
+        return str(self._modul().get_tam_surum())
 
     # =========================================================
-    # ANDROID
+    # APK / ANDROID SURUM
     # =========================================================
     def apk_surum_adi(self) -> str:
-        return self._modul().get_apk_surum_adi()
+        """
+        Kurulu APK içinden okunan sürüm adını döndürür.
+        """
+        return str(self._modul().get_apk_surum_adi())
 
     def apk_surum_kodu(self) -> int:
-        return self._modul().get_apk_surum_kodu()
+        """
+        Kurulu APK içinden okunan sürüm kodunu döndürür.
+        """
+        return int(self._modul().get_apk_surum_kodu())
+
+    def apk_tam_surum(self) -> str:
+        """
+        APK sürüm adı ve kodunu tek metin olarak döndürür.
+        """
+        modul = self._modul()
+
+        if hasattr(modul, "get_apk_tam_surum"):
+            return str(modul.get_apk_tam_surum())
+
+        surum_adi = str(modul.get_apk_surum_adi())
+        surum_kodu = int(modul.get_apk_surum_kodu())
+        return f"{surum_adi} ({surum_kodu})"
+
+    def apk_surum_bilgisi(self) -> dict[str, str | int]:
+        """
+        APK sürüm bilgisini normalize edilmiş sözlük olarak döndürür.
+        """
+        modul = self._modul()
+
+        if hasattr(modul, "get_apk_surum_bilgisi"):
+            bilgi = modul.get_apk_surum_bilgisi()
+            return {
+                "version_name": str(bilgi.get("version_name", "")),
+                "version_code": int(bilgi.get("version_code", 0)),
+                "full": str(bilgi.get("full", "")),
+            }
+
+        version_name = str(modul.get_apk_surum_adi())
+        version_code = int(modul.get_apk_surum_kodu())
+        return {
+            "version_name": version_name,
+            "version_code": version_code,
+            "full": f"{version_name} ({version_code})",
+        }
 
     # =========================================================
     # ETIKET / META
     # =========================================================
     def uygulama_etiketi(self) -> str:
-        return self._modul().get_uygulama_etiketi()
+        return str(self._modul().get_uygulama_etiketi())
 
     def meta_bilgisi(self) -> dict[str, str | int]:
-        return self._modul().get_meta_bilgisi()
+        return dict(self._modul().get_meta_bilgisi())
+
+    def meta_ve_apk_bilgisi(self) -> dict[str, str | int]:
+        """
+        Statik meta ve kurulu APK sürüm bilgisini tek yapıda döndürür.
+        """
+        meta = dict(self.meta_bilgisi())
+        apk = self.apk_surum_bilgisi()
+
+        meta["apk_version_name"] = apk["version_name"]
+        meta["apk_version_code"] = apk["version_code"]
+        meta["apk_full_version"] = apk["full"]
+
+        return meta
