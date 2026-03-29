@@ -9,6 +9,7 @@ ROL:
 - Ortak UI stil ve boyut sistemine uyar
 - Dil entegrasyonuna uyumludur
 - Dil değişimlerinde başlık ve sürüm etiketini güvenli şekilde yenileyebilir
+- Sürüm bilgisini dışarıdan gelen dinamik veriyle gösterebilir
 
 MİMARİ:
 - UI bileşenidir
@@ -19,9 +20,10 @@ MİMARİ:
 - Geriye uyumluluk katmanı içermez
 - Mevcut dil anahtar seti korunur
 - Hardcoded başlık yerine anahtar + fallback sistemi kullanır
-- Sürüm metni dışarıdan verilir; toolbar bunu sadece gösterir
+- Sürüm verisi dışarıdan verilir; toolbar bunu yalnızca çözümler ve gösterir
+- Dil anahtarı + dinamik sürüm değeri birlikte kullanılabilir
 
-SURUM: 5
+SURUM: 6
 TARIH: 2026-03-29
 IMZA: FY.
 """
@@ -121,6 +123,9 @@ class UstToolbar(_ToolbarPanel):
         "_version_label",
         "_title_key",
         "_fallback_title",
+        "_version_key",
+        "_version_fallback",
+        "_version_value_text",
         "_version_text",
     )
 
@@ -131,11 +136,36 @@ class UstToolbar(_ToolbarPanel):
         t: Callable[[str], str] | None = None,
         title_key: str = "app_title",
         fallback_title: str = "Fonksiyon Değiştirici",
+        version_key: str = "",
+        version_fallback: str = "",
+        version_value_text: str = "",
         version_text: str = "",
         **kwargs,
     ):
         """
         Toolbar bileşenini oluşturur.
+
+        Args:
+            on_menu:
+                Menü ikonuna basıldığında çağrılacak callback.
+            t:
+                Çeviri fonksiyonu.
+            title_key:
+                Başlık için kullanılacak dil anahtarı.
+            fallback_title:
+                Başlık fallback metni.
+            version_key:
+                Sürüm metni için opsiyonel dil anahtarı.
+                Boşsa yalnızca version_value_text / version_text gösterilir.
+            version_fallback:
+                version_key çözülemezse kullanılacak fallback metni.
+            version_value_text:
+                Dinamik sürüm değeri. Örn: "FY. v0.1.449"
+            version_text:
+                Geriye uyum için doğrudan tam sürüm metni.
+                Doluysa version_value_text yerine kullanılır.
+            **kwargs:
+                BoxLayout argümanları.
         """
         kwargs.setdefault("orientation", "horizontal")
         kwargs.setdefault("size_hint_y", None)
@@ -147,7 +177,16 @@ class UstToolbar(_ToolbarPanel):
         self._on_menu = on_menu
         self._title_key = str(title_key or "").strip()
         self._fallback_title = str(fallback_title or "").strip()
+
+        self._version_key = str(version_key or "").strip()
+        self._version_fallback = str(version_fallback or "").strip()
+        self._version_value_text = str(version_value_text or "").strip()
+
+        # Geriye uyumluluk:
+        # Eski kullanımda version_text tam metin olarak geliyordu.
         self._version_text = str(version_text or "").strip()
+        if self._version_text and not self._version_value_text:
+            self._version_value_text = self._version_text
 
         super().__init__(**kwargs)
 
@@ -155,6 +194,69 @@ class UstToolbar(_ToolbarPanel):
         self._orta_alani_kur()
         self._sag_alani_kur()
 
+    # =========================================================
+    # INTERNAL
+    # =========================================================
+    def _tr(self, key: str, fallback: str) -> str:
+        """
+        Dil anahtarını güvenli biçimde çözer.
+        """
+        if not key:
+            return str(fallback or "")
+
+        try:
+            sonuc = self._t(key)
+            metin = str(sonuc or "").strip()
+            if metin and metin != key:
+                return metin
+        except Exception:
+            pass
+
+        return str(fallback or "")
+
+    def _baslik_metni_coz(self) -> str:
+        """
+        Geçerli başlık metnini dil sistemi üzerinden çözer.
+        """
+        return self._tr(
+            self._title_key,
+            self._fallback_title,
+        )
+
+    def _surum_metni_coz(self) -> str:
+        """
+        Sürüm etiketini dil anahtarı + dinamik sürüm verisi ile çözer.
+
+        Kurallar:
+        - version_key varsa önce çeviri çözülür
+        - Çeviri sonucu içinde "{value}" varsa value enjekte edilir
+        - version_key boşsa yalnızca version_value_text gösterilir
+        - version_text eski kullanım için desteklenir
+        """
+        dinamik_deger = str(self._version_value_text or self._version_text or "").strip()
+
+        if not self._version_key:
+            return dinamik_deger
+
+        kalip = self._tr(self._version_key, self._version_fallback)
+
+        if not kalip:
+            return dinamik_deger
+
+        if "{value}" in kalip:
+            try:
+                return kalip.format(value=dinamik_deger)
+            except Exception:
+                return dinamik_deger or kalip
+
+        if dinamik_deger:
+            return f"{kalip} {dinamik_deger}".strip()
+
+        return kalip
+
+    # =========================================================
+    # KURULUM
+    # =========================================================
     def _sol_alani_kur(self) -> None:
         """
         Sol menü butonu alanını kurar.
@@ -208,7 +310,7 @@ class UstToolbar(_ToolbarPanel):
         )
 
         self._version_label = Label(
-            text=self._version_text,
+            text=self._surum_metni_coz(),
             color=METIN_SOLUK,
             halign="center",
             valign="middle",
@@ -242,32 +344,9 @@ class UstToolbar(_ToolbarPanel):
         sag.add_widget(Widget())
         self.add_widget(sag)
 
-    def _tr(self, key: str, fallback: str) -> str:
-        """
-        Dil anahtarını güvenli biçimde çözer.
-        """
-        if not key:
-            return str(fallback or "")
-
-        try:
-            sonuc = self._t(key)
-            metin = str(sonuc or "").strip()
-            if metin and metin != key:
-                return metin
-        except Exception:
-            pass
-
-        return str(fallback or "")
-
-    def _baslik_metni_coz(self) -> str:
-        """
-        Geçerli başlık metnini dil sistemi üzerinden çözer.
-        """
-        return self._tr(
-            self._title_key,
-            self._fallback_title,
-        )
-
+    # =========================================================
+    # PUBLIC API - BASLIK
+    # =========================================================
     def baslik_guncelle(
         self,
         *,
@@ -299,21 +378,81 @@ class UstToolbar(_ToolbarPanel):
         self._fallback_title = str(text or "")
         self._title_label.text = str(text or "")
 
+    # =========================================================
+    # PUBLIC API - SURUM
+    # =========================================================
+    def surum_guncelle(
+        self,
+        *,
+        version_key: str | None = None,
+        version_fallback: str | None = None,
+        version_value_text: str | None = None,
+        version_text: str | None = None,
+    ) -> None:
+        """
+        Sürüm bilgisini günceller.
+
+        Not:
+        - version_value_text dinamik sürüm değeridir
+        - version_text eski kullanım desteği içindir
+        """
+        if version_key is not None:
+            self._version_key = str(version_key or "").strip()
+
+        if version_fallback is not None:
+            self._version_fallback = str(version_fallback or "").strip()
+
+        if version_value_text is not None:
+            self._version_value_text = str(version_value_text or "").strip()
+
+        if version_text is not None:
+            self._version_text = str(version_text or "").strip()
+            if not self._version_value_text:
+                self._version_value_text = self._version_text
+
+        self._version_label.text = self._surum_metni_coz()
+
     def surum_metni_ayarla(self, text: str) -> None:
         """
-        Sürüm etiketini günceller.
+        Sürüm etiketinin dinamik değer kısmını günceller.
+
+        Eski kullanımla uyum için korunur.
         """
-        self._version_text = str(text or "").strip()
+        self._version_value_text = str(text or "").strip()
+        self._version_text = self._version_value_text
 
         if self._version_label is not None:
-            self._version_label.text = self._version_text
+            self._version_label.text = self._surum_metni_coz()
 
     def surum_metni_yenile(self) -> None:
         """
-        Mevcut sürüm metnini yeniden uygular.
+        Mevcut sürüm etiketini yeniden çözer.
         """
         if self._version_label is not None:
-            self._version_label.text = self._version_text
+            self._version_label.text = self._surum_metni_coz()
+
+    def surum_bilgisi_guncelle(
+        self,
+        *,
+        version_value_text: str,
+        version_key: str | None = None,
+        version_fallback: str | None = None,
+    ) -> None:
+        """
+        Dinamik sürüm bilgisini ve opsiyonel dil kalıbını birlikte günceller.
+        """
+        self.surum_guncelle(
+            version_key=version_key,
+            version_fallback=version_fallback,
+            version_value_text=version_value_text,
+        )
+
+    def ceviri_fonksiyonu_ayarla(self, t: Callable[[str], str] | None) -> None:
+        """
+        Çeviri fonksiyonunu değiştirir ve tüm metinleri yeniden çözer.
+        """
+        self._t = t or (lambda key, **_kwargs: key)
+        self.tum_metinleri_yenile()
 
     def tum_metinleri_yenile(self) -> None:
         """
@@ -325,4 +464,4 @@ class UstToolbar(_ToolbarPanel):
 
 __all__ = (
     "UstToolbar",
-        )
+    )
