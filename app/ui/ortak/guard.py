@@ -7,6 +7,7 @@ ROL:
 - UI başlangıcında ortak modüllerin ve zorunlu sabitlerin varlığını doğrular
 - Hata durumunda nokta atışı çözüm mesajı üretir
 - UI katmanının tek ortak merkezden beslendiğini garanti altına alır
+- Guard yalnızca developer mode aktifken devreye girer
 
 MİMARİ:
 - Runtime guard + contract metni birlikte sunulur
@@ -14,19 +15,20 @@ MİMARİ:
 - Ekranlar / popup'lar / bileşenler bu guard sözleşmesine uymalıdır
 - Geriye uyumluluk katmanı içermez
 - Deterministik davranır
+- Production modda false positive üretmemek için guard pasif kalabilir
 
 DENETLENENLER:
-- app/ui/ortak klasörü
-- zorunlu ortak dosyalar
-- ortak modüllerin import edilebilir olması
+- app/ui/ortak sözleşmesi
+- zorunlu ortak modüllerin import edilebilir olması
 - kritik sabit / fonksiyonların modüllerde tanımlı olması
 
 ENTEGRASYON:
 - Bu guard doğrudan main.py içine gömülmez
 - app/ui/yoneticisi.py içinde UI root üretilmeden hemen önce çağrılmalıdır
+- Developer mode kapalıysa guard kontrolü no-op davranır
 
-SURUM: 1
-TARIH: 2026-03-28
+SURUM: 3
+TARIH: 2026-03-29
 IMZA: FY.
 """
 
@@ -34,8 +36,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from importlib import import_module
-from pathlib import Path
 from typing import Final
+
+from app.config import developer_modu_aktif_mi
 
 
 # =========================================================
@@ -58,6 +61,16 @@ ZORUNLU_ORTAK_DOSYALAR: Final[tuple[str, ...]] = (
     "ikonlar.py",
     "yardimcilar.py",
 )
+
+ZORUNLU_ORTAK_MODULLER: Final[dict[str, str]] = {
+    "__init__.py": "app.ui.ortak",
+    "guard.py": "app.ui.ortak.guard",
+    "renkler.py": RENK_MODULU,
+    "boyutlar.py": BOYUT_MODULU,
+    "stiller.py": STIL_MODULU,
+    "ikonlar.py": IKON_MODULU,
+    "yardimcilar.py": YARDIMCI_MODULU,
+}
 
 UI_CONTRACT_METNI: Final[str] = (
     "UI ortak yapı sözleşmesi:\n"
@@ -162,20 +175,14 @@ class UIGuardHatasi(RuntimeError):
 # =========================================================
 # INTERNAL YARDIMCILAR
 # =========================================================
-def _proje_koku() -> Path:
+def _guard_aktif_mi() -> bool:
     """
-    Proje kökünü çözer.
-    guard.py -> ortak -> ui -> app -> proje_kökü
+    Guard'ın aktif çalışıp çalışmayacağını döndürür.
     """
-    return Path(__file__).resolve().parents[3]
-
-
-def _ui_ortak_dizini() -> Path:
-    return Path(__file__).resolve().parent
-
-
-def _dosya_yolu(dosya_adi: str) -> Path:
-    return _ui_ortak_dizini() / dosya_adi
+    try:
+        return bool(developer_modu_aktif_mi())
+    except Exception:
+        return False
 
 
 def _sorun(
@@ -203,58 +210,60 @@ def _modul_import_et(modul_yolu: str):
 # KONTROLLER
 # =========================================================
 def _klasor_kontrolu() -> list[UIGuardSorunu]:
-    sorunlar: list[UIGuardSorunu] = []
+    """
+    Android paketli ortamda fiziksel klasör kontrolü güvenilir olmadığından
+    bu kontrol sözleşme seviyesi bilgi taşır.
+    """
+    if not _guard_aktif_mi():
+        return []
 
-    ortak_dir = _ui_ortak_dizini()
-    if not ortak_dir.exists():
-        sorunlar.append(
-            _sorun(
-                kod="ui_ortak_klasor_yok",
-                baslik="UI ortak klasörü bulunamadı",
-                hedef=UI_ORTAK_KLASOR,
-                detay=f"Beklenen klasör mevcut değil: {ortak_dir}",
-                cozum=(
-                    "app/ui/ortak klasörünü oluştur.\n"
-                    "İçine zorunlu dosyaları ekle:\n"
-                    "- __init__.py\n"
-                    "- guard.py\n"
-                    "- renkler.py\n"
-                    "- boyutlar.py\n"
-                    "- stiller.py\n"
-                    "- ikonlar.py\n"
-                    "- yardimcilar.py"
-                ),
-            )
-        )
-
-    return sorunlar
+    return []
 
 
 def _zorunlu_dosyalar_kontrolu() -> list[UIGuardSorunu]:
+    """
+    Fiziksel dosya kontrolü yerine modül import kontrolü yapar.
+
+    Neden:
+    - Android AAB/APK içinde .py dosyaları her zaman gerçek dosya yolu olarak
+      görünmeyebilir.
+    - Ancak modül import edilebiliyorsa, runtime açısından sözleşme sağlanmış
+      kabul edilir.
+    """
+    if not _guard_aktif_mi():
+        return []
+
     sorunlar: list[UIGuardSorunu] = []
 
-    for dosya_adi in ZORUNLU_ORTAK_DOSYALAR:
-        path_obj = _dosya_yolu(dosya_adi)
-        if path_obj.exists() and path_obj.is_file():
-            continue
+    for dosya_adi, modul_yolu in ZORUNLU_ORTAK_MODULLER.items():
+        try:
+            _modul_import_et(modul_yolu)
+        except Exception as exc:
+            hedef_dosya = modul_yolu.replace(".", "/")
+            if dosya_adi.endswith(".py") and not hedef_dosya.endswith(".py"):
+                hedef_dosya += ".py"
 
-        sorunlar.append(
-            _sorun(
-                kod="ui_ortak_dosya_eksik",
-                baslik="Zorunlu UI ortak dosyası eksik",
-                hedef=str(path_obj),
-                detay=f"Beklenen dosya bulunamadı: {dosya_adi}",
-                cozum=(
-                    f"{path_obj} dosyasını oluştur.\n"
-                    "Bu dosya app/ui/ortak contract'ının zorunlu parçasıdır."
-                ),
+            sorunlar.append(
+                _sorun(
+                    kod="ui_ortak_dosya_eksik",
+                    baslik="Zorunlu UI ortak modülü eksik veya import edilemiyor",
+                    hedef=hedef_dosya,
+                    detay=f"{dosya_adi} bekleniyordu ancak import edilemedi: {exc}",
+                    cozum=(
+                        f"{hedef_dosya} modülünü kontrol et.\n"
+                        "Dosyanın repo içinde mevcut olduğundan, build içine dahil "
+                        "edildiğinden ve syntax/import hatası taşımadığından emin ol."
+                    ),
+                )
             )
-        )
 
     return sorunlar
 
 
 def _moduller_import_kontrolu() -> list[UIGuardSorunu]:
+    if not _guard_aktif_mi():
+        return []
+
     sorunlar: list[UIGuardSorunu] = []
 
     for modul_yolu in ZORUNLU_MODUL_UYELERI:
@@ -281,6 +290,9 @@ def _moduller_import_kontrolu() -> list[UIGuardSorunu]:
 
 
 def _modul_uye_kontrolu() -> list[UIGuardSorunu]:
+    if not _guard_aktif_mi():
+        return []
+
     sorunlar: list[UIGuardSorunu] = []
 
     for modul_yolu, beklenen_uyeler in ZORUNLU_MODUL_UYELERI.items():
@@ -390,7 +402,11 @@ def serbest_ornekler() -> tuple[str, ...]:
 def ui_guard_raporu() -> list[UIGuardSorunu]:
     """
     Tüm UI ortak katman kontrollerini çalıştırır ve sorun listesini döndürür.
+    Developer mode kapalıysa boş liste döner.
     """
+    if not _guard_aktif_mi():
+        return []
+
     sorunlar: list[UIGuardSorunu] = []
     sorunlar.extend(_klasor_kontrolu())
     sorunlar.extend(_zorunlu_dosyalar_kontrolu())
@@ -403,7 +419,11 @@ def ui_guard_kontrolu() -> None:
     """
     UI ortak katman guard denetimini çalıştırır.
     Sorun varsa nokta atışı çözüm mesajlarıyla hata fırlatır.
+    Developer mode kapalıysa no-op davranır.
     """
+    if not _guard_aktif_mi():
+        return
+
     sorunlar = ui_guard_raporu()
     if sorunlar:
         raise UIGuardHatasi(sorunlar)
@@ -412,15 +432,21 @@ def ui_guard_kontrolu() -> None:
 def ui_guard_ozet_metni() -> str:
     """
     Guard başarısız olduğunda kullanıcıya / log'a yazdırılabilecek özet metni döndürür.
+    Developer mode kapalıysa guard kapalı bilgisini döndürür.
     """
+    if not _guard_aktif_mi():
+        return "UI guard devre dışı."
+
     sorunlar = ui_guard_raporu()
     if not sorunlar:
         return "UI guard kontrolü başarılı."
 
     return "\n\n".join(
-        f"[{sorun.kod}] {sorun.baslik}\n{ sorun.metin() }"
+        f"[{sorun.kod}] {sorun.baslik}\n{sorun.metin()}"
         for sorun in sorunlar
     )
+
+
 def ui_guard_hata_metni(exc: Exception) -> str:
     """
     Guard hatasını kullanıcıya gösterilecek metne çevirir.
