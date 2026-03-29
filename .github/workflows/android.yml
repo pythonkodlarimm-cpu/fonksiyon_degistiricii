@@ -170,6 +170,24 @@ jobs:
           echo "---- icons ----"
           ls -la app/assets/icons || true
 
+      - name: UI ortak dosyalarını doğrula
+        shell: bash
+        run: |
+          set -euxo pipefail
+          test -f app/ui/ortak/__init__.py
+          test -f app/ui/ortak/guard.py
+          test -f app/ui/ortak/renkler.py
+          test -f app/ui/ortak/boyutlar.py
+          test -f app/ui/ortak/stiller.py
+          test -f app/ui/ortak/ikonlar.py
+          test -f app/ui/ortak/yardimcilar.py
+
+          echo "---- app/ui/ortak ----"
+          ls -la app/ui/ortak
+
+          echo "---- guard.py ilk bolum ----"
+          sed -n '1,220p' app/ui/ortak/guard.py
+
       - name: Python paketleri
         shell: bash
         run: |
