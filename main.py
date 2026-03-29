@@ -9,17 +9,20 @@ ROL:
 - Android / Pydroid3 / masaüstü uyumlu çalışır
 - UI guard ve genel başlatma hatalarını kopyalanabilir hata kartında gösterir
 - İsteğe bağlı icon debug çıktısı üretir
+- UI ortak modüllerini başlangıçta açık import ile görünür kılar
+- UI guard yalnızca developer mode açıkken devreye girer
 
 MİMARİ:
 - UI -> Services -> Core zinciri
 - Core doğrudan çağrılmaz
 - UIYoneticisi tek giriş noktasıdır
-- UI build öncesi guard kontrolü çalıştırılır
+- UI build öncesi guard kontrolü yalnızca developer mode açıkken çalıştırılır
 - Hata durumunda çökme yerine okunabilir hata kartı gösterilir
 - Debug çıktısı kontrollü ve tek noktadan yönetilir
+- UI ortak modülleri paketlemeye yardımcı olacak şekilde erken import edilir
 
-SURUM: 6
-TARIH: 2026-03-28
+SURUM: 9
+TARIH: 2026-03-29
 IMZA: FY.
 """
 
@@ -30,6 +33,8 @@ import traceback
 
 from kivy.app import App
 from kivy.config import Config
+
+from app.config import DEVELOPER_MODE
 
 
 # ---------------------------------------------------------
@@ -54,6 +59,24 @@ def _debug_yaz(*args: object) -> None:
         print(*args)
     except Exception:
         pass
+
+
+def _ui_ortak_modulleri_onceden_yukle() -> None:
+    """
+    UI ortak modüllerini başlangıçta açık biçimde import eder.
+
+    Amaç:
+    - Paketleme sırasında modüllerin görünürlüğünü artırmak
+    - UI ortak contract modüllerinin erken aşamada çözülebilmesini sağlamak
+    - Guard öncesi temel ortak katmanın import edilebilir olduğunu netleştirmek
+    """
+    import app.ui.ortak  # noqa: F401
+    import app.ui.ortak.boyutlar  # noqa: F401
+    import app.ui.ortak.guard  # noqa: F401
+    import app.ui.ortak.ikonlar  # noqa: F401
+    import app.ui.ortak.renkler  # noqa: F401
+    import app.ui.ortak.stiller  # noqa: F401
+    import app.ui.ortak.yardimcilar  # noqa: F401
 
 
 def _icon_debug_yazdir() -> None:
@@ -86,9 +109,15 @@ def _ui_guard_calistir() -> None:
     """
     UI build öncesi guard kontrolünü çalıştırır.
 
-    Guard modülü yoksa veya import edilemezse hata yukarı taşınır.
-    Guard fonksiyonu mevcutsa doğrudan çalıştırılır.
+    Not:
+    - Guard yalnızca developer mode açıkken çalışır
+    - Developer mode kapalıysa tamamen atlanır
     """
+    if not bool(DEVELOPER_MODE):
+        if GUARD_DEBUG_AKTIF:
+            _debug_yaz("UI GUARD: developer mode kapalı, guard atlandı.")
+        return
+
     from app.ui.ortak.guard import ui_guard_kontrolu
 
     if GUARD_DEBUG_AKTIF:
@@ -119,6 +148,7 @@ class FonksiyonDegistiriciApp(App):
         Root widget üretimi.
         """
         try:
+            _ui_ortak_modulleri_onceden_yukle()
             _icon_debug_yazdir()
             _ui_guard_calistir()
 
@@ -144,7 +174,7 @@ class FonksiyonDegistiriciApp(App):
             def ui_guard_hata_metni(err: Exception) -> str:
                 return f"{err.__class__.__name__}: {err}"
 
-        if isinstance(exc, UIGuardHatasi):
+        if bool(DEVELOPER_MODE) and isinstance(exc, UIGuardHatasi):
             detay = ui_guard_hata_metni(exc)
             baslik = "UI Guard Hatası"
             aciklama = (
