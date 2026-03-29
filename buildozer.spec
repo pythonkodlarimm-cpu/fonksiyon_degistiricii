@@ -6,6 +6,7 @@ package.domain = org.fy
 
 source.dir = .
 source.include_exts = py,png,jpg,jpeg,kv,atlas,json,txt,ttf,xml
+source.include_patterns = app/*
 source.exclude_exts = pyc,pyo,log,md
 source.exclude_dirs = .git,.github,__pycache__,bin,.buildozer,venv,.venv,tests
 source.exclude_patterns = *.bak,*.tmp,*.swp,.DS_Store
