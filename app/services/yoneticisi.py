@@ -7,13 +7,13 @@ ROL:
 - Tüm servisleri tek noktadan üretir ve cache eder
 - Core katmanına servis bağımlılıklarını izole eder
 - Ayarlar (developer mode dahil) yönetimini merkezileştirir
-- Dil, dosya, işlem, reklam ve dil geliştirici servislerini tek facade altında toplar
+- Dil, dosya, işlem, reklam ve APK sürüm servislerini tek facade altında toplar
 
 MİMARİ:
 - Lazy load + kesin instance cache
 - Her servis yalnızca 1 kez oluşturulur
 - Ortak bağımlılıklar (core / dosya / yedek) paylaşılır
-- Deterministik davranış
+- Deterministik davranır
 - Type güvenliği yüksektir
 - Micro-perf optimize
 - Geriye uyumluluk katmanı içermez
@@ -22,6 +22,7 @@ MİMARİ:
 
 SERVISLER:
 - android
+- apk_surumu
 - dil_servisi
 - dil_gelistirici
 - ayarlar
@@ -42,8 +43,8 @@ NOT:
 - ayarlar() servisi ile developer mode kontrol edilir
 - UI katmanı bu servisi kullanarak conditional render yapmalıdır
 
-SURUM: 13
-TARIH: 2026-03-28
+SURUM: 15
+TARIH: 2026-03-29
 IMZA: FY.
 """
 
@@ -56,6 +57,7 @@ from app.core.yoneticisi import CoreYoneticisi
 
 if TYPE_CHECKING:
     from app.services.android.yoneticisi import AndroidYoneticisi
+    from app.services.apk_surumu_servisi import ApkSurumuServisi
     from app.services.ayarlar_servisi import AyarlarServisi
     from app.services.dil_gelistirici_servisi import DilGelistiriciServisi
     from app.services.dil_servisi import DilServisi
@@ -76,6 +78,7 @@ class ServisYoneticisi:
     __slots__ = (
         "_core",
         "_android_yoneticisi",
+        "_apk_surumu_servisi",
         "_dil_servisi",
         "_dil_gelistirici_servisi",
         "_ayarlar_servisi",
@@ -92,6 +95,7 @@ class ServisYoneticisi:
         self._core: CoreYoneticisi = CoreYoneticisi()
 
         self._android_yoneticisi: AndroidYoneticisi | None = None
+        self._apk_surumu_servisi: ApkSurumuServisi | None = None
         self._dil_servisi: DilServisi | None = None
         self._dil_gelistirici_servisi: DilGelistiriciServisi | None = None
         self._ayarlar_servisi: AyarlarServisi | None = None
@@ -122,6 +126,15 @@ class ServisYoneticisi:
 
             obj = AndroidYoneticisi()
             self._android_yoneticisi = obj
+        return obj
+
+    def _apk_surumu_servisi_olustur(self) -> ApkSurumuServisi:
+        obj = self._apk_surumu_servisi
+        if obj is None:
+            from app.services.apk_surumu_servisi import ApkSurumuServisi
+
+            obj = ApkSurumuServisi(core=self._core)
+            self._apk_surumu_servisi = obj
         return obj
 
     def _dil_servisi_olustur(self) -> DilServisi:
@@ -230,6 +243,9 @@ class ServisYoneticisi:
 
     def android(self) -> AndroidYoneticisi:
         return self._android_yoneticisi_olustur()
+
+    def apk_surumu(self) -> ApkSurumuServisi:
+        return self._apk_surumu_servisi_olustur()
 
     def dil_servisi(self) -> DilServisi:
         return self._dil_servisi_olustur()
