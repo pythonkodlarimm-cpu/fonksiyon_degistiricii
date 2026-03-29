@@ -245,6 +245,7 @@ jobs:
 
           text = remove_key(text, "android.add_src")
           text = remove_key(text, "android.extra_manifest_xml")
+          text = remove_key(text, "android.add_assets")
 
           spec_path.write_text(text, encoding="utf-8")
 
@@ -260,6 +261,7 @@ jobs:
           print(f"  android.archs = {target_archs}")
           print("  android.add_src kaldırıldı")
           print("  android.extra_manifest_xml kaldırıldı")
+          print("  android.add_assets kaldırıldı")
           PY
 
           echo "---- Güncellenmiş buildozer.spec satırları ----"
@@ -274,6 +276,7 @@ jobs:
           grep -n "^android.archs" buildozer.spec || true
           ! grep -n "^android.add_src" buildozer.spec
           ! grep -n "^android.extra_manifest_xml" buildozer.spec
+          ! grep -n "^android.add_assets" buildozer.spec
 
       - name: Keystore dosyasını secret'tan oluştur
         shell: bash
